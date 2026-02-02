@@ -42,3 +42,8 @@ src/
  ├─ game/
  │   └─ GameScene.js
  └─ style.css
+
+
+ para correr proyecto
+
+ npm run dev
