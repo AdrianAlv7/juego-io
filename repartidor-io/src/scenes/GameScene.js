@@ -7,59 +7,42 @@ export default class GameScene extends Phaser.Scene {
     super("GameScene");
   }
 
-preload() {
-  // MAPA
-  this.load.tilemapTiledJSON("track", "assets/maps/pista1.json");
+  preload() {
+    this.load.image("moto", "assets/moto.png");
+  }
 
-  // TILESET
-  this.load.image("tiles", "assets/tiles/pista_tiles.png");
+  create() {
+    console.log("🎮 GameScene create");
 
-  // MOTO
-  this.load.image("moto", "assets/sprites/moto.png");
-}
+    // input
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.driftKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SHIFT
+    );
+    this.brakeKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SPACE
+    );
 
+    // mapa
+    this.map = new Map(this);
 
-create() {
-  console.log("🎮 GameScene create");
+    // moto (arranca lejos del borde)
+    this.moto = new Moto(
+      this,
+      2000,
+      2000,
+      this.cursors,
+      this.driftKey,
+      this.brakeKey
+    );
 
-  // 1️⃣ MAPA
-  const map = this.make.tilemap({ key: "track" });
+    // cámara
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, 4000, 4000);
+    cam.startFollow(this.moto.sprite, true, 0.08, 0.08);
 
-  const tileset = map.addTilesetImage(
-    "pista_tiles", // nombre EXACTO del tileset en Tiled
-    "tiles"        // key que cargaste en preload
-  );
-
-  // 2️⃣ CAPAS
-  const ground = map.createLayer("ground", tileset);
-  const walls = map.createLayer("walls", tileset);
-
-  walls.setCollisionByProperty({ collides: true });
-
-  // 3️⃣ SPAWN DESDE TILED
-  const spawnLayer = map.getObjectLayer("spawn");
-  const spawnPoint = spawnLayer.objects.find(o => o.name === "player");
-
-  // 4️⃣ MOTO
-  this.moto = new Moto(
-    this,
-    spawnPoint.x,
-    spawnPoint.y,
-    this.input.keyboard.createCursorKeys(),
-    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
-    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-  );
-
-  // 5️⃣ FÍSICAS
-  this.physics.add.existing(this.moto.sprite);
-  this.moto.sprite.body.setCollideWorldBounds(true);
-
-  this.physics.add.collider(this.moto.sprite, walls);
-
-  // 6️⃣ CÁMARA
-  this.cameras.main.startFollow(this.moto.sprite);
-}
-
+    console.log("📷 Cámara siguiendo la moto");
+  }
 
   update() {
     this.moto.update();

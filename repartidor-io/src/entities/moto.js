@@ -7,22 +7,28 @@ export default class Moto {
     this.driftKey = driftKey;
     this.brakeKey = brakeKey;
 
+    // SPRITE
     this.sprite = scene.add.sprite(x, y, "moto");
     this.sprite.setOrigin(0.5);
     this.sprite.setScale(0.15);
 
+    // ORIENTACIÓN
     this.direction = 0;
+
+    // VELOCIDAD REAL (vector)
     this.velX = 0;
     this.velY = 0;
 
+    // ESTADOS
     this.isDrifting = false;
     this.isBraking = false;
 
-    this.enginePower = 0.28;
-    this.maxSpeed = 13;
-    this.brakePower = 0.04;
-    this.drag = 0.01;
-    this.lateralGrip = 0.88;
+    // CONFIGURACIÓN DE FEELING
+    this.enginePower = 0.25;   // fuerza del motor
+    this.maxSpeed = 15;         // velocidad máxima
+    this.brakePower = 0.15;    // fuerza de freno
+    this.drag = 0.01;          // fricción general
+    this.lateralGrip = 0.88;   // agarre lateral normal
 
     console.log("🏍️ Moto creada en:", x, y);
   }
@@ -43,8 +49,8 @@ export default class Moto {
     const speed = Math.hypot(this.velX, this.velY);
 
     // ---------------- ESTADOS ----------------
-    this.isDrifting = drift && speed > 0.25;
-    this.isBraking = brake && speed > 0.01;
+    this.isDrifting = drift && speed > 1.2;
+    this.isBraking = brake && speed > 0.2;
 
     // ---------------- ACELERACIÓN ----------------
     if (up) {
@@ -90,7 +96,7 @@ export default class Moto {
     const lateralSpeed =
       this.velX * lateralX + this.velY * lateralY;
 
-    const grip = this.isDrifting ? 0.98 : this.lateralGrip;
+    const grip = this.isDrifting ? 0.95 : this.lateralGrip;
 
     this.velX -= lateralX * lateralSpeed * (1 - grip);
     this.velY -= lateralY * lateralSpeed * (1 - grip);
