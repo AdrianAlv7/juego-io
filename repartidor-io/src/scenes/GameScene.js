@@ -1,6 +1,10 @@
 import Phaser from "phaser";
 import Moto from "../entities/moto.js";
 import Map from "../world/Map.js";
+import DebugHUD from "../ui/DebugHUD.js";
+
+const WORLD_WIDTH = 6000;
+const WORLD_HEIGHT = 6000;
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -8,13 +12,10 @@ export default class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("moto", "assets/moto.png");
+    this.load.image("moto", "assets/sprites/moto.png");
   }
 
   create() {
-    console.log("🎮 GameScene create");
-
-    // input
     this.cursors = this.input.keyboard.createCursorKeys();
     this.driftKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.SHIFT
@@ -23,28 +24,31 @@ export default class GameScene extends Phaser.Scene {
       Phaser.Input.Keyboard.KeyCodes.SPACE
     );
 
-    // mapa
-    this.map = new Map(this);
+    this.map = new Map(this, {
+      worldWidth: WORLD_WIDTH,
+      worldHeight: WORLD_HEIGHT,
+    });
 
-    // moto (arranca lejos del borde)
     this.moto = new Moto(
       this,
-      2000,
-      2000,
+      WORLD_WIDTH / 2,
+      WORLD_HEIGHT / 2,
       this.cursors,
       this.driftKey,
       this.brakeKey
     );
 
-    // cámara
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, 4000, 4000);
+    cam.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    cam.setZoom(0.85);
+    cam.setDeadzone(120, 90);
     cam.startFollow(this.moto.sprite, true, 0.08, 0.08);
 
-    console.log("📷 Cámara siguiendo la moto");
+    this.hud = new DebugHUD(this);
   }
 
-  update() {
-    this.moto.update();
+  update(time, delta) {
+    this.moto.update(delta);
+    this.hud.update(this.moto, delta);
   }
 }

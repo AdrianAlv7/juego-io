@@ -1,40 +1,50 @@
-import Phaser from "phaser";
-
 export default class Map {
-  constructor(scene) {
+  constructor(scene, options = {}) {
     this.scene = scene;
 
-    const WIDTH = 4000;
-    const HEIGHT = 4000;
+    const {
+      worldWidth = 6000,
+      worldHeight = 6000,
+      gridSize = 200,
+      majorGridSize = 1000,
+    } = options;
 
-    // límites del mundo
-    scene.physics.world.setBounds(0, 0, WIDTH, HEIGHT);
+    this.worldWidth = worldWidth;
+    this.worldHeight = worldHeight;
 
-    // fondo
+    scene.physics.world.setBounds(0, 0, worldWidth, worldHeight);
+
     const bg = scene.add.rectangle(
-      WIDTH / 2,
-      HEIGHT / 2,
-      WIDTH,
-      HEIGHT,
+      worldWidth / 2,
+      worldHeight / 2,
+      worldWidth,
+      worldHeight,
       0x2b2b2b
     );
-    bg.setDepth(-10);
+    bg.setDepth(-20);
 
-    // líneas de referencia
     const g = scene.add.graphics();
-    g.lineStyle(1, 0x555555);
+    g.setDepth(-10);
 
-    for (let x = 0; x <= WIDTH; x += 200) {
-      g.lineBetween(x, 0, x, HEIGHT);
+    g.lineStyle(1, 0x3a3a3a, 1);
+    for (let x = 0; x <= worldWidth; x += gridSize) {
+      g.lineBetween(x, 0, x, worldHeight);
     }
-    for (let y = 0; y <= HEIGHT; y += 200) {
-      g.lineBetween(0, y, WIDTH, y);
+    for (let y = 0; y <= worldHeight; y += gridSize) {
+      g.lineBetween(0, y, worldWidth, y);
     }
 
-    // borde rojo
-    g.lineStyle(4, 0xff0000);
-    g.strokeRect(0, 0, WIDTH, HEIGHT);
+    g.lineStyle(2, 0x4a4a4a, 1);
+    for (let x = 0; x <= worldWidth; x += majorGridSize) {
+      g.lineBetween(x, 0, x, worldHeight);
+    }
+    for (let y = 0; y <= worldHeight; y += majorGridSize) {
+      g.lineBetween(0, y, worldWidth, y);
+    }
 
-    console.log("🗺️ Mapa grande creado", WIDTH, HEIGHT);
+    g.lineStyle(3, 0x505050, 1);
+    g.strokeRect(0, 0, worldWidth, worldHeight);
   }
+
+  enableCollisions() {}
 }

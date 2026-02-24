@@ -52,7 +52,7 @@
  "tilesets":[
         {
          "firstgid":1,
-         "source":"..\/..\/..\/..\/limite.tsx"
+         "source":"../tilesets/limite.tsx"
         }],
  "tilewidth":32,
  "type":"map",
