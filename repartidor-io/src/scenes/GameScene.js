@@ -1,67 +1,46 @@
 import Phaser from "phaser";
 import Moto from "../entities/moto.js";
 import Map from "../world/Map.js";
+import InputSystem from "../systems/InputSystem.js";
+import DebugHUD from "../ui/DebugHUD.js";
+
+const WORLD_WIDTH = 6000;
+const WORLD_HEIGHT = 6000;
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
     super("GameScene");
   }
 
-preload() {
-  // MAPA
-  this.load.tilemapTiledJSON("track", "assets/maps/pista1.json");
+  preload() {
+    this.load.image("moto", "assets/moto.png");
+  }
 
-  // TILESET
-  this.load.image("tiles", "assets/tiles/pista_tiles.png");
+  create() {
+    this.inputSystem = new InputSystem(this);
+    this.map = new Map(this, {
+      worldWidth: WORLD_WIDTH,
+      worldHeight: WORLD_HEIGHT,
+    });
 
-  // MOTO
-  this.load.image("moto", "assets/sprites/moto.png");
-}
+    this.moto = new Moto(
+      this,
+      WORLD_WIDTH / 2,
+      WORLD_HEIGHT / 2,
+      this.inputSystem
+    );
 
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    cam.setZoom(0.85);
+    cam.setDeadzone(120, 90);
+    cam.startFollow(this.moto.sprite, true, 0.08, 0.08);
 
-create() {
-  console.log("🎮 GameScene create");
+    this.hud = new DebugHUD(this);
+  }
 
-  // 1️⃣ MAPA
-  const map = this.make.tilemap({ key: "track" });
-
-  const tileset = map.addTilesetImage(
-    "pista_tiles", // nombre EXACTO del tileset en Tiled
-    "tiles"        // key que cargaste en preload
-  );
-
-  // 2️⃣ CAPAS
-  const ground = map.createLayer("ground", tileset);
-  const walls = map.createLayer("walls", tileset);
-
-  walls.setCollisionByProperty({ collides: true });
-
-  // 3️⃣ SPAWN DESDE TILED
-  const spawnLayer = map.getObjectLayer("spawn");
-  const spawnPoint = spawnLayer.objects.find(o => o.name === "player");
-
-  // 4️⃣ MOTO
-  this.moto = new Moto(
-    this,
-    spawnPoint.x,
-    spawnPoint.y,
-    this.input.keyboard.createCursorKeys(),
-    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
-    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-  );
-
-  // 5️⃣ FÍSICAS
-  this.physics.add.existing(this.moto.sprite);
-  this.moto.sprite.body.setCollideWorldBounds(true);
-
-  this.physics.add.collider(this.moto.sprite, walls);
-
-  // 6️⃣ CÁMARA
-  this.cameras.main.startFollow(this.moto.sprite);
-}
-
-
-  update() {
-    this.moto.update();
+  update(_time, delta) {
+    this.moto.update(delta);
+    this.hud.update(this.moto, delta);
   }
 }

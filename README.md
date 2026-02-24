@@ -1,49 +1,58 @@
 # juego-io
-Juego de repartidor .io
 
-Paso 1 – Instalar lo básico
-1️⃣ Node.js
+Juego tipo repartidor construido con Phaser + Vite.
 
-Descarga la versión LTS:
-👉 https://nodejs.org/
+## Requisitos
 
-Luego verifica:
+- Node.js LTS
+- npm
 
-node -v
-npm -v
+## Ejecutar proyecto
 
-Paso 2 – Crear proyecto Phaser con Vite
-
-En una carpeta vacía:
-
-npm create vite@latest repartidor-io
-
-
-Te preguntará:
-
-Framework → Vanilla
-
-Variant → JavaScript
-
-Entras al proyecto:
-
+```bash
 cd repartidor-io
 npm install
+npm run dev
+```
 
-Paso 3 – Instalar Phaser 3
-npm install phaser
+## Build de produccion
 
-Paso 4 – Estructura inicial simple
+```bash
+cd repartidor-io
+npm run build
+```
 
-Deja el proyecto así:
+## Estructura actual
 
-src/
- ├─ main.js
- ├─ game/
- │   └─ GameScene.js
- └─ style.css
+```text
+repartidor-io/
+  public/
+    assets/
+      moto.png
+  src/
+    config/
+      gameConfig.js
+    entities/
+      moto.js
+    scenes/
+      GameScene.js
+    systems/
+      InputSystem.js
+    ui/
+      DebugHUD.js
+    world/
+      Map.js
+    main.js
+    style.css
+```
 
+## Controles
 
- para correr proyecto
+- Flechas: mover y girar
+- Shift: derrape
+- Space: freno
 
- npm run dev
+## Notas
+
+- Los archivos que no estan conectados al juego se movieron a `repartidor-io/unused-assets/`.
+- Esta version usa solo sprite PNG para evitar dependencias de mapas Tiled por ahora.
