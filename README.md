@@ -7,12 +7,34 @@ Juego tipo repartidor construido con Phaser + Vite.
 - Node.js LTS
 - npm
 
-## Ejecutar proyecto
+## Ejecutar proyecto (multijugador)
 
 ```bash
 cd repartidor-io
 npm install
-npm run dev
+npm run dev:server
+```
+
+En otra terminal:
+
+```bash
+cd repartidor-io
+npm run dev:client
+```
+
+El cliente conecta por defecto a `http://localhost:3000`.
+No necesitas pasar `--host`: Vite ya queda expuesto en LAN desde `vite.config.js`.
+
+Para pruebas en otro dispositivo:
+
+1. Abre en el dispositivo cliente `http://IP_DE_TU_PC:5173`.
+2. Socket.IO usa esa misma IP automaticamente (`http://IP_DE_TU_PC:3000`).
+
+Solo si quieres forzar otra URL de socket:
+
+```bash
+set VITE_SOCKET_SERVER_URL=http://192.168.1.50:3000
+npm run dev:client
 ```
 
 ## Build de produccion
@@ -47,13 +69,14 @@ repartidor-io/
     style.css
 ```
 
-## Controles
+## Flujo online
 
-- Flechas: mover y girar
-- Shift: derrape
-- Space: freno
-- 1: mapa abierto
-- 2: mapa pista
+- Sala unica de hasta 4 jugadores.
+- Login rapido con username corto antes de entrar a sala.
+- El host ve boton `Play` para iniciar.
+- Todos cargan el mapa 4 al iniciar.
+- La partida termina para todos cuando un jugador completa la ruta.
+- Host puede reiniciar sala con `R` al finalizar.
 
 ## Notas
 

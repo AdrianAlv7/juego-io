@@ -1,44 +1,31 @@
 import Phaser from "phaser";
 import Moto from "../entities/moto.js";
-import OpenMap from "../world/Map.js";
-import TrackMap from "../world/TrackMap.js";
-import DeliveryRouteMap from "../world/delivery/DeliveryRouteMap.js";
 import CityRaceMap from "../world/race/CityRaceMap.js";
+import { CITY_RACE_LAYOUT } from "../world/race/config/cityRaceLayout.js";
 import InputSystem from "../systems/InputSystem.js";
 import DebugHUD from "../ui/DebugHUD.js";
+import MultiplayerSystem from "../network/MultiplayerSystem.js";
 
-// Total world size.
 const WORLD_WIDTH = 6000;
 const WORLD_HEIGHT = 6000;
+const MAP_HINT_TEXT = "Lobby -> Play (host) | Flechas + Shift + Space";
 
-// Simple map modes for quick selection.
-const MAP_OPEN = "open";
-const MAP_TRACK = "track";
-const MAP_DELIVERY = "delivery";
-const MAP_CITY_RACE = "city-race";
-const DEFAULT_MAP_MODE = MAP_OPEN;
-const MAP_HINT_TEXT = "1: Abierto | 2: Pista | 3: Reparto | 4: Carrera | R: Reiniciar";
-
-// Fixed simulation step keeps gameplay identical across 60/165/240 Hz displays.
 const SIMULATION_FPS = 60;
 const FIXED_STEP_MS = 1000 / SIMULATION_FPS;
 const MAX_CATCH_UP_STEPS = 5;
-
-// Protection against startup/resume hitches.
-const STARTUP_STABILIZE_FRAMES = 8;
-const RESUME_STABILIZE_FRAMES = 6;
 const MAX_ACCUMULATED_DELTA_MS = 250;
-const DELTA_SPIKE_RESET_MS = 90;
 const CAMERA_DELTA_CAP_MS = 50;
+const DELTA_SPIKE_RESET_MS = 90;
+const RESUME_STABILIZE_FRAMES = 6;
+const STARTUP_STABILIZE_FRAMES = 8;
 
-// Camera tuning.
-const CAMERA_BASE_ZOOM = .7;
-const CAMERA_FAST_ZOOM = .5;
+const CAMERA_BASE_ZOOM = 0.7;
+const CAMERA_FAST_ZOOM = 0.5;
 const CAMERA_LOOK_AHEAD_MAX = 110;
 const ZOOM_DAMPING = 8;
 const OFFSET_DAMPING = 10;
+const USERNAME_MAX_LENGTH = 16;
 
-// Frame-rate independent damping helper.
 function damp(current, target, dampingPerSecond, deltaMs) {
   const t = 1 - Math.exp((-dampingPerSecond * deltaMs) / 1000);
   return Phaser.Math.Linear(current, target, t);
@@ -48,175 +35,474 @@ export default class GameScene extends Phaser.Scene {
   constructor() {
     super("GameScene");
 
-    // Selected map mode.
-    this.mapMode = DEFAULT_MAP_MODE;
+    this.map = null;
+    this.moto = null;
+    this.hud = null;
+    this.playersGroup = null;
+    this.multiplayer = null;
 
-    // Camera offset state.
+    this.matchRunning = false;
+    this.matchEnded = false;
+    this.finishSent = false;
+    this.currentLobbyState = null;
+    this.isRegistered = false;
+
     this.cameraOffsetX = 0;
     this.cameraOffsetY = 0;
-
-    // Fixed-step accumulator.
     this.simulationAccumulatorMs = 0;
-
-    // During stabilize frames we avoid catch-up loops to prevent initial stutter.
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
 
-    // Keep bound reference so we can remove listener on shutdown.
+    this.nameEntryRoot = null;
+    this.nameInput = null;
+    this.nameSubmitButton = null;
+
     this.onVisibilityChange = this.onVisibilityChange.bind(this);
   }
 
-  init(data) {
-    // Accept map mode from scene restart payload.
-    if (
-      data?.mapMode === MAP_TRACK ||
-      data?.mapMode === MAP_OPEN ||
-      data?.mapMode === MAP_DELIVERY ||
-      data?.mapMode === MAP_CITY_RACE
-    ) {
-      this.mapMode = data.mapMode;
-    } else {
-      this.mapMode = DEFAULT_MAP_MODE;
-    }
-  }
-
   preload() {
-    // Main player sprite.
     this.load.image("moto", "assets/moto.png");
   }
 
   create() {
-    // Input and quick map selector (1/2/3).
     this.inputSystem = new InputSystem(this);
-    this.mapOpenKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.ONE
-    );
-    this.mapTrackKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.TWO
-    );
-    this.mapDeliveryKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.THREE
-    );
-    this.mapCityRaceKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.FOUR
-    );
     this.restartLevelKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.R
     );
 
-    // Build world based on selected mode.
-    this.map = this.createMapByMode(this.mapMode);
-    const spawn = this.map.getSpawnPoint();
+    this.createLobbyUi();
+    this.createStatusBanner();
+    this.createNameEntryUi();
 
-    // Create player at map spawn.
-    this.moto = new Moto(this, spawn.x, spawn.y, this.inputSystem);
+    this.multiplayer = new MultiplayerSystem(this, {
+      spriteKey: "moto",
+      callbacks: {
+        onInit: () => this.onSocketInit(),
+        onLobbyState: (payload) => this.onLobbyState(payload),
+        onGameStarted: (payload) => this.onGameStarted(payload),
+        onMatchFinished: (payload) => this.onMatchFinished(payload),
+        onRoomError: (payload) => this.onRoomError(payload),
+        onLobbyRestarted: () => this.onLobbyRestarted(),
+      },
+    });
 
-    // Camera setup.
+    const cachedName = window.localStorage.getItem("repartidor_player_name");
+    if (cachedName && this.nameInput) {
+      this.nameInput.value = cachedName.slice(0, USERNAME_MAX_LENGTH);
+    }
+
+    this.scale.on("resize", this.handleResize, this);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+    this.game.loop.resetDelta?.();
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off("resize", this.handleResize, this);
+      document.removeEventListener("visibilitychange", this.onVisibilityChange);
+      this.multiplayer?.destroy();
+      this.destroyNameEntryUi();
+    });
+  }
+
+  createNameEntryUi() {
+    const appRoot = document.getElementById("app");
+    if (!appRoot) return;
+
+    appRoot.style.position = "relative";
+
+    this.nameEntryRoot = document.createElement("div");
+    this.nameEntryRoot.style.position = "absolute";
+    this.nameEntryRoot.style.left = "50%";
+    this.nameEntryRoot.style.top = "74%";
+    this.nameEntryRoot.style.transform = "translate(-50%, -50%)";
+    this.nameEntryRoot.style.display = "flex";
+    this.nameEntryRoot.style.gap = "10px";
+    this.nameEntryRoot.style.zIndex = "3000";
+
+    this.nameInput = document.createElement("input");
+    this.nameInput.type = "text";
+    this.nameInput.maxLength = USERNAME_MAX_LENGTH;
+    this.nameInput.placeholder = "Username corto";
+    this.nameInput.style.width = "260px";
+    this.nameInput.style.height = "44px";
+    this.nameInput.style.padding = "0 12px";
+    this.nameInput.style.border = "2px solid #90c5a6";
+    this.nameInput.style.borderRadius = "8px";
+    this.nameInput.style.background = "#10171f";
+    this.nameInput.style.color = "#eef4fb";
+    this.nameInput.style.fontFamily = "Consolas, monospace";
+    this.nameInput.style.fontSize = "18px";
+
+    this.nameSubmitButton = document.createElement("button");
+    this.nameSubmitButton.textContent = "Entrar";
+    this.nameSubmitButton.style.height = "44px";
+    this.nameSubmitButton.style.padding = "0 16px";
+    this.nameSubmitButton.style.border = "2px solid #90c5a6";
+    this.nameSubmitButton.style.borderRadius = "8px";
+    this.nameSubmitButton.style.background = "#1f5f46";
+    this.nameSubmitButton.style.color = "#ffffff";
+    this.nameSubmitButton.style.fontFamily = "Consolas, monospace";
+    this.nameSubmitButton.style.fontSize = "18px";
+    this.nameSubmitButton.style.cursor = "pointer";
+
+    const submit = () => this.submitNameEntry();
+    this.nameSubmitButton.addEventListener("click", submit);
+    this.nameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") submit();
+    });
+
+    this.nameEntryRoot.appendChild(this.nameInput);
+    this.nameEntryRoot.appendChild(this.nameSubmitButton);
+    appRoot.appendChild(this.nameEntryRoot);
+    this.nameInput.focus();
+  }
+
+  submitNameEntry() {
+    if (!this.multiplayer || this.isRegistered) return;
+    const raw = this.nameInput?.value?.trim() || "";
+    const safeName = (raw || "Jugador").slice(0, USERNAME_MAX_LENGTH);
+    window.localStorage.setItem("repartidor_player_name", safeName);
+
+    this.nameInput.value = safeName;
+    this.nameInput.disabled = true;
+    this.nameSubmitButton.disabled = true;
+    this.nameSubmitButton.textContent = "Conectando...";
+    this.lobbyMessage.setText("Conectando a sala...");
+    this.lobbyMessage.setColor("#ffd27d");
+
+    this.multiplayer.start({
+      name: safeName,
+      preferredSpawn: CITY_RACE_LAYOUT.spawnPoint,
+    });
+  }
+
+  onSocketInit() {
+    this.isRegistered = true;
+    if (this.nameEntryRoot) {
+      this.nameEntryRoot.style.display = "none";
+    }
+    this.renderLobbyState();
+  }
+
+  destroyNameEntryUi() {
+    if (!this.nameEntryRoot) return;
+    this.nameEntryRoot.remove();
+    this.nameEntryRoot = null;
+    this.nameInput = null;
+    this.nameSubmitButton = null;
+  }
+
+  createLobbyUi() {
+    const { width, height } = this.scale.gameSize;
+
+    this.lobbyBackdrop = this.add.rectangle(
+      width / 2,
+      height / 2,
+      width,
+      height,
+      0x0f141a,
+      0.9
+    );
+    this.lobbyBackdrop.setScrollFactor(0);
+    this.lobbyBackdrop.setDepth(2000);
+
+    this.lobbyTitle = this.add.text(width / 2, 120, "Sala Repartidor.io", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "58px",
+      color: "#ffffff",
+      fontStyle: "bold",
+    });
+    this.lobbyTitle.setOrigin(0.5);
+    this.lobbyTitle.setScrollFactor(0);
+    this.lobbyTitle.setDepth(2010);
+
+    this.lobbySubtitle = this.add.text(width / 2, 185, "Esperando jugadores", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "24px",
+      color: "#b8c4d1",
+    });
+    this.lobbySubtitle.setOrigin(0.5);
+    this.lobbySubtitle.setScrollFactor(0);
+    this.lobbySubtitle.setDepth(2010);
+
+    this.playersListText = this.add.text(width / 2, 270, "Conectando...", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "24px",
+      color: "#e8edf3",
+      align: "left",
+      lineSpacing: 8,
+    });
+    this.playersListText.setOrigin(0.5, 0);
+    this.playersListText.setScrollFactor(0);
+    this.playersListText.setDepth(2010);
+
+    this.lobbyMessage = this.add.text(width / 2, height - 180, "", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "22px",
+      color: "#ffd27d",
+      align: "center",
+    });
+    this.lobbyMessage.setOrigin(0.5);
+    this.lobbyMessage.setScrollFactor(0);
+    this.lobbyMessage.setDepth(2010);
+
+    this.startButtonRect = this.add.rectangle(
+      width / 2,
+      height - 95,
+      320,
+      74,
+      0x2f7f5f,
+      1
+    );
+    this.startButtonRect.setStrokeStyle(3, 0xa9ffd8, 0.9);
+    this.startButtonRect.setInteractive({ useHandCursor: true });
+    this.startButtonRect.setScrollFactor(0);
+    this.startButtonRect.setDepth(2010);
+    this.startButtonRect.on("pointerdown", () => {
+      this.multiplayer?.emitStartGame(CITY_RACE_LAYOUT.spawnPoint);
+    });
+
+    this.startButtonLabel = this.add.text(width / 2, height - 95, "PLAY", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "36px",
+      color: "#ffffff",
+      fontStyle: "bold",
+    });
+    this.startButtonLabel.setOrigin(0.5);
+    this.startButtonLabel.setScrollFactor(0);
+    this.startButtonLabel.setDepth(2011);
+  }
+
+  createStatusBanner() {
+    const { width } = this.scale.gameSize;
+    this.statusBanner = this.add.text(width / 2, 60, "", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "34px",
+      color: "#a7ffb8",
+      fontStyle: "bold",
+      stroke: "#102018",
+      strokeThickness: 8,
+    });
+    this.statusBanner.setOrigin(0.5);
+    this.statusBanner.setScrollFactor(0);
+    this.statusBanner.setDepth(2100);
+    this.statusBanner.setVisible(false);
+  }
+
+  handleResize(gameSize) {
+    if (this.lobbyBackdrop) {
+      this.lobbyBackdrop.setPosition(gameSize.width / 2, gameSize.height / 2);
+      this.lobbyBackdrop.setSize(gameSize.width, gameSize.height);
+      this.lobbyTitle.setPosition(gameSize.width / 2, 120);
+      this.lobbySubtitle.setPosition(gameSize.width / 2, 185);
+      this.playersListText.setPosition(gameSize.width / 2, 270);
+      this.lobbyMessage.setPosition(gameSize.width / 2, gameSize.height - 180);
+      this.startButtonRect.setPosition(gameSize.width / 2, gameSize.height - 95);
+      this.startButtonLabel.setPosition(gameSize.width / 2, gameSize.height - 95);
+    }
+
+    if (this.statusBanner) {
+      this.statusBanner.setPosition(gameSize.width / 2, 60);
+    }
+
+    if (this.matchRunning && this.moto) {
+      const cam = this.cameras.main;
+      cam.setViewport(0, 0, gameSize.width, gameSize.height);
+      cam.setDeadzone(
+        Math.max(140, gameSize.width * 0.16),
+        Math.max(100, gameSize.height * 0.14)
+      );
+    }
+  }
+
+  onLobbyState(payload = {}) {
+    this.currentLobbyState = payload;
+    this.renderLobbyState();
+  }
+
+  onRoomError(payload = {}) {
+    this.lobbyMessage.setText(payload.message || "Error de sala.");
+    this.lobbyMessage.setColor("#ff9f9f");
+    if (this.nameInput && this.nameSubmitButton) {
+      this.nameInput.disabled = false;
+      this.nameSubmitButton.disabled = false;
+      this.nameSubmitButton.textContent = "Entrar";
+      this.nameEntryRoot.style.display = "flex";
+    }
+  }
+
+  renderLobbyState() {
+    if (!this.currentLobbyState) return;
+
+    const players = this.currentLobbyState.players || [];
+    const maxPlayers = this.currentLobbyState.maxPlayers || 4;
+    const hostId = this.currentLobbyState.hostId;
+    const isHost = this.multiplayer?.selfId === hostId;
+
+    if (!this.isRegistered) {
+      this.playersListText.setText(["Ingresa username para entrar a sala"]);
+      this.lobbySubtitle.setText("Conectados: 0/4 | Maximo 4 jugadores");
+      this.startButtonRect.setVisible(false);
+      this.startButtonLabel.setVisible(false);
+      this.lobbyMessage.setText("Escribe un username corto y presiona Entrar.");
+      this.lobbyMessage.setColor("#ffd27d");
+      return;
+    }
+
+    const lines = players.length
+      ? players.map((player, index) => {
+          const hostTag = player.id === hostId ? " (Host)" : "";
+          return `${index + 1}. ${player.name}${hostTag}`;
+        })
+      : ["Sin jugadores"];
+    this.playersListText.setText(lines);
+
+    this.lobbySubtitle.setText(
+      `Conectados: ${players.length}/${maxPlayers} | Maximo 4 jugadores`
+    );
+
+    const canStart = isHost && !this.currentLobbyState.started && players.length > 0;
+    this.startButtonRect.setVisible(canStart);
+    this.startButtonLabel.setVisible(canStart);
+    this.startButtonRect.disableInteractive();
+    if (canStart) {
+      this.startButtonRect.setInteractive({ useHandCursor: true });
+      this.lobbyMessage.setText("Eres host. Presiona PLAY para iniciar.");
+      this.lobbyMessage.setColor("#95f5c8");
+    } else if (!isHost) {
+      this.lobbyMessage.setText("Esperando que el host inicie la partida...");
+      this.lobbyMessage.setColor("#ffd27d");
+    } else {
+      this.lobbyMessage.setText("Conectando sala...");
+      this.lobbyMessage.setColor("#ffd27d");
+    }
+  }
+
+  onGameStarted(payload = {}) {
+    if (this.matchRunning) return;
+
+    const players = payload.players || {};
+    const localState = players[this.multiplayer.selfId] || {
+      ...CITY_RACE_LAYOUT.spawnPoint,
+      angle: 0,
+    };
+
+    this.map = new CityRaceMap(this, {
+      worldWidth: WORLD_WIDTH,
+      worldHeight: WORLD_HEIGHT,
+    });
+
+    this.moto = new Moto(this, localState.x, localState.y, this.inputSystem);
+    this.moto.direction = localState.angle || 0;
+    this.moto.sprite.setRotation(this.moto.direction);
+    this.moto.sprite.body.updateFromGameObject();
+
+    this.playersGroup = this.physics.add.group();
+    this.playersGroup.add(this.moto.sprite);
+    this.physics.add.collider(this.playersGroup, this.playersGroup);
+
+    this.multiplayer.attachGroup(this.playersGroup);
+    this.multiplayer.attachLocalSprite(this.moto.sprite, localState);
+    this.multiplayer.syncPlayers(players);
+
     const cam = this.cameras.main;
     cam.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     cam.setZoom(CAMERA_BASE_ZOOM);
     cam.startFollow(this.moto.sprite, false, 1, 1);
-
-    // Resize handling.
     this.handleResize(this.scale.gameSize);
-    this.scale.on("resize", this.handleResize, this);
 
-    // Visibility handling to avoid spikes after tab switches.
-    document.addEventListener("visibilitychange", this.onVisibilityChange);
-    this.game.loop.resetDelta?.();
-
-    // Cleanup listeners.
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.scale.off("resize", this.handleResize, this);
-      document.removeEventListener("visibilitychange", this.onVisibilityChange);
-    });
-
-    // Debug HUD.
     this.hud = new DebugHUD(this);
+
+    this.matchRunning = true;
+    this.matchEnded = false;
+    this.finishSent = false;
+    this.simulationAccumulatorMs = 0;
+    this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
+
+    this.setLobbyVisible(false);
+    this.statusBanner.setVisible(false);
   }
 
-  createMapByMode(mode) {
-    // Common options shared by every map type.
-    const mapOptions = {
-      worldWidth: WORLD_WIDTH,
-      worldHeight: WORLD_HEIGHT,
-    };
+  onMatchFinished(payload = {}) {
+    if (!this.matchRunning) return;
+    this.matchEnded = true;
 
-    // Picks map implementation by mode.
-    if (mode === MAP_TRACK) {
-      return new TrackMap(this, mapOptions);
+    const isWinner = payload.winnerId && payload.winnerId === this.multiplayer.selfId;
+    this.statusBanner.setText(
+      isWinner ? "Partida terminada: ganaste" : "Partida terminada"
+    );
+    this.statusBanner.setColor(isWinner ? "#a7ffb8" : "#ffd27d");
+    this.statusBanner.setVisible(true);
+
+    const isHost = this.currentLobbyState?.hostId === this.multiplayer.selfId;
+    if (isHost) {
+      this.lobbyMessage.setText("Presiona R para reiniciar la sala.");
+      this.lobbyMessage.setColor("#95f5c8");
+    } else {
+      this.lobbyMessage.setText("Esperando reinicio del host...");
+      this.lobbyMessage.setColor("#ffd27d");
     }
-    if (mode === MAP_DELIVERY) {
-      return new DeliveryRouteMap(this, mapOptions);
-    }
-    if (mode === MAP_CITY_RACE) {
-      return new CityRaceMap(this, mapOptions);
-    }
-    return new OpenMap(this, mapOptions);
   }
 
-  getMapLabel() {
-    // Human-readable map label for HUD.
-    if (this.mapMode === MAP_TRACK) return "Pista";
-    if (this.mapMode === MAP_DELIVERY) return "Reparto A/B";
-    if (this.mapMode === MAP_CITY_RACE) return "Carrera Ciudad";
-    return "Abierto";
+  onLobbyRestarted() {
+    this.scene.restart();
+  }
+
+  resetToLobby() {
+    if (this.moto) {
+      this.moto.sprite.destroy();
+      this.moto = null;
+    }
+    if (this.hud) {
+      this.hud.text.destroy();
+      this.hud = null;
+    }
+
+    this.map = null;
+    this.matchRunning = false;
+    this.matchEnded = false;
+    this.finishSent = false;
+    this.cameraOffsetX = 0;
+    this.cameraOffsetY = 0;
+    this.simulationAccumulatorMs = 0;
+    this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
+
+    this.multiplayer?.attachGroup(null);
+    this.setLobbyVisible(true);
+    this.statusBanner.setVisible(false);
+    this.renderLobbyState();
+  }
+
+  setLobbyVisible(visible) {
+    this.lobbyBackdrop.setVisible(visible);
+    this.lobbyTitle.setVisible(visible);
+    this.lobbySubtitle.setVisible(visible);
+    this.playersListText.setVisible(visible);
+    this.lobbyMessage.setVisible(visible);
+    if (visible) {
+      if (!this.isRegistered && this.nameEntryRoot) {
+        this.nameEntryRoot.style.display = "flex";
+      }
+      this.renderLobbyState();
+    } else {
+      this.startButtonRect.setVisible(false);
+      this.startButtonLabel.setVisible(false);
+      if (this.nameEntryRoot) {
+        this.nameEntryRoot.style.display = "none";
+      }
+    }
   }
 
   onVisibilityChange() {
-    // Always clear pending accumulated time.
     this.simulationAccumulatorMs = 0;
     this.game.loop.resetDelta?.();
-
-    // When returning to visible state, run a few no-catch-up frames.
     if (!document.hidden) {
       this.noCatchUpFrames = RESUME_STABILIZE_FRAMES;
     }
   }
 
-  handleResize(gameSize) {
-    const cam = this.cameras.main;
-    cam.setViewport(0, 0, gameSize.width, gameSize.height);
-    cam.setDeadzone(
-      Math.max(140, gameSize.width * 0.16),
-      Math.max(100, gameSize.height * 0.14)
-    );
-  }
-
-  restartWithMap(nextMode) {
-    // Restarts scene with requested map mode.
-    if (this.mapMode === nextMode) return false;
-    this.scene.restart({ mapMode: nextMode });
-    return true;
-  }
-
-  processMapSwitchInput() {
-    // Number 1 => open map.
-    if (Phaser.Input.Keyboard.JustDown(this.mapOpenKey)) {
-      return this.restartWithMap(MAP_OPEN);
-    }
-    // Number 2 => track map.
-    if (Phaser.Input.Keyboard.JustDown(this.mapTrackKey)) {
-      return this.restartWithMap(MAP_TRACK);
-    }
-    // Number 3 => delivery route map.
-    if (Phaser.Input.Keyboard.JustDown(this.mapDeliveryKey)) {
-      return this.restartWithMap(MAP_DELIVERY);
-    }
-    // Number 4 => city race map.
-    if (Phaser.Input.Keyboard.JustDown(this.mapCityRaceKey)) {
-      return this.restartWithMap(MAP_CITY_RACE);
-    }
-    return false;
-  }
-
-  processLevelResetInput() {
-    if (!Phaser.Input.Keyboard.JustDown(this.restartLevelKey)) return false;
-    this.scene.restart({ mapMode: this.mapMode });
-    return true;
-  }
-
   runSimulationStep(stepMs) {
-    const playerLocked = this.map.isPlayerLocked?.() ?? false;
+    if (!this.moto || !this.map) return;
+
+    const playerLocked = this.matchEnded || (this.map.isPlayerLocked?.() ?? false);
     if (playerLocked) {
       this.moto.haltMotion();
     } else {
@@ -226,6 +512,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   updateCameraAndHud(deltaMs) {
+    if (!this.moto || !this.hud || !this.map) return;
+
     const cam = this.cameras.main;
     const speedRatio = Phaser.Math.Clamp(
       this.moto.speedPxPerSec / this.moto.maxSpeedPxPerSec,
@@ -258,30 +546,31 @@ export default class GameScene extends Phaser.Scene {
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
 
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
-    const fallbackObjective =
-      this.mapMode === MAP_DELIVERY
-        ? "Objetivo: ir a A/B"
-        : this.mapMode === MAP_CITY_RACE
-          ? "Objetivo: completar 3 pedidos y volver a base"
-        : "Objetivo: conduccion libre";
     this.hud.update(this.moto, deltaMs, {
-      mapLabel: this.getMapLabel(),
+      mapLabel: "Carrera Ciudad",
       mapHint: MAP_HINT_TEXT,
-      objective: fallbackObjective,
+      objective: "Objetivo: completar pedidos",
       ...mapHudInfo,
     });
   }
 
   update(_time, delta) {
-    // Map switching is immediate.
-    if (this.processMapSwitchInput()) return;
-    if (this.processLevelResetInput()) return;
+    this.multiplayer?.update(delta);
 
-    // Cap extreme deltas from tab switching or debugger pauses.
+    if (!this.matchRunning) return;
+
+    if (
+      this.matchEnded &&
+      Phaser.Input.Keyboard.JustDown(this.restartLevelKey) &&
+      this.currentLobbyState?.hostId === this.multiplayer.selfId
+    ) {
+      this.multiplayer.emitRestartLobby();
+      return;
+    }
+
     const cappedDelta = Math.min(delta, MAX_ACCUMULATED_DELTA_MS);
     const presentationDelta = Math.min(cappedDelta, CAMERA_DELTA_CAP_MS);
 
-    // Large delta indicates a spike; drop accumulated catch-up.
     if (cappedDelta >= DELTA_SPIKE_RESET_MS) {
       this.simulationAccumulatorMs = 0;
       this.noCatchUpFrames = Math.max(
@@ -290,32 +579,35 @@ export default class GameScene extends Phaser.Scene {
       );
     }
 
-    // First frames after boot/resume run one fixed step only.
     if (this.noCatchUpFrames > 0) {
       this.noCatchUpFrames -= 1;
       this.simulationAccumulatorMs = 0;
       this.runSimulationStep(FIXED_STEP_MS);
       this.updateCameraAndHud(presentationDelta);
-      return;
+    } else {
+      this.simulationAccumulatorMs += cappedDelta;
+      let catchUpSteps = 0;
+      while (
+        this.simulationAccumulatorMs >= FIXED_STEP_MS &&
+        catchUpSteps < MAX_CATCH_UP_STEPS
+      ) {
+        this.runSimulationStep(FIXED_STEP_MS);
+        this.simulationAccumulatorMs -= FIXED_STEP_MS;
+        catchUpSteps += 1;
+      }
+      if (catchUpSteps === MAX_CATCH_UP_STEPS) {
+        this.simulationAccumulatorMs = 0;
+      }
+      this.updateCameraAndHud(presentationDelta);
     }
 
-    // Standard fixed-step simulation with bounded catch-up.
-    this.simulationAccumulatorMs += cappedDelta;
-    let catchUpSteps = 0;
-    while (
-      this.simulationAccumulatorMs >= FIXED_STEP_MS &&
-      catchUpSteps < MAX_CATCH_UP_STEPS
+    if (
+      !this.finishSent &&
+      !this.matchEnded &&
+      this.map?.isMatchFinished?.()
     ) {
-      this.runSimulationStep(FIXED_STEP_MS);
-      this.simulationAccumulatorMs -= FIXED_STEP_MS;
-      catchUpSteps += 1;
+      this.finishSent = true;
+      this.multiplayer?.emitFinishMatch();
     }
-
-    // If still behind, discard remainder to avoid long hitch recovery.
-    if (catchUpSteps === MAX_CATCH_UP_STEPS) {
-      this.simulationAccumulatorMs = 0;
-    }
-
-    this.updateCameraAndHud(presentationDelta);
   }
 }

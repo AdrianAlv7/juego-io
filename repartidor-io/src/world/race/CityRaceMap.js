@@ -146,4 +146,8 @@ export default class CityRaceMap {
   getCollisionGroup() {
     return this.collisionGroup;
   }
+
+  isMatchFinished() {
+    return this.objectives.isFinished();
+  }
 }
