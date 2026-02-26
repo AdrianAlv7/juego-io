@@ -13,9 +13,9 @@ export default class Moto {
     this.input = inputSystem;
 
     // Aceleracion base del motor (sube para arrancar mas rapido).
-    this.enginePower = 0.75;
+    this.enginePower = .8;
     // Velocidad maxima interna (sube para mayor punta).
-    this.maxSpeed = 36;
+    this.maxSpeed = 40;
     // Fuerza base del freno (sube para frenar mas fuerte).
     this.brakePower = 0.17;
     // Friccion global constante (sube para perder inercia mas rapido).
@@ -104,11 +104,11 @@ export default class Moto {
     }
 
     // Reversa limitada para maniobras cortas.
-    if (down && speed < 3) {
+    if (down && speed < 5) {
       // Resta impulso en eje frontal X.
-      this.velX -= forwardX * 0.08 * dt;
+      this.velX -= forwardX * 0.7 * dt;
       // Resta impulso en eje frontal Y.
-      this.velY -= forwardY * 0.08 * dt;
+      this.velY -= forwardY * 0.7 * dt;
     }
 
     // Frenado progresivo segun velocidad.

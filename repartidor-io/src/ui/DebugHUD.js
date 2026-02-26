@@ -4,6 +4,8 @@ export default class DebugHUD {
     this.scene = scene;
     // Acumula tiempo para no refrescar texto cada frame.
     this.accumulator = 0;
+    // Margen fijo desde la esquina superior izquierda de pantalla.
+    this.anchorPadding = 16;
     // Ajusta resolucion del texto en pantallas de alta densidad.
     const textResolution =
       typeof window === "undefined" ? 1 : Math.min(window.devicePixelRatio || 1, 2);
@@ -18,6 +20,8 @@ export default class DebugHUD {
     });
     // Aplica resolucion al texto para que se vea nitido.
     this.text.setResolution(textResolution);
+    this.text.setOrigin(0, 0);
+    this.text.setPosition(this.anchorPadding, this.anchorPadding);
 
     // Mantiene HUD fijo sin moverse con la camara.
     this.text.setScrollFactor(0);
@@ -26,6 +30,10 @@ export default class DebugHUD {
   }
 
   update(moto, delta, info = {}) {
+    // Refuerza anclaje fijo en pantalla.
+    this.text.setPosition(this.anchorPadding, this.anchorPadding);
+    this.text.setScale(1);
+
     // Acumula delta del frame.
     this.accumulator += delta;
     // Sale temprano hasta cumplir intervalo de refresco.
@@ -39,7 +47,8 @@ export default class DebugHUD {
       `Derrape: ${moto.isDrifting ? "si" : "no"}`,
       `Freno: ${moto.isBraking ? "si" : "no"}`,
       `Mapa: ${info.mapLabel || "N/A"}`,
-      info.mapHint || "1: Abierto | 2: Pista",
+      info.objective || "Objetivo: N/A",
+      info.mapHint || "1: Abierto | 2: Pista | 3: Reparto",
       "Controles: Flechas + Shift + Space",
     ]);
   }

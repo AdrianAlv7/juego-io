@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import Moto from "../entities/moto.js";
 import OpenMap from "../world/Map.js";
 import TrackMap from "../world/TrackMap.js";
+import DeliveryRouteMap from "../world/delivery/DeliveryRouteMap.js";
 import InputSystem from "../systems/InputSystem.js";
 import DebugHUD from "../ui/DebugHUD.js";
 
@@ -12,6 +13,7 @@ const WORLD_HEIGHT = 6000;
 // Simple map modes for quick selection.
 const MAP_OPEN = "open";
 const MAP_TRACK = "track";
+const MAP_DELIVERY = "delivery";
 const DEFAULT_MAP_MODE = MAP_OPEN;
 
 // Fixed simulation step keeps gameplay identical across 60/165/240 Hz displays.
@@ -27,8 +29,8 @@ const DELTA_SPIKE_RESET_MS = 90;
 const CAMERA_DELTA_CAP_MS = 50;
 
 // Camera tuning.
-const CAMERA_BASE_ZOOM = 1;
-const CAMERA_FAST_ZOOM = 0.9;
+const CAMERA_BASE_ZOOM = .7;
+const CAMERA_FAST_ZOOM = .5;
 const CAMERA_LOOK_AHEAD_MAX = 110;
 const ZOOM_DAMPING = 8;
 const OFFSET_DAMPING = 10;
@@ -62,7 +64,11 @@ export default class GameScene extends Phaser.Scene {
 
   init(data) {
     // Accept map mode from scene restart payload.
-    if (data?.mapMode === MAP_TRACK || data?.mapMode === MAP_OPEN) {
+    if (
+      data?.mapMode === MAP_TRACK ||
+      data?.mapMode === MAP_OPEN ||
+      data?.mapMode === MAP_DELIVERY
+    ) {
       this.mapMode = data.mapMode;
     } else {
       this.mapMode = DEFAULT_MAP_MODE;
@@ -75,13 +81,16 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
-    // Input and quick map selector (1/2).
+    // Input and quick map selector (1/2/3).
     this.inputSystem = new InputSystem(this);
     this.mapOpenKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.ONE
     );
     this.mapTrackKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.TWO
+    );
+    this.mapDeliveryKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.THREE
     );
 
     // Build world based on selected mode.
@@ -126,12 +135,16 @@ export default class GameScene extends Phaser.Scene {
     if (mode === MAP_TRACK) {
       return new TrackMap(this, mapOptions);
     }
+    if (mode === MAP_DELIVERY) {
+      return new DeliveryRouteMap(this, mapOptions);
+    }
     return new OpenMap(this, mapOptions);
   }
 
   getMapLabel() {
     // Human-readable map label for HUD.
     if (this.mapMode === MAP_TRACK) return "Pista";
+    if (this.mapMode === MAP_DELIVERY) return "Reparto A/B";
     return "Abierto";
   }
 
@@ -171,6 +184,10 @@ export default class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.mapTrackKey)) {
       return this.restartWithMap(MAP_TRACK);
     }
+    // Number 3 => delivery route map.
+    if (Phaser.Input.Keyboard.JustDown(this.mapDeliveryKey)) {
+      return this.restartWithMap(MAP_DELIVERY);
+    }
     return false;
   }
 
@@ -206,9 +223,16 @@ export default class GameScene extends Phaser.Scene {
     );
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
 
+    const mapHudInfo = this.map.getHudInfo?.() || {};
+    const fallbackObjective =
+      this.mapMode === MAP_DELIVERY
+        ? "Objetivo: ir a A/B"
+        : "Objetivo: conduccion libre";
     this.hud.update(this.moto, deltaMs, {
       mapLabel: this.getMapLabel(),
-      mapHint: "1: Abierto | 2: Pista",
+      mapHint: "1: Abierto | 2: Pista | 3: Reparto",
+      objective: fallbackObjective,
+      ...mapHudInfo,
     });
   }
 
