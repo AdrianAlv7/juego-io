@@ -199,4 +199,15 @@ export default class Moto {
     // Expone velocidad maxima en px/s para normalizacion externa.
     this.maxSpeedPxPerSec = this.maxSpeed * 60;
   }
+
+  haltMotion() {
+    // Detiene por completo la moto (usado para cuenta regresiva de salida).
+    this.velX = 0;
+    this.velY = 0;
+    this.speedPxPerSec = 0;
+    this.isDrifting = false;
+    this.isBraking = false;
+    this.sprite.body.setVelocity(0, 0);
+    this.sprite.clearTint();
+  }
 }

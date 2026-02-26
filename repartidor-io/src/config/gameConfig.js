@@ -4,12 +4,9 @@ import GameScene from "../scenes/GameScene.js";
 // Si lo pones en true, fuerza un loop de render a 60 FPS.
 // En false, usa Hz altos del monitor (recomendado porque la simulacion ya es fija).
 const LOCK_TO_60_FPS = true;
-// Toma el ancho de la ventana actual para iniciar en full-screen responsivo.
-const initialWidth =
-  typeof window === "undefined" ? 1280 : window.innerWidth;
-// Toma el alto de la ventana actual para iniciar en full-screen responsivo.
-const initialHeight =
-  typeof window === "undefined" ? 720 : window.innerHeight;
+// Resolucion logica fija para que todos vean el mismo campo de juego.
+const FIXED_GAME_WIDTH = 1920;
+const FIXED_GAME_HEIGHT = 1080;
 // Ajusta resolucion para pantallas HiDPI sin disparar demasiado el costo de GPU.
 const renderResolution =
   typeof window === "undefined" ? 1 : Math.min(window.devicePixelRatio || 1, 2);
@@ -19,9 +16,9 @@ const gameConfig = {
   type: Phaser.AUTO,
   // Inserta el canvas dentro del div con id "app".
   parent: "app",
-  // Resolucion inicial de render.
-  width: initialWidth,
-  height: initialHeight,
+  // Resolucion logica fija.
+  width: FIXED_GAME_WIDTH,
+  height: FIXED_GAME_HEIGHT,
   // Color de fondo base si no hay elementos debajo.
   backgroundColor: "#14181d",
   // Suaviza bordes en sprites/escalados.
@@ -60,9 +57,9 @@ const gameConfig = {
       gravity: { y: 0 },
     },
   },
-  // Hace que el canvas use todo el viewport disponible.
+  // Escala manteniendo la resolucion logica fija y mismo FOV para todos.
   scale: {
-    mode: Phaser.Scale.RESIZE,
+    mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   // Escena principal del juego.

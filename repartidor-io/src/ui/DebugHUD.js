@@ -48,7 +48,10 @@ export default class DebugHUD {
       `Freno: ${moto.isBraking ? "si" : "no"}`,
       `Mapa: ${info.mapLabel || "N/A"}`,
       info.objective || "Objetivo: N/A",
-      info.mapHint || "1: Abierto | 2: Pista | 3: Reparto",
+      info.nextStop || "Siguiente: N/A",
+      info.cargo || "Carga: N/A",
+      info.health || "Vida: N/A",
+      info.mapHint || "1: Abierto | 2: Pista | 3: Reparto | 4: Carrera",
       "Controles: Flechas + Shift + Space",
     ]);
   }

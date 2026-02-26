@@ -3,6 +3,7 @@ import Moto from "../entities/moto.js";
 import OpenMap from "../world/Map.js";
 import TrackMap from "../world/TrackMap.js";
 import DeliveryRouteMap from "../world/delivery/DeliveryRouteMap.js";
+import CityRaceMap from "../world/race/CityRaceMap.js";
 import InputSystem from "../systems/InputSystem.js";
 import DebugHUD from "../ui/DebugHUD.js";
 
@@ -14,7 +15,9 @@ const WORLD_HEIGHT = 6000;
 const MAP_OPEN = "open";
 const MAP_TRACK = "track";
 const MAP_DELIVERY = "delivery";
+const MAP_CITY_RACE = "city-race";
 const DEFAULT_MAP_MODE = MAP_OPEN;
+const MAP_HINT_TEXT = "1: Abierto | 2: Pista | 3: Reparto | 4: Carrera | R: Reiniciar";
 
 // Fixed simulation step keeps gameplay identical across 60/165/240 Hz displays.
 const SIMULATION_FPS = 60;
@@ -67,7 +70,8 @@ export default class GameScene extends Phaser.Scene {
     if (
       data?.mapMode === MAP_TRACK ||
       data?.mapMode === MAP_OPEN ||
-      data?.mapMode === MAP_DELIVERY
+      data?.mapMode === MAP_DELIVERY ||
+      data?.mapMode === MAP_CITY_RACE
     ) {
       this.mapMode = data.mapMode;
     } else {
@@ -91,6 +95,12 @@ export default class GameScene extends Phaser.Scene {
     );
     this.mapDeliveryKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.THREE
+    );
+    this.mapCityRaceKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.FOUR
+    );
+    this.restartLevelKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.R
     );
 
     // Build world based on selected mode.
@@ -138,6 +148,9 @@ export default class GameScene extends Phaser.Scene {
     if (mode === MAP_DELIVERY) {
       return new DeliveryRouteMap(this, mapOptions);
     }
+    if (mode === MAP_CITY_RACE) {
+      return new CityRaceMap(this, mapOptions);
+    }
     return new OpenMap(this, mapOptions);
   }
 
@@ -145,6 +158,7 @@ export default class GameScene extends Phaser.Scene {
     // Human-readable map label for HUD.
     if (this.mapMode === MAP_TRACK) return "Pista";
     if (this.mapMode === MAP_DELIVERY) return "Reparto A/B";
+    if (this.mapMode === MAP_CITY_RACE) return "Carrera Ciudad";
     return "Abierto";
   }
 
@@ -188,7 +202,27 @@ export default class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.mapDeliveryKey)) {
       return this.restartWithMap(MAP_DELIVERY);
     }
+    // Number 4 => city race map.
+    if (Phaser.Input.Keyboard.JustDown(this.mapCityRaceKey)) {
+      return this.restartWithMap(MAP_CITY_RACE);
+    }
     return false;
+  }
+
+  processLevelResetInput() {
+    if (!Phaser.Input.Keyboard.JustDown(this.restartLevelKey)) return false;
+    this.scene.restart({ mapMode: this.mapMode });
+    return true;
+  }
+
+  runSimulationStep(stepMs) {
+    const playerLocked = this.map.isPlayerLocked?.() ?? false;
+    if (playerLocked) {
+      this.moto.haltMotion();
+    } else {
+      this.moto.update(stepMs);
+    }
+    this.map.enforcePlayer(this.moto, stepMs);
   }
 
   updateCameraAndHud(deltaMs) {
@@ -223,14 +257,16 @@ export default class GameScene extends Phaser.Scene {
     );
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
 
-    const mapHudInfo = this.map.getHudInfo?.() || {};
+    const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
     const fallbackObjective =
       this.mapMode === MAP_DELIVERY
         ? "Objetivo: ir a A/B"
+        : this.mapMode === MAP_CITY_RACE
+          ? "Objetivo: completar 3 pedidos y volver a base"
         : "Objetivo: conduccion libre";
     this.hud.update(this.moto, deltaMs, {
       mapLabel: this.getMapLabel(),
-      mapHint: "1: Abierto | 2: Pista | 3: Reparto",
+      mapHint: MAP_HINT_TEXT,
       objective: fallbackObjective,
       ...mapHudInfo,
     });
@@ -239,6 +275,7 @@ export default class GameScene extends Phaser.Scene {
   update(_time, delta) {
     // Map switching is immediate.
     if (this.processMapSwitchInput()) return;
+    if (this.processLevelResetInput()) return;
 
     // Cap extreme deltas from tab switching or debugger pauses.
     const cappedDelta = Math.min(delta, MAX_ACCUMULATED_DELTA_MS);
@@ -257,8 +294,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.noCatchUpFrames > 0) {
       this.noCatchUpFrames -= 1;
       this.simulationAccumulatorMs = 0;
-      this.moto.update(FIXED_STEP_MS);
-      this.map.enforcePlayer(this.moto);
+      this.runSimulationStep(FIXED_STEP_MS);
       this.updateCameraAndHud(presentationDelta);
       return;
     }
@@ -270,8 +306,7 @@ export default class GameScene extends Phaser.Scene {
       this.simulationAccumulatorMs >= FIXED_STEP_MS &&
       catchUpSteps < MAX_CATCH_UP_STEPS
     ) {
-      this.moto.update(FIXED_STEP_MS);
-      this.map.enforcePlayer(this.moto);
+      this.runSimulationStep(FIXED_STEP_MS);
       this.simulationAccumulatorMs -= FIXED_STEP_MS;
       catchUpSteps += 1;
     }
