@@ -1,13 +1,26 @@
-import DeliveryPanel from "./hud/DeliveryPanel.js";
+import CargoPanel from "./hud/CargoPanel.js";
+import RaceStatusPanel from "./hud/RaceStatusPanel.js";
 import ResultsPanel from "./hud/ResultsPanel.js";
 import TachometerPanel from "./hud/TachometerPanel.js";
+
+const HUD_LAYOUT = {
+  raceStatus: { x: 16, y: 16 },
+  cargo: { x: 16, y: 172 },
+};
 
 export default class DebugHUD {
   constructor(scene) {
     this.scene = scene;
     this.accumulator = 0;
 
-    this.deliveryPanel = new DeliveryPanel(scene, { depth: 1300 });
+    this.raceStatusPanel = new RaceStatusPanel(scene, {
+      depth: 1300,
+      ...HUD_LAYOUT.raceStatus,
+    });
+    this.cargoPanel = new CargoPanel(scene, {
+      depth: 1300,
+      ...HUD_LAYOUT.cargo,
+    });
     this.tachometerPanel = new TachometerPanel(scene, { depth: 1300 });
     this.resultsPanel = new ResultsPanel(scene, { depth: 1360 });
 
@@ -17,7 +30,8 @@ export default class DebugHUD {
   }
 
   handleResize(gameSize) {
-    this.deliveryPanel.resize(gameSize);
+    this.raceStatusPanel.resize(gameSize);
+    this.cargoPanel.resize(gameSize);
     this.tachometerPanel.resize(gameSize);
     this.resultsPanel.resize(gameSize);
   }
@@ -27,7 +41,9 @@ export default class DebugHUD {
     if (this.accumulator < 50) return;
     this.accumulator = 0;
 
-    this.deliveryPanel.update(info.delivery || {}, info.timing || {}, info.resultText || "");
+    const deliveryData = info.delivery || {};
+    this.raceStatusPanel.update(deliveryData, info.timing || {});
+    this.cargoPanel.update(deliveryData, info.resultText || "");
     this.tachometerPanel.update(moto, info.moto || {});
   }
 
@@ -41,7 +57,8 @@ export default class DebugHUD {
 
   destroy() {
     this.scene.scale.off("resize", this.handleResize, this);
-    this.deliveryPanel.destroy();
+    this.raceStatusPanel.destroy();
+    this.cargoPanel.destroy();
     this.tachometerPanel.destroy();
     this.resultsPanel.destroy();
   }
