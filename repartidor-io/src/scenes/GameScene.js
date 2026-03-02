@@ -5,6 +5,7 @@ import { CITY_RACE_LAYOUT } from "../world/race/config/cityRaceLayout.js";
 import InputSystem from "../systems/InputSystem.js";
 import DebugHUD from "../ui/DebugHUD.js";
 import MultiplayerSystem from "../network/MultiplayerSystem.js";
+import { speedPxPerSecToKmh } from "../world/race/utils/telemetry.js";
 
 const WORLD_WIDTH = 6000;
 const WORLD_HEIGHT = 6000;
@@ -38,6 +39,32 @@ const CAMERA_ZOOM_SETTINGS = {
 const CAMERA_LOOK_AHEAD_MAX = 110;
 const ZOOM_DAMPING = 8;
 const OFFSET_DAMPING = 10;
+const HIGH_SPEED_CAMERA_FEEL = {
+  triggerKmh: 205,
+  blendRangeKmh: 24,
+  maxExtraZoomOut: 0.012,
+  zoomPulseAmplitude: 0.0032,
+  offsetWaveAmplitudePx: 2,
+  offsetWaveFreqX: 0.012,
+  offsetWaveFreqY: 0.016,
+};
+const TOP_SPEED_SCREEN_FX = {
+  // SPEED FX THRESHOLD:
+  // change this to test at lower speed (for example 80 or 120).
+  triggerKmh: 205,
+  blendRangeKmh: 42,
+  baseIntensityAtTrigger: 0.58,
+  // Stronger camera punch for readability.
+  extraZoomOut: 0.05,
+  zoomPulseAmplitude: 0.0038,
+  // Controlled shake: mostly left-right, smooth but stronger.
+  shakeAmplitudePx: 18,
+  shakeFreqX: 0.012,
+  shakeFreqXSecondary: 0.019,
+  shakeSecondaryWeight: 0.32,
+  shakeFreqY: 0.028,
+  verticalDriftPx: 0.45,
+};
 const USERNAME_MAX_LENGTH = 16;
 const HUD_FILTER_REFRESH_MS = 250;
 
@@ -624,12 +651,45 @@ export default class GameScene extends Phaser.Scene {
       0,
       1
     );
+    const speedKmh = speedPxPerSecToKmh(this.moto.speedPxPerSec);
+    const highSpeedBlend = Phaser.Math.Clamp(
+      (speedKmh - HIGH_SPEED_CAMERA_FEEL.triggerKmh) /
+        HIGH_SPEED_CAMERA_FEEL.blendRangeKmh,
+      0,
+      1
+    );
+    const topSpeedBlend = Phaser.Math.Clamp(
+      (speedKmh - TOP_SPEED_SCREEN_FX.triggerKmh) /
+        TOP_SPEED_SCREEN_FX.blendRangeKmh,
+      0,
+      1
+    );
+    const topSpeedIntensity =
+      speedKmh >= TOP_SPEED_SCREEN_FX.triggerKmh
+        ? TOP_SPEED_SCREEN_FX.baseIntensityAtTrigger +
+          (1 - TOP_SPEED_SCREEN_FX.baseIntensityAtTrigger) * topSpeedBlend
+        : 0;
+    const now = this.time.now;
 
-    const targetZoom = Phaser.Math.Linear(
+    const baseTargetZoom = Phaser.Math.Linear(
       CAMERA_ZOOM_SETTINGS.baseZoom,
       CAMERA_ZOOM_SETTINGS.fastZoom,
       speedRatio
     );
+    const highSpeedZoomPulse =
+      Math.sin(now * HIGH_SPEED_CAMERA_FEEL.offsetWaveFreqX) *
+      HIGH_SPEED_CAMERA_FEEL.zoomPulseAmplitude *
+      highSpeedBlend;
+    const topSpeedZoomPulse =
+      Math.sin(now * TOP_SPEED_SCREEN_FX.shakeFreqX) *
+      TOP_SPEED_SCREEN_FX.zoomPulseAmplitude *
+      topSpeedIntensity;
+    const targetZoom =
+      baseTargetZoom -
+      HIGH_SPEED_CAMERA_FEEL.maxExtraZoomOut * highSpeedBlend -
+      TOP_SPEED_SCREEN_FX.extraZoomOut * topSpeedIntensity +
+      highSpeedZoomPulse +
+      topSpeedZoomPulse;
     const viewportWidth = cam.width || this.scale.gameSize.width || DESIGN_VIEWPORT_WIDTH;
     const viewportHeight = cam.height || this.scale.gameSize.height || DESIGN_VIEWPORT_HEIGHT;
     const viewportScale = Math.max(
@@ -660,8 +720,31 @@ export default class GameScene extends Phaser.Scene {
     }
 
     const lookAheadDistance = CAMERA_LOOK_AHEAD_MAX * speedRatio;
-    const targetOffsetX = Math.cos(this.moto.direction) * lookAheadDistance;
-    const targetOffsetY = Math.sin(this.moto.direction) * lookAheadDistance;
+    const speedWaveAmplitude =
+      HIGH_SPEED_CAMERA_FEEL.offsetWaveAmplitudePx * highSpeedBlend;
+    const speedWaveX =
+      Math.sin(now * HIGH_SPEED_CAMERA_FEEL.offsetWaveFreqX) *
+      speedWaveAmplitude;
+    const speedWaveY =
+      Math.cos(now * HIGH_SPEED_CAMERA_FEEL.offsetWaveFreqY) *
+      speedWaveAmplitude *
+      0.25;
+    const horizontalShakeWave =
+      Math.sin(now * TOP_SPEED_SCREEN_FX.shakeFreqX) +
+      Math.sin(now * TOP_SPEED_SCREEN_FX.shakeFreqXSecondary) *
+        TOP_SPEED_SCREEN_FX.shakeSecondaryWeight;
+    const topShakeX =
+      horizontalShakeWave *
+      TOP_SPEED_SCREEN_FX.shakeAmplitudePx *
+      topSpeedIntensity;
+    const topShakeY =
+      Math.sin(now * TOP_SPEED_SCREEN_FX.shakeFreqY) *
+      TOP_SPEED_SCREEN_FX.verticalDriftPx *
+      topSpeedIntensity;
+    const targetOffsetX =
+      Math.cos(this.moto.direction) * lookAheadDistance + speedWaveX + topShakeX;
+    const targetOffsetY =
+      Math.sin(this.moto.direction) * lookAheadDistance + speedWaveY + topShakeY;
     this.cameraOffsetX = damp(
       this.cameraOffsetX,
       targetOffsetX,
@@ -675,7 +758,6 @@ export default class GameScene extends Phaser.Scene {
       deltaMs
     );
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
-
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
     const finishWindowRemainingMs = this.finishWindowEndsAtMs
       ? Math.max(0, this.finishWindowEndsAtMs - Date.now())
@@ -777,3 +859,5 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 }
+
+

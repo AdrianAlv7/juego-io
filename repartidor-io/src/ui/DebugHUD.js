@@ -92,6 +92,7 @@ export default class DebugHUD {
       this.cargoPanel.flashGraphics,
       ...this.cargoPanel.textNodes,
       this.tachometerPanel.staticGraphics,
+      this.tachometerPanel.flashGraphics,
       this.tachometerPanel.needleGraphics,
       ...this.tachometerPanel.textNodes,
       this.resultsPanel.graphics,

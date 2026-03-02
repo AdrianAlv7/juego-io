@@ -45,6 +45,7 @@ export default class PlayerHealthSystem {
     if (!this.packageActive) return;
     this.lastImpact = collisionInfo?.impact || 0;
     if (!collisionInfo?.collided) return;
+    if (collisionInfo?.damageEvent === false) return;
     if (this.lastImpact <= this.minImpactForDamage) return;
     if (nowMs - this.lastDamageAtMs < this.collisionCooldownMs) return;
 

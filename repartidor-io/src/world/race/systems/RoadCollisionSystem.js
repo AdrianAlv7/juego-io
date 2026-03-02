@@ -23,8 +23,16 @@ export default class RoadCollisionSystem {
     this.repositionHalfWidth = options.repositionHalfWidth;
     this.gridCellSize = options.gridCellSize;
     this.gridRadius = options.gridRadius;
+    // Evita alternar entre "colision/no colision" cerca del borde.
+    this.contactReleaseInset = Math.max(
+      6,
+      Number(options.contactReleaseInset || 16)
+    );
+    // Mantiene al jugador apenas dentro de carretera para salir suave.
+    this.reentryInset = Math.max(2, Number(options.reentryInset || 8));
     this.grid = this.buildGrid(this.segments);
     this.allSegmentIndexes = this.segments.map((_segment, index) => index);
+    this.contactStateByMoto = new WeakMap();
   }
 
   buildGrid(segments) {
@@ -126,10 +134,22 @@ export default class RoadCollisionSystem {
 
   enforce(moto) {
     const speedKmh = speedPxPerSecToKmh(moto.speedPxPerSec);
+    const contactState = this.contactStateByMoto.get(moto) || {
+      colliding: false,
+    };
+    this.contactStateByMoto.set(moto, contactState);
+
     const closest = this.findNearestRoadPoint(moto.sprite.x, moto.sprite.y);
+    const distance = Math.sqrt(closest.distanceSq);
     if (closest.insideRoad) {
+      const releaseDistance = this.collisionHalfWidth - this.contactReleaseInset;
+      if (distance <= releaseDistance) {
+        contactState.colliding = false;
+      }
       return {
         collided: false,
+        justCollided: false,
+        damageEvent: false,
         impact: 0,
         penetration: 0,
         speedKmh,
@@ -138,8 +158,6 @@ export default class RoadCollisionSystem {
 
     const previousX = moto.sprite.x;
     const previousY = moto.sprite.y;
-    const distance = Math.sqrt(closest.distanceSq);
-
     let nx;
     let ny;
     if (distance > 0.001) {
@@ -150,10 +168,23 @@ export default class RoadCollisionSystem {
       ny = closest.tangent.x;
     }
 
-    const targetX = closest.nearest.x + nx * this.repositionHalfWidth;
-    const targetY = closest.nearest.y + ny * this.repositionHalfWidth;
+    const preferredHalfWidth = Math.max(
+      this.repositionHalfWidth,
+      this.collisionHalfWidth - this.reentryInset
+    );
+    const clampedHalfWidth = Phaser.Math.Clamp(
+      preferredHalfWidth,
+      0,
+      this.collisionHalfWidth - 1
+    );
+    const targetX = closest.nearest.x + nx * clampedHalfWidth;
+    const targetY = closest.nearest.y + ny * clampedHalfWidth;
     const penetration = Math.max(0, distance - this.collisionHalfWidth);
-    const correctionLerp = Phaser.Math.Clamp(0.2 + penetration / 220, 0.2, 0.55);
+    const justCollided = !contactState.colliding;
+    contactState.colliding = true;
+    const correctionLerp = justCollided
+      ? Phaser.Math.Clamp(0.45 + penetration / 260, 0.45, 0.7)
+      : Phaser.Math.Clamp(0.35 + penetration / 320, 0.35, 0.62);
     const correctedX = Phaser.Math.Linear(previousX, targetX, correctionLerp);
     const correctedY = Phaser.Math.Linear(previousY, targetY, correctionLerp);
 
@@ -163,19 +194,27 @@ export default class RoadCollisionSystem {
     const normalSpeed = moto.velX * nx + moto.velY * ny;
     const speedIntoWall = Math.max(0, normalSpeed);
     if (normalSpeed > 0) {
-      const cancelFactor = Phaser.Math.Clamp(0.58 + penetration / 180, 0.58, 0.9);
-      moto.velX -= normalSpeed * nx * cancelFactor;
-      moto.velY -= normalSpeed * ny * cancelFactor;
+      // Cancela por completo el componente de velocidad contra el muro.
+      moto.velX -= normalSpeed * nx;
+      moto.velY -= normalSpeed * ny;
     }
 
-    const dragFactor =
-      1 - Phaser.Math.Clamp(0.02 + penetration / 780, 0.02, 0.12);
-    moto.velX *= dragFactor;
-    moto.velY *= dragFactor;
+    // En el primer impacto corta toda inercia para que el choque sea "seco".
+    // En contacto sostenido, deja algo de movimiento tangencial para salir girando.
+    let tangentSpeed = moto.velX * closest.tangent.x + moto.velY * closest.tangent.y;
+    if (justCollided) {
+      tangentSpeed = 0;
+    } else {
+      tangentSpeed *= 0.72;
+    }
+    moto.velX = closest.tangent.x * tangentSpeed;
+    moto.velY = closest.tangent.y * tangentSpeed;
     moto.sprite.body.setVelocity(moto.velX * 60, moto.velY * 60);
 
     return {
       collided: true,
+      justCollided,
+      damageEvent: justCollided,
       impact: speedIntoWall + penetration * 0.03,
       penetration,
       speedKmh,

@@ -19,7 +19,7 @@ export default class Moto {
     // Fuerza base del freno (sube para frenar mas fuerte).
     this.brakePower = 0.17;
     // Umbral para cerrar por completo la velocidad al frenar.
-    this.brakeStopThreshold = 0.22;
+    this.brakeStopThreshold = 0.04;
     // Friccion global constante (sube para perder inercia mas rapido).
     this.drag = 0.0095;
     // Agarre lateral (baja para derrapar mas).
@@ -144,7 +144,7 @@ export default class Moto {
       if (!up && !down) {
         const speedAfterBrake = Math.hypot(this.velX, this.velY);
         if (speedAfterBrake > 0) {
-          const fullStopDecel = Phaser.Math.Linear(0.18, 0.05, speedRatio) * dt;
+          const fullStopDecel = Phaser.Math.Linear(0.075, 0.012, speedRatio) * dt;
           const nextSpeed = Math.max(0, speedAfterBrake - fullStopDecel);
           const scale = nextSpeed / speedAfterBrake;
           this.velX *= scale;

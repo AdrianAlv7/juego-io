@@ -25,10 +25,14 @@ export default class TachometerPanel {
     };
 
     this.staticGraphics = scene.add.graphics().setScrollFactor(0).setDepth(this.depth);
-    this.needleGraphics = scene.add
+    this.flashGraphics = scene.add
       .graphics()
       .setScrollFactor(0)
       .setDepth(this.depth + 1);
+    this.needleGraphics = scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(this.depth + 2);
 
     const titleStyle = {
       fontFamily: "Trebuchet MS, Verdana, sans-serif",
@@ -99,7 +103,7 @@ export default class TachometerPanel {
       this.repairText,
     ];
     this.textNodes.forEach((textNode, i) =>
-      textNode.setScrollFactor(0).setDepth(this.depth + 2 + i)
+      textNode.setScrollFactor(0).setDepth(this.depth + 3 + i)
     );
 
     this.basePositions = {
@@ -114,6 +118,10 @@ export default class TachometerPanel {
 
     this.displayRpm = 1000;
     this.lastSpeed = 0;
+    this.lastHealthPercent = 100;
+    this.shakeIntensity = 0;
+    this.flashTween = null;
+    this.shakeTween = null;
   }
 
   resize(gameSize) {
@@ -185,12 +193,12 @@ export default class TachometerPanel {
     );
 
     this.rpmLabelText.setPosition(
-      this.basePositions.rpmLabel.x + shakeX * 1.5,
-      this.basePositions.rpmLabel.y + shakeY * 1.5
+      this.basePositions.rpmLabel.x + shakeX * 1.2,
+      this.basePositions.rpmLabel.y + shakeY * 1.2
     );
     this.rpmValueText.setPosition(
-      this.basePositions.rpmVal.x + shakeX * 1.5,
-      this.basePositions.rpmVal.y + shakeY * 1.5
+      this.basePositions.rpmVal.x + shakeX * 1.2,
+      this.basePositions.rpmVal.y + shakeY * 1.2
     );
 
     this.motoHealthText.setPosition(
@@ -255,6 +263,40 @@ export default class TachometerPanel {
     });
   }
 
+  triggerDamageEffect(damageDrop = 0) {
+    const intensity = Phaser.Math.Clamp(Number(damageDrop || 0) / 9, 0, 1);
+    const flashAlpha = Phaser.Math.Linear(0.24, 0.5, intensity);
+    const nextShake = Phaser.Math.Linear(1, 3, intensity);
+    this.shakeIntensity = Math.max(this.shakeIntensity, nextShake);
+
+    this.flashTween?.stop();
+    this.shakeTween?.stop();
+
+    this.flashGraphics.clear();
+    this.flashGraphics.fillStyle(0xff3a3a, flashAlpha);
+    this.flashGraphics.fillRoundedRect(
+      this.layout.x,
+      this.layout.y,
+      this.layout.width,
+      this.layout.height,
+      { tl: 34, tr: 0, bl: 0, br: 0 }
+    );
+    this.flashGraphics.setAlpha(1);
+
+    this.flashTween = this.scene.tweens.add({
+      targets: this.flashGraphics,
+      alpha: 0,
+      duration: 320,
+      ease: "Quad.Out",
+    });
+    this.shakeTween = this.scene.tweens.add({
+      targets: this,
+      shakeIntensity: 0,
+      duration: 340,
+      ease: "Cubic.Out",
+    });
+  }
+
   update(moto, motoInfo = {}, deltaMs = 16.67) {
     if (!moto) return;
 
@@ -279,25 +321,37 @@ export default class TachometerPanel {
 
     this.lastSpeed = currentSpeed;
     const rpm = Math.round(this.displayRpm);
+    const health = Math.max(0, Math.round(motoInfo.healthPercent ?? 100));
+    const healthDrop = this.lastHealthPercent - health;
+    if (healthDrop > 0.5) {
+      this.triggerDamageEffect(healthDrop);
+    }
+    this.lastHealthPercent = health;
 
     let shakeX = 0;
     let shakeY = 0;
     if (rpm > 9500) {
-      shakeX = Phaser.Math.Between(-5, 5);
-      shakeY = Phaser.Math.Between(-5, 5);
-      this.rpmValueText.setColor("#ff0000");
-      this.rpmValueText.setScale(1.1);
+      const rpmShake = Phaser.Math.Clamp(1 + (rpm - 9500) / 2600, 1, 2.2);
+      const shakeRange = Math.max(1, Math.round(rpmShake));
+      shakeX += Phaser.Math.Between(-shakeRange, shakeRange);
+      shakeY += Phaser.Math.Between(-shakeRange, shakeRange);
+      this.rpmValueText.setColor("#ff9f7a");
+      this.rpmValueText.setScale(1.03);
     } else {
       this.rpmValueText.setColor("#ffd7a2");
       this.rpmValueText.setScale(1);
     }
 
+    if (this.shakeIntensity > 0.2) {
+      const damageShake = Math.max(1, Math.round(this.shakeIntensity));
+      shakeX += Phaser.Math.Between(-damageShake, damageShake);
+      shakeY += Phaser.Math.Between(-damageShake, damageShake);
+    }
     this.applyPositions(shakeX, shakeY);
 
     this.speedValueText.setText(String(speedKmh).padStart(3, "0"));
     this.rpmValueText.setText(String(rpm));
 
-    const health = Math.max(0, Math.round(motoInfo.healthPercent ?? 100));
     this.motoHealthText.setText(`Salud: ${health}%`);
     if (health < 30) this.motoHealthText.setColor("#ff4b4b");
     else if (health < 60) this.motoHealthText.setColor("#ffb347");
@@ -313,10 +367,10 @@ export default class TachometerPanel {
       this.repairText.setText("");
     }
 
-    this.drawDynamicNeedle(speedRatio, shakeX, shakeY, rpm);
+    this.drawDynamicNeedle(speedRatio, shakeX, shakeY, rpm > 9500);
   }
 
-  drawDynamicNeedle(ratio, shakeX, shakeY, rpm) {
+  drawDynamicNeedle(ratio, shakeX, shakeY, overRev) {
     this.needleGraphics.clear();
 
     const cx = this.layout.centerX + shakeX;
@@ -330,16 +384,19 @@ export default class TachometerPanel {
     const tipX = cx + Math.cos(angle) * len;
     const tipY = cy + Math.sin(angle) * len;
 
-    if (rpm > 9500) {
-      for (let i = 0; i < 8; i += 1) {
-        const fireX = tipX + Phaser.Math.Between(-15, 15);
-        const fireY = tipY + Phaser.Math.Between(-15, 15);
-        const colors = [0xff0000, 0xff6600, 0xffff00];
+    if (overRev) {
+      // Fuegito de sobre-RPM: breve y acotado para no saturar.
+      for (let i = 0; i < 7; i += 1) {
+        const fireX = tipX + Phaser.Math.Between(-10, 10);
+        const fireY = tipY + Phaser.Math.Between(-10, 10);
+        const colors = [0xff2f2f, 0xff7b2f, 0xffda63];
+        const radius = Phaser.Math.Between(2, 5);
+        const alpha = Phaser.Math.FloatBetween(0.35, 0.9);
         this.needleGraphics.fillStyle(
           Phaser.Utils.Array.GetRandom(colors),
-          Math.random()
+          alpha
         );
-        this.needleGraphics.fillCircle(fireX, fireY, Phaser.Math.Between(2, 6));
+        this.needleGraphics.fillCircle(fireX, fireY, radius);
       }
     }
 
@@ -357,12 +414,15 @@ export default class TachometerPanel {
 
     this.needleGraphics.fillStyle(0x0c1622, 1);
     this.needleGraphics.fillCircle(cx, cy, 14);
-    this.needleGraphics.fillStyle(rpm > 9500 ? 0xff0000 : 0xffffff, 1);
+    this.needleGraphics.fillStyle(overRev ? 0xff7a7a : 0xffffff, 1);
     this.needleGraphics.fillCircle(cx, cy, 6);
   }
 
   destroy() {
+    this.flashTween?.stop();
+    this.shakeTween?.stop();
     this.staticGraphics.destroy();
+    this.flashGraphics.destroy();
     this.needleGraphics.destroy();
     this.textNodes.forEach((textNode) => textNode.destroy());
   }

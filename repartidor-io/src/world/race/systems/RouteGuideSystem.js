@@ -36,15 +36,15 @@ export default class RouteGuideSystem {
   }
 
   drawOnScreenBeacon(x, y, pulse, color) {
-    const ringRadius = 18 + pulse * 11;
-    this.worldGraphics.lineStyle(5, color, 0.9);
+    const ringRadius = 28 + pulse * 16;
+    this.worldGraphics.lineStyle(8, color, 0.95);
     this.worldGraphics.strokeCircle(x, y, ringRadius);
-    this.worldGraphics.lineStyle(2, 0xffffff, 0.7);
-    this.worldGraphics.strokeCircle(x, y, ringRadius + 7);
-    this.worldGraphics.fillStyle(color, 0.24);
-    this.worldGraphics.fillCircle(x, y, 18 + pulse * 6);
-    this.worldGraphics.fillStyle(color, 0.98);
-    this.worldGraphics.fillCircle(x, y, 10 + pulse * 3);
+    this.worldGraphics.lineStyle(3.5, 0xffffff, 0.82);
+    this.worldGraphics.strokeCircle(x, y, ringRadius + 12);
+    this.worldGraphics.fillStyle(color, 0.3);
+    this.worldGraphics.fillCircle(x, y, 28 + pulse * 10);
+    this.worldGraphics.fillStyle(color, 1);
+    this.worldGraphics.fillCircle(x, y, 14 + pulse * 5);
   }
 
   drawOffScreenIndicator(target, cam, pulse, color) {
@@ -59,7 +59,7 @@ export default class RouteGuideSystem {
     const dy = screenTargetY - centerY;
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
 
-    const edgePadding = 56;
+    const edgePadding = 36;
     const safeHalfWidth = centerX - edgePadding;
     const safeHalfHeight = centerY - edgePadding;
     const tx = dx === 0 ? Number.POSITIVE_INFINITY : safeHalfWidth / Math.abs(dx);
@@ -70,20 +70,51 @@ export default class RouteGuideSystem {
     const markerY = centerY + dy * t;
     const angle = Math.atan2(dy, dx);
 
-    const arrowSize = 24 + pulse * 5;
-    const backX = markerX - Math.cos(angle) * arrowSize;
-    const backY = markerY - Math.sin(angle) * arrowSize;
-    const sideOffset = arrowSize * 0.52;
-    const leftX = backX + Math.cos(angle + Math.PI / 2) * sideOffset;
-    const leftY = backY + Math.sin(angle + Math.PI / 2) * sideOffset;
-    const rightX = backX + Math.cos(angle - Math.PI / 2) * sideOffset;
-    const rightY = backY + Math.sin(angle - Math.PI / 2) * sideOffset;
+    const now = this.scene.time.now;
+    const wobble = Math.sin(now * 0.01) * 0.02;
+    const markerJitter = 0.7 + pulse * 1.1;
+    const animatedMarkerX = markerX + Math.cos(now * 0.014 + angle) * markerJitter;
+    const animatedMarkerY = markerY + Math.sin(now * 0.014 + angle) * markerJitter;
+    const arrowSize = 40 + pulse * 11;
+    const arrowAngle = angle + wobble;
+    const backX = animatedMarkerX - Math.cos(arrowAngle) * arrowSize;
+    const backY = animatedMarkerY - Math.sin(arrowAngle) * arrowSize;
+    const sideOffset = arrowSize * 0.6;
+    const leftX = backX + Math.cos(arrowAngle + Math.PI / 2) * sideOffset;
+    const leftY = backY + Math.sin(arrowAngle + Math.PI / 2) * sideOffset;
+    const rightX = backX + Math.cos(arrowAngle - Math.PI / 2) * sideOffset;
+    const rightY = backY + Math.sin(arrowAngle - Math.PI / 2) * sideOffset;
 
-    this.uiGraphics.fillStyle(color, 0.22);
-    this.uiGraphics.fillCircle(markerX, markerY, 28 + pulse * 9);
-    this.uiGraphics.fillStyle(color, 0.98);
-    this.uiGraphics.fillTriangle(markerX, markerY, leftX, leftY, rightX, rightY);
-    this.uiGraphics.lineStyle(2.5, 0xffffff, 0.92);
-    this.uiGraphics.strokeTriangle(markerX, markerY, leftX, leftY, rightX, rightY);
+    this.uiGraphics.fillStyle(color, 0.18);
+    this.uiGraphics.fillCircle(animatedMarkerX, animatedMarkerY, 50 + pulse * 18);
+    this.uiGraphics.fillStyle(color, 0.28);
+    this.uiGraphics.fillCircle(animatedMarkerX, animatedMarkerY, 34 + pulse * 12);
+    this.uiGraphics.fillStyle(color, 1);
+    this.uiGraphics.fillTriangle(
+      animatedMarkerX,
+      animatedMarkerY,
+      leftX,
+      leftY,
+      rightX,
+      rightY
+    );
+    this.uiGraphics.lineStyle(3.8, 0xffffff, 0.96);
+    this.uiGraphics.strokeTriangle(
+      animatedMarkerX,
+      animatedMarkerY,
+      leftX,
+      leftY,
+      rightX,
+      rightY
+    );
+
+    const tailLen = arrowSize * 1.25;
+    const tailX = animatedMarkerX - Math.cos(arrowAngle) * tailLen;
+    const tailY = animatedMarkerY - Math.sin(arrowAngle) * tailLen;
+    this.uiGraphics.lineStyle(4.5, color, 0.8);
+    this.uiGraphics.beginPath();
+    this.uiGraphics.moveTo(animatedMarkerX, animatedMarkerY);
+    this.uiGraphics.lineTo(tailX, tailY);
+    this.uiGraphics.strokePath();
   }
 }

@@ -70,6 +70,7 @@ export default class MotoHealthSystem {
   applyCollision(collisionInfo, nowMs) {
     if (this.isRepairing(nowMs)) return;
     if (!collisionInfo?.collided) return;
+    if (collisionInfo?.damageEvent === false) return;
 
     const impact = Number(collisionInfo.impact || 0);
     if (impact <= this.minImpactForDamage) return;
