@@ -18,6 +18,8 @@ export default class Moto {
     this.maxSpeed = 40;
     // Fuerza base del freno (sube para frenar mas fuerte).
     this.brakePower = 0.17;
+    // Umbral para cerrar por completo la velocidad al frenar.
+    this.brakeStopThreshold = 0.22;
     // Friccion global constante (sube para perder inercia mas rapido).
     this.drag = 0.0095;
     // Agarre lateral (baja para derrapar mas).
@@ -85,8 +87,9 @@ export default class Moto {
 
     // Activa derrape solo a cierta velocidad minima.
     this.isDrifting = drift && speed > 1.2;
-    // Activa freno si hay movimiento minimo.
-    this.isBraking = brake && speed > 0.15;
+    // Mantiene estado de freno mientras la tecla este presionada
+    // para conservar feedback visual continuo.
+    this.isBraking = brake;
 
     // Aceleracion frontal.
     if (up) {
@@ -135,6 +138,26 @@ export default class Moto {
       this.velX *= brakeFactor;
       // Aplica frenado en Y.
       this.velY *= brakeFactor;
+
+      // Frenado de cierre: evita que quede arrastre infinito en baja velocidad.
+      // Solo aplica fuerte si NO viene acelerando ni metiendo reversa.
+      if (!up && !down) {
+        const speedAfterBrake = Math.hypot(this.velX, this.velY);
+        if (speedAfterBrake > 0) {
+          const fullStopDecel = Phaser.Math.Linear(0.18, 0.05, speedRatio) * dt;
+          const nextSpeed = Math.max(0, speedAfterBrake - fullStopDecel);
+          const scale = nextSpeed / speedAfterBrake;
+          this.velX *= scale;
+          this.velY *= scale;
+        }
+
+        // Cierre total al llegar al umbral minimo.
+        const speedAfterFullBrake = Math.hypot(this.velX, this.velY);
+        if (speedAfterFullBrake <= this.brakeStopThreshold) {
+          this.velX = 0;
+          this.velY = 0;
+        }
+      }
     }
 
     // Giro depende de velocidad (sin velocidad no gira casi nada).

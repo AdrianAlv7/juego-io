@@ -8,6 +8,8 @@ import MultiplayerSystem from "../network/MultiplayerSystem.js";
 
 const WORLD_WIDTH = 6000;
 const WORLD_HEIGHT = 6000;
+const DESIGN_VIEWPORT_WIDTH = 1920;
+const DESIGN_VIEWPORT_HEIGHT = 1080;
 
 const SIMULATION_FPS = 60;
 const FIXED_STEP_MS = 1000 / SIMULATION_FPS;
@@ -18,12 +20,26 @@ const DELTA_SPIKE_RESET_MS = 90;
 const RESUME_STABILIZE_FRAMES = 6;
 const STARTUP_STABILIZE_FRAMES = 8;
 
-const CAMERA_BASE_ZOOM = 0.7;
-const CAMERA_FAST_ZOOM = 0.5;
+// ================= CAMARA: DISTANCIA / FOV =================
+// Menor zoom = camara mas alejada.
+// Ajusta estos valores para encontrar el punto optimo.
+const CAMERA_ZOOM_SETTINGS = {
+  baseZoom: 0.5,
+  fastZoom: 0.4,
+  // 1 = mantiene FOV estable contra cambios de viewport/browser zoom.
+  // Baja a 0.8 o 0.6 si quieres menos compensacion.
+  viewportCompensation: 1,
+  // Zoom del HUD para darle vida sin jalarlo demasiado al centro.
+  // Mantenerlo cerca de 1 reduce desplazamiento visual en las orillas.
+  hudBaseZoom: 1,
+  hudFastZoom: 0.95,
+  hudDamping: 12,
+};
 const CAMERA_LOOK_AHEAD_MAX = 110;
 const ZOOM_DAMPING = 8;
 const OFFSET_DAMPING = 10;
 const USERNAME_MAX_LENGTH = 16;
+const HUD_FILTER_REFRESH_MS = 250;
 
 function damp(current, target, dampingPerSecond, deltaMs) {
   const t = 1 - Math.exp((-dampingPerSecond * deltaMs) / 1000);
@@ -37,6 +53,7 @@ export default class GameScene extends Phaser.Scene {
     this.map = null;
     this.moto = null;
     this.hud = null;
+    this.hudCamera = null;
     this.playersGroup = null;
     this.multiplayer = null;
 
@@ -48,6 +65,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.cameraOffsetX = 0;
     this.cameraOffsetY = 0;
+    this.hudFilterAccumulatorMs = 0;
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
 
@@ -101,6 +119,10 @@ export default class GameScene extends Phaser.Scene {
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
       this.hud?.destroy();
       this.hud = null;
+      if (this.hudCamera) {
+        this.cameras.remove(this.hudCamera);
+        this.hudCamera = null;
+      }
       this.multiplayer?.destroy();
       this.destroyNameEntryUi();
     });
@@ -314,6 +336,9 @@ export default class GameScene extends Phaser.Scene {
         Math.max(140, gameSize.width * 0.16),
         Math.max(100, gameSize.height * 0.14)
       );
+      if (this.hudCamera) {
+        this.hudCamera.setViewport(0, 0, gameSize.width, gameSize.height);
+      }
     }
   }
 
@@ -409,11 +434,13 @@ export default class GameScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     cam.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    cam.setZoom(CAMERA_BASE_ZOOM);
+    cam.setZoom(CAMERA_ZOOM_SETTINGS.baseZoom);
     cam.startFollow(this.moto.sprite, false, 1, 1);
     this.handleResize(this.scale.gameSize);
 
     this.hud = new DebugHUD(this);
+    this.ensureHudCamera();
+    this.applyHudCameraFilters();
 
     this.matchRunning = true;
     this.matchEnded = false;
@@ -483,6 +510,35 @@ export default class GameScene extends Phaser.Scene {
     this.scene.restart();
   }
 
+  ensureHudCamera() {
+    const { width, height } = this.scale.gameSize;
+    if (!this.hudCamera) {
+      this.hudCamera = this.cameras.add(0, 0, width, height);
+      this.hudCamera.setName("hud-camera");
+    } else {
+      this.hudCamera.setViewport(0, 0, width, height);
+    }
+
+    this.hudCamera.setScroll(0, 0);
+    this.hudCamera.setZoom(CAMERA_ZOOM_SETTINGS.hudBaseZoom);
+  }
+
+  applyHudCameraFilters() {
+    if (!this.hud || !this.hudCamera) return;
+
+    const mainCam = this.cameras.main;
+    const hudObjects = new Set(this.hud.getHudObjects?.() || []);
+
+    this.children.list.forEach((gameObject) => {
+      if (!gameObject) return;
+      if (hudObjects.has(gameObject) || gameObject.__isHudObject) {
+        mainCam.ignore(gameObject);
+      } else {
+        this.hudCamera.ignore(gameObject);
+      }
+    });
+  }
+
   resetToLobby() {
     if (this.moto) {
       this.moto.sprite.destroy();
@@ -491,6 +547,10 @@ export default class GameScene extends Phaser.Scene {
     if (this.hud) {
       this.hud.destroy();
       this.hud = null;
+    }
+    if (this.hudCamera) {
+      this.cameras.remove(this.hudCamera);
+      this.hudCamera = null;
     }
 
     this.map = null;
@@ -502,6 +562,7 @@ export default class GameScene extends Phaser.Scene {
     this.hud?.hideResults();
     this.cameraOffsetX = 0;
     this.cameraOffsetY = 0;
+    this.hudFilterAccumulatorMs = 0;
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
 
@@ -565,11 +626,38 @@ export default class GameScene extends Phaser.Scene {
     );
 
     const targetZoom = Phaser.Math.Linear(
-      CAMERA_BASE_ZOOM,
-      CAMERA_FAST_ZOOM,
+      CAMERA_ZOOM_SETTINGS.baseZoom,
+      CAMERA_ZOOM_SETTINGS.fastZoom,
       speedRatio
     );
-    cam.setZoom(damp(cam.zoom, targetZoom, ZOOM_DAMPING, deltaMs));
+    const viewportWidth = cam.width || this.scale.gameSize.width || DESIGN_VIEWPORT_WIDTH;
+    const viewportHeight = cam.height || this.scale.gameSize.height || DESIGN_VIEWPORT_HEIGHT;
+    const viewportScale = Math.max(
+      viewportWidth / DESIGN_VIEWPORT_WIDTH,
+      viewportHeight / DESIGN_VIEWPORT_HEIGHT
+    );
+    const compensatedScale = Phaser.Math.Linear(
+      1,
+      viewportScale,
+      CAMERA_ZOOM_SETTINGS.viewportCompensation
+    );
+    const compensatedZoom = targetZoom * compensatedScale;
+    cam.setZoom(damp(cam.zoom, compensatedZoom, ZOOM_DAMPING, deltaMs));
+    if (this.hudCamera) {
+      const hudTargetZoom = Phaser.Math.Linear(
+        CAMERA_ZOOM_SETTINGS.hudBaseZoom,
+        CAMERA_ZOOM_SETTINGS.hudFastZoom,
+        speedRatio
+      );
+      this.hudCamera.setZoom(
+        damp(
+          this.hudCamera.zoom,
+          hudTargetZoom,
+          CAMERA_ZOOM_SETTINGS.hudDamping,
+          deltaMs
+        )
+      );
+    }
 
     const lookAheadDistance = CAMERA_LOOK_AHEAD_MAX * speedRatio;
     const targetOffsetX = Math.cos(this.moto.direction) * lookAheadDistance;
@@ -629,6 +717,12 @@ export default class GameScene extends Phaser.Scene {
     this.multiplayer?.update(delta);
 
     if (!this.matchRunning) return;
+
+    this.hudFilterAccumulatorMs += delta;
+    if (this.hudFilterAccumulatorMs >= HUD_FILTER_REFRESH_MS) {
+      this.hudFilterAccumulatorMs = 0;
+      this.applyHudCameraFilters();
+    }
 
     if (
       this.matchEnded &&

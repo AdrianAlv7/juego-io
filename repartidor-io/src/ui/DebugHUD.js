@@ -3,26 +3,34 @@ import RaceStatusPanel from "./hud/RaceStatusPanel.js";
 import ResultsPanel from "./hud/ResultsPanel.js";
 import TachometerPanel from "./hud/TachometerPanel.js";
 
-const HUD_LAYOUT = {
-  raceStatus: { x: 16, y: 16 },
-  cargo: { x: 16, y: 172 },
-};
+const HUD_MARGIN = 0;
 
 export default class DebugHUD {
   constructor(scene) {
     this.scene = scene;
     this.accumulator = 0;
 
+    // Variables de estado para detectar eventos
+    this.lastOrderCount = 0;
+    this.lastPackageHealth = 100;
+
     this.raceStatusPanel = new RaceStatusPanel(scene, {
       depth: 1300,
-      ...HUD_LAYOUT.raceStatus,
+      margin: HUD_MARGIN,
     });
     this.cargoPanel = new CargoPanel(scene, {
-      depth: 1300,
-      ...HUD_LAYOUT.cargo,
+      depth: 1290,
+      margin: HUD_MARGIN,
     });
-    this.tachometerPanel = new TachometerPanel(scene, { depth: 1300 });
+    this.tachometerPanel = new TachometerPanel(scene, {
+      depth: 1300,
+      margin: HUD_MARGIN,
+    });
     this.resultsPanel = new ResultsPanel(scene, { depth: 1360 });
+    this.hudObjects = this.collectHudObjects();
+    this.hudObjects.forEach((gameObject) => {
+      gameObject.__isHudObject = true;
+    });
 
     this.handleResize = this.handleResize.bind(this);
     scene.scale.on("resize", this.handleResize, this);
@@ -37,14 +45,34 @@ export default class DebugHUD {
   }
 
   update(moto, delta, info = {}) {
+    this.tachometerPanel.update(moto, info.moto || {}, delta);
+
     this.accumulator += delta;
     if (this.accumulator < 50) return;
     this.accumulator = 0;
 
     const deliveryData = info.delivery || {};
+    
+    // --- LÓGICA DE DETECCIÓN DE EVENTOS ---
+    const currentOrderCount = Number(deliveryData.currentOrder || 0);
+    const currentPackageHealth = Number(deliveryData.packageHealthPercent || 100);
+
+    // ¿Entregó o agarró un pedido nuevo?
+    if (currentOrderCount > this.lastOrderCount) {
+      this.raceStatusPanel.triggerSuccessFlash();
+    }
+    
+    // ¿Recibió daño severo? (Perdió más de 5% de vida de golpe)
+    if (currentPackageHealth < this.lastPackageHealth - 5) {
+      this.cargoPanel.triggerDamageEffect();
+    }
+
+    this.lastOrderCount = currentOrderCount;
+    this.lastPackageHealth = currentPackageHealth;
+    // --------------------------------------
+
     this.raceStatusPanel.update(deliveryData, info.timing || {});
-    this.cargoPanel.update(deliveryData, info.resultText || "");
-    this.tachometerPanel.update(moto, info.moto || {});
+    this.cargoPanel.update(deliveryData);
   }
 
   showResults(results = [], winnerId = null, selfId = null) {
@@ -55,8 +83,33 @@ export default class DebugHUD {
     this.resultsPanel.hide();
   }
 
+  collectHudObjects() {
+    return [
+      this.raceStatusPanel.graphics,
+      this.raceStatusPanel.flashGraphics,
+      ...this.raceStatusPanel.textNodes,
+      this.cargoPanel.graphics,
+      this.cargoPanel.flashGraphics,
+      ...this.cargoPanel.textNodes,
+      this.tachometerPanel.staticGraphics,
+      this.tachometerPanel.needleGraphics,
+      ...this.tachometerPanel.textNodes,
+      this.resultsPanel.graphics,
+      this.resultsPanel.titleText,
+      this.resultsPanel.tableText,
+    ].filter(Boolean);
+  }
+
+  getHudObjects() {
+    return this.hudObjects;
+  }
+
   destroy() {
     this.scene.scale.off("resize", this.handleResize, this);
+    this.hudObjects.forEach((gameObject) => {
+      gameObject.__isHudObject = false;
+    });
+    this.hudObjects = [];
     this.raceStatusPanel.destroy();
     this.cargoPanel.destroy();
     this.tachometerPanel.destroy();

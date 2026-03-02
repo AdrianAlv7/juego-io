@@ -57,10 +57,11 @@ const gameConfig = {
       gravity: { y: 0 },
     },
   },
-  // Escala manteniendo la resolucion logica fija y mismo FOV para todos.
+  // Escala al tamano real del viewport para evitar barras laterales (letterbox)
+  // y permitir que el HUD llegue a las orillas visibles de la pantalla.
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    mode: Phaser.Scale.RESIZE,
+    autoCenter: Phaser.Scale.NO_CENTER,
   },
   // Escena principal del juego.
   scene: [GameScene],
