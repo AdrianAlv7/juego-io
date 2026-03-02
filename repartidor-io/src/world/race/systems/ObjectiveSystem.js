@@ -24,6 +24,7 @@ export default class ObjectiveSystem {
     this.scene = scene;
     this.basePoint = options.basePoint;
     this.orders = options.orders;
+    this.totalOrders = this.orders.length;
     this.radii = options.radii;
     this.serviceTimeMs = options.serviceTimeMs;
     this.defaultEventDurationMs = options.defaultEventDurationMs;
@@ -50,6 +51,53 @@ export default class ObjectiveSystem {
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       scene.scale.off("resize", this.handleResize, this);
     });
+  }
+
+  getOrderProgressData(moto) {
+    if (this.finished) {
+      return {
+        currentOrder: this.totalOrders,
+        totalOrders: this.totalOrders,
+        destinationLabel: "BASE completada",
+        phaseLabel: "Finalizada",
+        distancePx: 0,
+      };
+    }
+
+    const active = this.getCurrentObjective();
+    if (!active) {
+      return {
+        currentOrder: 0,
+        totalOrders: this.totalOrders,
+        destinationLabel: "N/A",
+        phaseLabel: "Sin objetivo",
+        distancePx: 0,
+      };
+    }
+
+    const currentOrder = active.orderNumber ?? this.totalOrders;
+    let phaseLabel = "Regresar";
+    if (active.kind === "pickup") phaseLabel = "Recoger";
+    if (active.kind === "dropoff") phaseLabel = "Entregar";
+
+    const distancePx = moto
+      ? Math.round(
+          Phaser.Math.Distance.Between(
+            moto.sprite.x,
+            moto.sprite.y,
+            active.x,
+            active.y
+          )
+        )
+      : 0;
+
+    return {
+      currentOrder,
+      totalOrders: this.totalOrders,
+      destinationLabel: active.label,
+      phaseLabel,
+      distancePx,
+    };
   }
 
   createSequence() {
@@ -221,7 +269,7 @@ export default class ObjectiveSystem {
       this.finishTimeMs = this.scene.time.now;
       this.finishBanner.setVisible(true);
       this.showEventMessage(
-        "Carrera finalizada. Presiona R para reiniciar",
+        "Ruta completada. Esperando resultado final...",
         "#a7ffb8",
         null
       );

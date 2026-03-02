@@ -73,4 +73,11 @@ export const CITY_RACE_TUNING = {
   maxHealth: 100,
   minImpactForDamage: 0.9,
   collisionDamageFactor: 0.14,
+  collisionDamageCooldownMs: 180,
+  // Ajusta aqui la vida de la moto para pruebas de balance.
+  motoMaxHealth: 210,
+  motoMinImpactForDamage: 0.75,
+  motoCollisionDamageFactor: 0.09,
+  // Ajusta aqui la duracion de reparacion cuando la moto queda en 0.
+  motoRepairDurationMs: 1800,
 };

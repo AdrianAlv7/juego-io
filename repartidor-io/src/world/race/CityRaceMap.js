@@ -6,6 +6,8 @@ import ObjectiveSystem from "./systems/ObjectiveSystem.js";
 import RouteGuideSystem from "./systems/RouteGuideSystem.js";
 import RoadCollisionSystem from "./systems/RoadCollisionSystem.js";
 import PlayerHealthSystem from "./systems/PlayerHealthSystem.js";
+import MotoHealthSystem from "./systems/MotoHealthSystem.js";
+import { formatKm } from "./utils/telemetry.js";
 
 export default class CityRaceMap {
   constructor(scene, options = {}) {
@@ -65,8 +67,18 @@ export default class CityRaceMap {
       maxHealth: CITY_RACE_TUNING.maxHealth,
       minImpactForDamage: CITY_RACE_TUNING.minImpactForDamage,
       collisionDamageFactor: CITY_RACE_TUNING.collisionDamageFactor,
+      collisionCooldownMs: CITY_RACE_TUNING.collisionDamageCooldownMs,
+      totalOrders: CITY_RACE_LAYOUT.orders.length,
+    });
+    this.motoHealth = new MotoHealthSystem({
+      maxHealth: CITY_RACE_TUNING.motoMaxHealth,
+      minImpactForDamage: CITY_RACE_TUNING.motoMinImpactForDamage,
+      collisionDamageFactor: CITY_RACE_TUNING.motoCollisionDamageFactor,
+      collisionCooldownMs: CITY_RACE_TUNING.collisionDamageCooldownMs,
+      repairDurationMs: CITY_RACE_TUNING.motoRepairDurationMs,
     });
     this.lastHasPackage = false;
+    this.raceStartedAtMs = null;
   }
 
   createRoadCurves() {
@@ -108,8 +120,13 @@ export default class CityRaceMap {
   enforcePlayer(moto) {
     this.countdown.update();
     const locked = this.countdown.isLocked();
+    const nowMs = this.scene.time.now;
+    const repairing = this.motoHealth.isRepairing(nowMs);
+    if (!locked && !repairing && this.raceStartedAtMs === null) {
+      this.raceStartedAtMs = this.scene.time.now;
+    }
 
-    this.objectives.update(moto, locked);
+    this.objectives.update(moto, locked || repairing);
     this.guide.update(
       moto,
       this.objectives.getCurrentObjective(),
@@ -120,22 +137,60 @@ export default class CityRaceMap {
     if (riderState.hasPackage && !this.lastHasPackage) {
       this.health.startPackage();
     } else if (!riderState.hasPackage && this.lastHasPackage) {
+      this.health.completePackageDelivery();
       this.health.clearPackage();
     }
     this.lastHasPackage = riderState.hasPackage;
 
     const collisionInfo = this.collision.enforce(moto);
-    this.health.applyCollision(collisionInfo);
+    this.health.applyCollision(collisionInfo, nowMs);
+    this.motoHealth.applyCollision(collisionInfo, nowMs);
+    this.motoHealth.update(nowMs, moto);
   }
 
   getHudInfo(moto) {
-    const locked = this.countdown.isLocked();
+    const orderData = this.objectives.getOrderProgressData(moto);
+    const healthData = this.health.getHudData();
+
+    let destination = `${orderData.phaseLabel}: ${orderData.destinationLabel}`;
+    if (orderData.distancePx > 0) {
+      destination = `${destination} (${formatKm(orderData.distancePx)})`;
+    }
+
     return {
-      objective: this.objectives.getObjectiveText(locked, this.countdown.getLabel()),
-      nextStop: this.objectives.getNextStopText(moto),
-      cargo: this.objectives.getCargoHudText(),
-      health: this.health.getHudText(),
-      mapHint: "1: Abierto | 2: Pista | 3: Reparto | 4: Carrera | R: Reiniciar",
+      delivery: {
+        currentOrder: orderData.currentOrder,
+        totalOrders: orderData.totalOrders,
+        destination,
+        packageHealthPercent: healthData.packageHealthPercent,
+        packageHealthColor: healthData.packageHealthColor,
+        qualityPercent: healthData.qualityPercent,
+        qualityColor: healthData.qualityColor,
+        deliveredCount: healthData.deliveredCount,
+      },
+      timing: {
+        elapsedMs: this.getElapsedRaceTimeMs(),
+        countdownLabel: this.countdown.getLabel(),
+      },
+      moto: this.motoHealth.getHudData(this.scene.time.now),
+    };
+  }
+
+  getElapsedRaceTimeMs() {
+    if (this.raceStartedAtMs === null) return 0;
+    const nowMs = this.scene.time.now;
+    const finishMs = this.objectives.finishTimeMs || nowMs;
+    const endMs = this.objectives.isFinished() ? finishMs : nowMs;
+    return Math.max(0, endMs - this.raceStartedAtMs);
+  }
+
+  getMatchStats() {
+    const healthData = this.health.getHudData();
+    return {
+      elapsedMs: this.getElapsedRaceTimeMs(),
+      qualityPercent: healthData.qualityPercent,
+      deliveredCount: healthData.deliveredCount,
+      totalOrders: healthData.totalOrders,
     };
   }
 
@@ -149,5 +204,9 @@ export default class CityRaceMap {
 
   isMatchFinished() {
     return this.objectives.isFinished();
+  }
+
+  isRiderRepairing() {
+    return this.motoHealth.isRepairing(this.scene.time.now);
   }
 }

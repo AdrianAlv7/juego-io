@@ -14,27 +14,40 @@ export default class RouteGuideSystem {
     this.uiGraphics.clear();
     if (disabled || !moto || !target) return;
 
+    const distance = Math.hypot(target.x - moto.sprite.x, target.y - moto.sprite.y);
+    const color = this.getDistanceColor(distance);
     const cam = this.scene.cameras.main;
     const inView = cam.worldView.contains(target.x, target.y);
     const pulse = 0.62 + 0.38 * Math.sin(this.scene.time.now * 0.008);
 
     if (inView) {
-      this.drawOnScreenBeacon(target.x, target.y, pulse);
+      this.drawOnScreenBeacon(target.x, target.y, pulse, color);
       return;
     }
 
-    this.drawOffScreenIndicator(target, cam, pulse);
+    this.drawOffScreenIndicator(target, cam, pulse, color);
   }
 
-  drawOnScreenBeacon(x, y, pulse) {
-    const ringRadius = 18 + pulse * 10;
-    this.worldGraphics.lineStyle(4, 0x57cc99, 0.85);
+  getDistanceColor(distancePx) {
+    if (distancePx <= 900) return 0x52d273;
+    if (distancePx <= 1800) return 0xffd83d;
+    if (distancePx <= 3200) return 0xff9f1c;
+    return 0xff4d4d;
+  }
+
+  drawOnScreenBeacon(x, y, pulse, color) {
+    const ringRadius = 18 + pulse * 11;
+    this.worldGraphics.lineStyle(5, color, 0.9);
     this.worldGraphics.strokeCircle(x, y, ringRadius);
-    this.worldGraphics.fillStyle(0x57cc99, 0.95);
-    this.worldGraphics.fillCircle(x, y, 8 + pulse * 3);
+    this.worldGraphics.lineStyle(2, 0xffffff, 0.7);
+    this.worldGraphics.strokeCircle(x, y, ringRadius + 7);
+    this.worldGraphics.fillStyle(color, 0.24);
+    this.worldGraphics.fillCircle(x, y, 18 + pulse * 6);
+    this.worldGraphics.fillStyle(color, 0.98);
+    this.worldGraphics.fillCircle(x, y, 10 + pulse * 3);
   }
 
-  drawOffScreenIndicator(target, cam, pulse) {
+  drawOffScreenIndicator(target, cam, pulse, color) {
     const width = this.scene.scale.gameSize.width;
     const height = this.scene.scale.gameSize.height;
     const centerX = width / 2;
@@ -57,7 +70,7 @@ export default class RouteGuideSystem {
     const markerY = centerY + dy * t;
     const angle = Math.atan2(dy, dx);
 
-    const arrowSize = 22 + pulse * 4;
+    const arrowSize = 24 + pulse * 5;
     const backX = markerX - Math.cos(angle) * arrowSize;
     const backY = markerY - Math.sin(angle) * arrowSize;
     const sideOffset = arrowSize * 0.52;
@@ -66,11 +79,11 @@ export default class RouteGuideSystem {
     const rightX = backX + Math.cos(angle - Math.PI / 2) * sideOffset;
     const rightY = backY + Math.sin(angle - Math.PI / 2) * sideOffset;
 
-    this.uiGraphics.fillStyle(0x57cc99, 0.24);
-    this.uiGraphics.fillCircle(markerX, markerY, 24 + pulse * 8);
-    this.uiGraphics.fillStyle(0x57cc99, 0.98);
+    this.uiGraphics.fillStyle(color, 0.22);
+    this.uiGraphics.fillCircle(markerX, markerY, 28 + pulse * 9);
+    this.uiGraphics.fillStyle(color, 0.98);
     this.uiGraphics.fillTriangle(markerX, markerY, leftX, leftY, rightX, rightY);
-    this.uiGraphics.lineStyle(2, 0xffffff, 0.9);
+    this.uiGraphics.lineStyle(2.5, 0xffffff, 0.92);
     this.uiGraphics.strokeTriangle(markerX, markerY, leftX, leftY, rightX, rightY);
   }
 }

@@ -5,6 +5,8 @@ const PORT = Number(process.env.PORT || 3000);
 const MAX_PLAYERS = 4;
 const SPAWN_GAP = 90;
 const SPAWN_COLUMNS = 2;
+const MATCH_PRESTART_MS = 3000;
+const FINISH_WINDOW_MS = 20000;
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -20,6 +22,10 @@ const room = {
   started: false,
   finished: false,
   baseSpawn: null,
+  matchStartedAtMs: 0,
+  finishReports: new Map(),
+  finishWindowEndsAtMs: 0,
+  finishWindowTimer: null,
 };
 
 function toFiniteNumber(value, fallback) {
@@ -33,6 +39,18 @@ function sanitizeState(payload = {}, fallback = {}) {
     y: toFiniteNumber(payload.y, fallback.y ?? 0),
     angle: toFiniteNumber(payload.angle, fallback.angle ?? 0),
   };
+}
+
+function sanitizeQualityPercent(value, fallback = 0) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
+
+function sanitizeElapsedMs(value, fallback = 0) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(0, Math.round(raw));
 }
 
 function getLobbyPlayers() {
@@ -53,9 +71,16 @@ function emitLobbyState() {
 }
 
 function resetMatchState() {
+  if (room.finishWindowTimer) {
+    clearTimeout(room.finishWindowTimer);
+    room.finishWindowTimer = null;
+  }
   room.started = false;
   room.finished = false;
   room.baseSpawn = null;
+  room.matchStartedAtMs = 0;
+  room.finishReports.clear();
+  room.finishWindowEndsAtMs = 0;
   for (const player of room.players.values()) {
     player.state = { x: 0, y: 0, angle: 0 };
   }
@@ -84,6 +109,116 @@ function buildPlayersPayload() {
     result[id] = player.state;
   }
   return result;
+}
+
+function scoreAndRankResults(results = [], timeCapMs = 0) {
+  const finishers = results.filter((entry) => entry.didFinish);
+  const fastestMs = finishers.length
+    ? Math.min(...finishers.map((entry) => entry.elapsedMs))
+    : Math.max(0, timeCapMs);
+  const safeCapMs = Math.max(fastestMs + 1, Math.round(timeCapMs));
+  const rangeMs = Math.max(1, safeCapMs - fastestMs);
+
+  const withScores = results.map((entry) => {
+    const qualityScore = entry.didFinish ? entry.qualityPercent : 0;
+    const timeScore = entry.didFinish
+      ? Math.round(
+          Math.max(0, ((safeCapMs - entry.elapsedMs) / rangeMs) * 100)
+        )
+      : 0;
+    const score = qualityScore + timeScore;
+
+    return {
+      ...entry,
+      qualityScore,
+      timeScore,
+      score,
+    };
+  });
+
+  return withScores.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.qualityPercent !== a.qualityPercent) {
+      return b.qualityPercent - a.qualityPercent;
+    }
+    if (a.elapsedMs !== b.elapsedMs) return a.elapsedMs - b.elapsedMs;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function getElapsedSinceStartMs() {
+  if (!room.matchStartedAtMs) return 0;
+  return Math.max(0, Date.now() - room.matchStartedAtMs - MATCH_PRESTART_MS);
+}
+
+function maybeFinalizeMatch(reason = "all_finished") {
+  if (!room.started || room.finished) return false;
+  if (room.players.size === 0) return false;
+
+  const everyoneFinished = room.finishReports.size >= room.players.size;
+  const timeoutReached =
+    reason === "timeout" ||
+    (room.finishWindowEndsAtMs > 0 && Date.now() >= room.finishWindowEndsAtMs);
+
+  if (!everyoneFinished && !timeoutReached) return false;
+
+  if (room.finishWindowTimer) {
+    clearTimeout(room.finishWindowTimer);
+    room.finishWindowTimer = null;
+  }
+
+  const currentReports = Array.from(room.finishReports.values());
+  const timeCapMs = timeoutReached
+    ? Math.max(0, room.finishWindowEndsAtMs - room.matchStartedAtMs - MATCH_PRESTART_MS)
+    : currentReports.length
+      ? Math.max(...currentReports.map((entry) => entry.elapsedMs))
+      : getElapsedSinceStartMs();
+
+  const resultsById = new Map(room.finishReports);
+  if (timeoutReached) {
+    for (const [id, player] of room.players.entries()) {
+      if (resultsById.has(id)) continue;
+      resultsById.set(id, {
+        id,
+        name: player.name,
+        elapsedMs: timeCapMs,
+        qualityPercent: 0,
+        didFinish: false,
+      });
+    }
+  }
+
+  const ranked = scoreAndRankResults(Array.from(resultsById.values()), timeCapMs);
+  room.finished = true;
+  room.finishWindowEndsAtMs = 0;
+  io.emit("matchFinished", {
+    winnerId: ranked[0]?.id || null,
+    results: ranked,
+    finishedAt: Date.now(),
+  });
+  emitLobbyState();
+  return true;
+}
+
+function startFinishWindowIfNeeded(firstReport) {
+  if (room.finishWindowEndsAtMs > 0) return;
+  if (room.players.size <= 1) {
+    maybeFinalizeMatch("all_finished");
+    return;
+  }
+
+  room.finishWindowEndsAtMs = Date.now() + FINISH_WINDOW_MS;
+  io.emit("finishWindowStarted", {
+    leaderId: firstReport.id,
+    leaderName: firstReport.name,
+    startedAt: Date.now(),
+    endsAt: room.finishWindowEndsAtMs,
+    durationMs: FINISH_WINDOW_MS,
+  });
+
+  room.finishWindowTimer = setTimeout(() => {
+    maybeFinalizeMatch("timeout");
+  }, FINISH_WINDOW_MS + 50);
 }
 
 io.on("connection", (socket) => {
@@ -151,6 +286,13 @@ io.on("connection", (socket) => {
 
     room.started = true;
     room.finished = false;
+    room.matchStartedAtMs = Date.now();
+    room.finishReports.clear();
+    room.finishWindowEndsAtMs = 0;
+    if (room.finishWindowTimer) {
+      clearTimeout(room.finishWindowTimer);
+      room.finishWindowTimer = null;
+    }
 
     io.emit("gameStarted", {
       startedAt: Date.now(),
@@ -173,15 +315,27 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("finishMatch", () => {
+  socket.on("finishMatch", (payload = {}) => {
     if (!room.started || room.finished) return;
-    if (!room.players.has(socket.id)) return;
+    const player = room.players.get(socket.id);
+    if (!player) return;
+    if (room.finishReports.has(socket.id)) return;
 
-    room.finished = true;
-    io.emit("matchFinished", {
-      winnerId: socket.id,
-    });
-    emitLobbyState();
+    const elapsedMs = sanitizeElapsedMs(payload.elapsedMs, getElapsedSinceStartMs());
+    const report = {
+      id: socket.id,
+      name: player.name,
+      elapsedMs,
+      qualityPercent: sanitizeQualityPercent(payload.qualityPercent, 0),
+      didFinish: true,
+    };
+    room.finishReports.set(socket.id, report);
+
+    if (room.finishReports.size === 1) {
+      startFinishWindowIfNeeded(report);
+    }
+
+    maybeFinalizeMatch("all_finished");
   });
 
   socket.on("restartLobby", () => {
@@ -194,6 +348,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const hadPlayer = room.players.delete(socket.id);
     if (!hadPlayer) return;
+    room.finishReports.delete(socket.id);
 
     ensureHost();
     socket.broadcast.emit("playerDisconnected", {
@@ -206,6 +361,15 @@ io.on("connection", (socket) => {
       return;
     }
 
+    if (room.finishReports.size === 0) {
+      room.finishWindowEndsAtMs = 0;
+      if (room.finishWindowTimer) {
+        clearTimeout(room.finishWindowTimer);
+        room.finishWindowTimer = null;
+      }
+    } else {
+      maybeFinalizeMatch("all_finished");
+    }
     emitLobbyState();
   });
 });

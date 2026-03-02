@@ -103,12 +103,23 @@ export default class Moto {
       this.velY += forwardY * this.enginePower * accelFactor * dt;
     }
 
-    // Reversa limitada para maniobras cortas.
-    if (down && speed < 5) {
-      // Resta impulso en eje frontal X.
-      this.velX -= forwardX * 0.7 * dt;
-      // Resta impulso en eje frontal Y.
-      this.velY -= forwardY * 0.7 * dt;
+    // Reversa: reduce velocidad hacia adelante con un freno suave
+    // y luego aplica impulso de retroceso para maniobras.
+    if (down) {
+      const forwardSpeed = this.velX * forwardX + this.velY * forwardY;
+      if (forwardSpeed > 0) {
+        const reverseDecelFactor = Phaser.Math.Clamp(1 - 0.06 * dt, 0, 1);
+        this.velX *= reverseDecelFactor;
+        this.velY *= reverseDecelFactor;
+      }
+
+      // Reversa limitada para maniobras cortas.
+      if (speed < 5) {
+        // Resta impulso en eje frontal X.
+        this.velX -= forwardX * 0.7 * dt;
+        // Resta impulso en eje frontal Y.
+        this.velY -= forwardY * 0.7 * dt;
+      }
     }
 
     // Frenado progresivo segun velocidad.

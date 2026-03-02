@@ -25,6 +25,7 @@ export default class MultiplayerSystem {
     this.handleGameStarted = this.handleGameStarted.bind(this);
     this.handlePlayerMoved = this.handlePlayerMoved.bind(this);
     this.handlePlayerDisconnected = this.handlePlayerDisconnected.bind(this);
+    this.handleFinishWindowStarted = this.handleFinishWindowStarted.bind(this);
     this.handleMatchFinished = this.handleMatchFinished.bind(this);
     this.handleLobbyRestarted = this.handleLobbyRestarted.bind(this);
   }
@@ -38,6 +39,7 @@ export default class MultiplayerSystem {
     this.socket.on("gameStarted", this.handleGameStarted);
     this.socket.on("playerMoved", this.handlePlayerMoved);
     this.socket.on("playerDisconnected", this.handlePlayerDisconnected);
+    this.socket.on("finishWindowStarted", this.handleFinishWindowStarted);
     this.socket.on("matchFinished", this.handleMatchFinished);
     this.socket.on("lobbyRestarted", this.handleLobbyRestarted);
 
@@ -96,6 +98,10 @@ export default class MultiplayerSystem {
     this.callbacks.onPlayerDisconnected?.(id);
   }
 
+  handleFinishWindowStarted(payload = {}) {
+    this.callbacks.onFinishWindowStarted?.(payload);
+  }
+
   handleMatchFinished(payload = {}) {
     this.callbacks.onMatchFinished?.(payload);
   }
@@ -131,9 +137,9 @@ export default class MultiplayerSystem {
     this.socket.emit("startGame", { preferredSpawn });
   }
 
-  emitFinishMatch() {
+  emitFinishMatch(payload = {}) {
     if (!this.socket?.connected) return;
-    this.socket.emit("finishMatch");
+    this.socket.emit("finishMatch", payload);
   }
 
   emitRestartLobby() {
@@ -190,6 +196,7 @@ export default class MultiplayerSystem {
     this.socket.off("gameStarted", this.handleGameStarted);
     this.socket.off("playerMoved", this.handlePlayerMoved);
     this.socket.off("playerDisconnected", this.handlePlayerDisconnected);
+    this.socket.off("finishWindowStarted", this.handleFinishWindowStarted);
     this.socket.off("matchFinished", this.handleMatchFinished);
     this.socket.off("lobbyRestarted", this.handleLobbyRestarted);
     this.socket.disconnect();

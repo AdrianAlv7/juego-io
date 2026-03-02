@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { speedPxPerSecToKmh } from "../utils/telemetry.js";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -124,12 +125,14 @@ export default class RoadCollisionSystem {
   }
 
   enforce(moto) {
+    const speedKmh = speedPxPerSecToKmh(moto.speedPxPerSec);
     const closest = this.findNearestRoadPoint(moto.sprite.x, moto.sprite.y);
     if (closest.insideRoad) {
       return {
         collided: false,
         impact: 0,
         penetration: 0,
+        speedKmh,
       };
     }
 
@@ -175,6 +178,7 @@ export default class RoadCollisionSystem {
       collided: true,
       impact: speedIntoWall + penetration * 0.03,
       penetration,
+      speedKmh,
     };
   }
 }

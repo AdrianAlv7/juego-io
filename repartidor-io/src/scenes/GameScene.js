@@ -8,7 +8,6 @@ import MultiplayerSystem from "../network/MultiplayerSystem.js";
 
 const WORLD_WIDTH = 6000;
 const WORLD_HEIGHT = 6000;
-const MAP_HINT_TEXT = "Lobby -> Play (host) | Flechas + Shift + Space";
 
 const SIMULATION_FPS = 60;
 const FIXED_STEP_MS = 1000 / SIMULATION_FPS;
@@ -57,6 +56,8 @@ export default class GameScene extends Phaser.Scene {
     this.nameSubmitButton = null;
 
     this.onVisibilityChange = this.onVisibilityChange.bind(this);
+    this.matchResultText = "";
+    this.finishWindowEndsAtMs = 0;
   }
 
   preload() {
@@ -79,6 +80,7 @@ export default class GameScene extends Phaser.Scene {
         onInit: () => this.onSocketInit(),
         onLobbyState: (payload) => this.onLobbyState(payload),
         onGameStarted: (payload) => this.onGameStarted(payload),
+        onFinishWindowStarted: (payload) => this.onFinishWindowStarted(payload),
         onMatchFinished: (payload) => this.onMatchFinished(payload),
         onRoomError: (payload) => this.onRoomError(payload),
         onLobbyRestarted: () => this.onLobbyRestarted(),
@@ -97,6 +99,8 @@ export default class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off("resize", this.handleResize, this);
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
+      this.hud?.destroy();
+      this.hud = null;
       this.multiplayer?.destroy();
       this.destroyNameEntryUi();
     });
@@ -414,6 +418,9 @@ export default class GameScene extends Phaser.Scene {
     this.matchRunning = true;
     this.matchEnded = false;
     this.finishSent = false;
+    this.matchResultText = "";
+    this.finishWindowEndsAtMs = 0;
+    this.hud?.hideResults();
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
 
@@ -421,16 +428,46 @@ export default class GameScene extends Phaser.Scene {
     this.statusBanner.setVisible(false);
   }
 
+  onFinishWindowStarted(payload = {}) {
+    if (!this.matchRunning || this.matchEnded) return;
+    this.finishWindowEndsAtMs = Number(payload.endsAt || 0);
+
+    const leaderName = payload.leaderName || "Jugador";
+    this.statusBanner.setText(`Llego ${leaderName}. Ventana final: 20s`);
+    this.statusBanner.setColor("#ffd27d");
+    this.statusBanner.setVisible(true);
+  }
+
   onMatchFinished(payload = {}) {
     if (!this.matchRunning) return;
     this.matchEnded = true;
+    this.finishWindowEndsAtMs = 0;
+    this.matchResultText = this.buildMatchResultText(payload);
+
+    const winnerEntry = payload.results?.find(
+      (entry) => entry.id === payload.winnerId
+    );
+    const winnerName = winnerEntry?.name || "Jugador";
+    const winnerTime = Number.isFinite(winnerEntry?.elapsedMs)
+      ? `${(winnerEntry.elapsedMs / 1000).toFixed(2)}s`
+      : "N/A";
+    const winnerScore = Number.isFinite(winnerEntry?.score)
+      ? `${winnerEntry.score} pts`
+      : "N/A";
 
     const isWinner = payload.winnerId && payload.winnerId === this.multiplayer.selfId;
     this.statusBanner.setText(
-      isWinner ? "Partida terminada: ganaste" : "Partida terminada"
+      isWinner
+        ? `Ganaste | ${winnerScore} | ${winnerTime}`
+        : `Perdiste | Gano ${winnerName} (${winnerScore})`
     );
-    this.statusBanner.setColor(isWinner ? "#a7ffb8" : "#ffd27d");
+    this.statusBanner.setColor(isWinner ? "#a7ffb8" : "#ff9f9f");
     this.statusBanner.setVisible(true);
+    this.hud?.showResults(
+      payload.results || [],
+      payload.winnerId || null,
+      this.multiplayer?.selfId || null
+    );
 
     const isHost = this.currentLobbyState?.hostId === this.multiplayer.selfId;
     if (isHost) {
@@ -452,7 +489,7 @@ export default class GameScene extends Phaser.Scene {
       this.moto = null;
     }
     if (this.hud) {
-      this.hud.text.destroy();
+      this.hud.destroy();
       this.hud = null;
     }
 
@@ -460,6 +497,9 @@ export default class GameScene extends Phaser.Scene {
     this.matchRunning = false;
     this.matchEnded = false;
     this.finishSent = false;
+    this.finishWindowEndsAtMs = 0;
+    this.matchResultText = "";
+    this.hud?.hideResults();
     this.cameraOffsetX = 0;
     this.cameraOffsetY = 0;
     this.simulationAccumulatorMs = 0;
@@ -502,7 +542,10 @@ export default class GameScene extends Phaser.Scene {
   runSimulationStep(stepMs) {
     if (!this.moto || !this.map) return;
 
-    const playerLocked = this.matchEnded || (this.map.isPlayerLocked?.() ?? false);
+    const playerLocked =
+      this.matchEnded ||
+      (this.map.isPlayerLocked?.() ?? false) ||
+      (this.map.isRiderRepairing?.() ?? false);
     if (playerLocked) {
       this.moto.haltMotion();
     } else {
@@ -546,12 +589,40 @@ export default class GameScene extends Phaser.Scene {
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
 
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
+    const finishWindowRemainingMs = this.finishWindowEndsAtMs
+      ? Math.max(0, this.finishWindowEndsAtMs - Date.now())
+      : 0;
     this.hud.update(this.moto, deltaMs, {
-      mapLabel: "Carrera Ciudad",
-      mapHint: MAP_HINT_TEXT,
-      objective: "Objetivo: completar pedidos",
       ...mapHudInfo,
+      timing: {
+        ...(mapHudInfo.timing || {}),
+        finishWindowRemainingMs,
+      },
+      resultText: this.matchResultText,
     });
+  }
+
+  buildMatchResultText(payload = {}) {
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    if (!results.length) return "";
+
+    const myId = this.multiplayer?.selfId;
+    const myEntry = results.find((entry) => entry.id === myId);
+    const myPosition = myEntry
+      ? results.findIndex((entry) => entry.id === myId) + 1
+      : 0;
+
+    if (!myEntry || myPosition <= 0) return "";
+
+    if (!myEntry.didFinish) {
+      const scoreText = Number.isFinite(myEntry.score) ? `${myEntry.score} pts` : "0 pts";
+      return `Pos ${myPosition}/${results.length} | ${scoreText} | DNF`;
+    }
+
+    const qualityText = `${myEntry.qualityPercent}%`;
+    const timeText = `${(myEntry.elapsedMs / 1000).toFixed(2)}s`;
+    const scoreText = Number.isFinite(myEntry.score) ? `${myEntry.score} pts` : "N/A";
+    return `Pos ${myPosition}/${results.length} | ${scoreText} | ${timeText} | Calidad ${qualityText}`;
   }
 
   update(_time, delta) {
@@ -607,7 +678,8 @@ export default class GameScene extends Phaser.Scene {
       this.map?.isMatchFinished?.()
     ) {
       this.finishSent = true;
-      this.multiplayer?.emitFinishMatch();
+      const stats = this.map?.getMatchStats?.() || {};
+      this.multiplayer?.emitFinishMatch(stats);
     }
   }
 }
