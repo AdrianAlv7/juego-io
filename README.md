@@ -37,6 +37,85 @@ set VITE_SOCKET_SERVER_URL=http://192.168.1.50:3000
 npm run dev:client
 ```
 
+## Compartir por internet con LocalTunnel
+
+Si quieres mandar un link publico (sin abrir puertos del router), usa LocalTunnel.
+
+### Modo rapido (cliente web)
+
+Instalas el paquete global:
+
+```bash
+npm install -g localtunnel
+```
+
+Luego corres tu juego normalmente:
+
+```bash
+cd repartidor-io
+npm run dev
+```
+
+Tu dev server queda en `http://localhost:5173`.
+
+En otra terminal ejecutas:
+
+```bash
+lt --port 5173
+```
+
+LocalTunnel crea un tunel hacia tu PC y te devuelve algo como:
+
+```text
+https://purple-dog-12.loca.lt
+```
+
+Ese link:
+
+- apunta a tu localhost
+- cualquier persona puede abrirlo
+- sirve para probar tu juego online
+
+### Modo multijugador completo (cliente + Socket.IO)
+
+Para que un amigo juegue online en la misma sala, tambien debes exponer el socket server (`3000`).
+
+Terminal 1 (socket server):
+
+```bash
+cd repartidor-io
+npm run dev:server
+```
+
+Terminal 2 (tunel para socket server):
+
+```bash
+lt --port 3000
+```
+
+Guarda esa URL (ejemplo: `https://blue-server-77.loca.lt`) y usala al levantar el cliente:
+
+```bash
+cd repartidor-io
+set VITE_SOCKET_SERVER_URL=https://blue-server-77.loca.lt
+npm run dev
+```
+
+En PowerShell puedes usar:
+
+```bash
+$env:VITE_SOCKET_SERVER_URL="https://blue-server-77.loca.lt"
+npm run dev
+```
+
+Terminal 3 (tunel para cliente web):
+
+```bash
+lt --port 5173
+```
+
+Comparte la URL `https://...loca.lt` del cliente con tu amigo.
+
 ## Build de produccion
 
 ```bash
