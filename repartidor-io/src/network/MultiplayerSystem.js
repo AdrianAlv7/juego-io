@@ -22,6 +22,7 @@ export default class MultiplayerSystem {
     this.handleInitState = this.handleInitState.bind(this);
     this.handleLobbyState = this.handleLobbyState.bind(this);
     this.handleRoomError = this.handleRoomError.bind(this);
+    this.handleConnectError = this.handleConnectError.bind(this);
     this.handleGameStarted = this.handleGameStarted.bind(this);
     this.handlePlayerMoved = this.handlePlayerMoved.bind(this);
     this.handlePlayerDisconnected = this.handlePlayerDisconnected.bind(this);
@@ -31,11 +32,22 @@ export default class MultiplayerSystem {
   }
 
   start(registerPayload = {}) {
+    if (this.socket) {
+      this.destroy();
+      this.socket = null;
+      this.selfId = null;
+      this.gameStarted = false;
+      this.localSprite = null;
+      this.sendAccumulatorMs = 0;
+      this.lastSentState = null;
+    }
+
     this.socket = createSocketConnection();
 
     this.socket.on("initState", this.handleInitState);
     this.socket.on("lobbyState", this.handleLobbyState);
     this.socket.on("roomError", this.handleRoomError);
+    this.socket.on("connect_error", this.handleConnectError);
     this.socket.on("gameStarted", this.handleGameStarted);
     this.socket.on("playerMoved", this.handlePlayerMoved);
     this.socket.on("playerDisconnected", this.handlePlayerDisconnected);
@@ -71,6 +83,10 @@ export default class MultiplayerSystem {
 
   handleRoomError(payload = {}) {
     this.callbacks.onRoomError?.(payload);
+  }
+
+  handleConnectError(error) {
+    this.callbacks.onConnectError?.(error);
   }
 
   handleGameStarted(payload = {}) {
@@ -193,6 +209,7 @@ export default class MultiplayerSystem {
     this.socket.off("initState", this.handleInitState);
     this.socket.off("lobbyState", this.handleLobbyState);
     this.socket.off("roomError", this.handleRoomError);
+    this.socket.off("connect_error", this.handleConnectError);
     this.socket.off("gameStarted", this.handleGameStarted);
     this.socket.off("playerMoved", this.handlePlayerMoved);
     this.socket.off("playerDisconnected", this.handlePlayerDisconnected);

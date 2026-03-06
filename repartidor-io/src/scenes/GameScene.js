@@ -128,6 +128,7 @@ export default class GameScene extends Phaser.Scene {
         onFinishWindowStarted: (payload) => this.onFinishWindowStarted(payload),
         onMatchFinished: (payload) => this.onMatchFinished(payload),
         onRoomError: (payload) => this.onRoomError(payload),
+        onConnectError: (error) => this.onConnectError(error),
         onLobbyRestarted: () => this.onLobbyRestarted(),
       },
     });
@@ -377,6 +378,30 @@ export default class GameScene extends Phaser.Scene {
   onRoomError(payload = {}) {
     this.lobbyMessage.setText(payload.message || "Error de sala.");
     this.lobbyMessage.setColor("#ff9f9f");
+    this.playersListText.setText([
+      "No se pudo entrar a la sala.",
+      "Revisa el backend y vuelve a intentar.",
+    ]);
+    if (this.nameInput && this.nameSubmitButton) {
+      this.nameInput.disabled = false;
+      this.nameSubmitButton.disabled = false;
+      this.nameSubmitButton.textContent = "Entrar";
+      this.nameEntryRoot.style.display = "flex";
+    }
+  }
+
+  onConnectError(error) {
+    console.error("[socket-connect-error]", error);
+
+    this.lobbyMessage.setText(
+      "No se pudo conectar al servidor. Revisa la URL del backend."
+    );
+    this.lobbyMessage.setColor("#ff9f9f");
+    this.playersListText.setText([
+      "Fallo la conexion al socket.",
+      "Revisa VITE_SOCKET_SERVER_URL o el tunel del puerto 3000.",
+    ]);
+
     if (this.nameInput && this.nameSubmitButton) {
       this.nameInput.disabled = false;
       this.nameSubmitButton.disabled = false;

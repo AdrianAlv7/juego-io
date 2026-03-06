@@ -7,34 +7,171 @@ Juego tipo repartidor construido con Phaser + Vite.
 - Node.js LTS
 - npm
 
-## Ejecutar proyecto (multijugador)
+## Instalacion rapida
+
+1. Clona el repositorio:
+
+```bash
+git clone https://github.com/tu-usuario/repartidor-io.git
+cd repartidor-io
+```
+
+2. Instala dependencias:
 
 ```bash
 cd repartidor-io
 npm install
-npm run dev:server
 ```
 
-En otra terminal:
+3. Inicia el servidor del juego:
 
 ```bash
 cd repartidor-io
-npm run dev:client
+npm run dev:server
 ```
 
-El cliente conecta por defecto a `http://localhost:3000`.
-No necesitas pasar `--host`: Vite ya queda expuesto en LAN desde `vite.config.js`.
-
-Para pruebas en otro dispositivo:
-
-1. Abre en el dispositivo cliente `http://IP_DE_TU_PC:5173`.
-2. Socket.IO usa esa misma IP automaticamente (`http://IP_DE_TU_PC:3000`).
-
-Solo si quieres forzar otra URL de socket:
+4. En otra terminal inicia el cliente:
 
 ```bash
-set VITE_SOCKET_SERVER_URL=http://192.168.1.50:3000
-npm run dev:client
+cd repartidor-io
+npm run dev
+```
+
+5. Abre el juego en tu navegador:
+
+```text
+http://localhost:5173
+```
+
+## Probar con amigos por internet
+
+Este proyecto ahora usa Cloudflare Quick Tunnel con `cloudflared`.
+
+### Instalar Cloudflare Tunnel
+
+En Windows:
+
+```bash
+winget install --id Cloudflare.cloudflared
+```
+
+Si la terminal no reconoce `cloudflared` despues de instalarlo, cierra y abre la terminal otra vez.
+
+Verifica la instalacion:
+
+```bash
+cloudflared --version
+```
+
+### Flujo recomendado
+
+1. En la terminal 1, levanta el servidor del juego:
+
+```bash
+cd repartidor-io
+npm run dev:server
+```
+
+2. En la terminal 2, crea un tunel para el backend:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+3. Cloudflare te dara una URL como esta:
+
+```text
+https://abc123.trycloudflare.com
+```
+
+4. Crea el archivo `repartidor-io/.env` usando `repartidor-io/.env.example` como base.
+
+En Windows:
+
+```bash
+cd repartidor-io
+copy .env.example .env
+```
+
+En macOS/Linux/Git Bash:
+
+```bash
+cd repartidor-io
+cp .env.example .env
+```
+
+5. Edita `repartidor-io/.env` y reemplaza el valor por la URL del tunel del backend:
+
+```env
+VITE_SOCKET_SERVER_URL=https://abc123.trycloudflare.com
+```
+
+Importante:
+
+- esa URL debe ser la del tunel de `3000`
+- no pongas aqui la URL del cliente en `5173`
+- si Cloudflare cambia la URL del backend, debes volver a editar `.env`
+
+6. Ahora si arranca el cliente:
+
+```bash
+cd repartidor-io
+npm run dev
+```
+
+7. En otra terminal crea un tunel para el cliente:
+
+```bash
+cloudflared tunnel --url http://localhost:5173
+```
+
+8. Comparte ese link con tu amigo.
+
+Importante:
+
+- la URL del backend y la del cliente normalmente son distintas
+- la URL del backend va en `repartidor-io/.env`
+- cada Quick Tunnel cambia de URL en cada ejecucion
+- si cambia la URL del backend, actualiza `.env` y vuelve a correr `npm run dev`
+- `vite.config.js` ya permite `*.trycloudflare.com`
+
+## Archivo `.env.example`
+
+Si otros van a probar el proyecto seguido, deja una configuracion base:
+
+```env
+VITE_SOCKET_SERVER_URL=http://localhost:3000
+```
+
+Luego cada quien puede crear su `.env`.
+
+En Windows:
+
+```bash
+copy .env.example .env
+```
+
+En macOS/Linux/Git Bash:
+
+```bash
+cp .env.example .env
+```
+
+## Si se queda en "Conectando a sala..."
+
+Revisa este orden:
+
+1. `npm run dev:server` sigue corriendo.
+2. `cloudflared tunnel --url http://localhost:3000` sigue abierto.
+3. `repartidor-io/.env` tiene la URL actual del backend.
+4. Esa URL es la del tunel de `3000`, no la del cliente en `5173`.
+5. Reiniciaste `npm run dev` despues de cambiar `.env`.
+
+En desarrollo tambien puedes abrir la consola del navegador.
+El cliente imprime la URL exacta del socket con este mensaje:
+
+```text
+[socket] connecting to ...
 ```
 
 ## Build de produccion
