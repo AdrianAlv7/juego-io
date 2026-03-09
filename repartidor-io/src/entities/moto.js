@@ -17,7 +17,13 @@ export default class Moto {
     // Velocidad maxima interna (sube para mayor punta).
     this.maxSpeed = 40;
     // Fuerza base del freno (sube para frenar mas fuerte).
-    this.brakePower = 0.17;
+    this.brakePower = 0.14;
+    // Frenado al meter reversa: debe ayudar a detener, pero ser peor que el freno.
+    this.reverseBrakePower = 0.075;
+    // Potencia del motor en reversa para maniobras.
+    this.reverseEnginePower = 0.42;
+    // Debajo de esta velocidad hacia adelante, la reversa ya puede empezar a entrar.
+    this.reverseEngageSpeed = 2.6;
     // Umbral para cerrar por completo la velocidad al frenar.
     this.brakeStopThreshold = 0.04;
     // Friccion global constante (sube para perder inercia mas rapido).
@@ -110,18 +116,44 @@ export default class Moto {
     // y luego aplica impulso de retroceso para maniobras.
     if (down) {
       const forwardSpeed = this.velX * forwardX + this.velY * forwardY;
-      if (forwardSpeed > 0) {
-        const reverseDecelFactor = Phaser.Math.Clamp(1 - 0.06 * dt, 0, 1);
-        this.velX *= reverseDecelFactor;
-        this.velY *= reverseDecelFactor;
-      }
+      if (forwardSpeed > 0.05) {
+        const reverseBrakeRatio = Phaser.Math.Clamp(
+          forwardSpeed / this.maxSpeed,
+          0,
+          1
+        );
+        const reverseBrakeStrength =
+          this.reverseBrakePower *
+          Phaser.Math.Linear(0.28, 0.85, reverseBrakeRatio);
+        const reverseBrakeFactor = Phaser.Math.Clamp(
+          1 - reverseBrakeStrength * dt,
+          0,
+          1
+        );
+        this.velX *= reverseBrakeFactor;
+        this.velY *= reverseBrakeFactor;
 
-      // Reversa limitada para maniobras cortas.
-      if (speed < 5) {
+        const reverseAssistBlend = Phaser.Math.Clamp(
+          1 - forwardSpeed / this.reverseEngageSpeed,
+          0,
+          1
+        );
+        if (reverseAssistBlend > 0) {
+          const reverseSpeed = 0;
+          const reverseAccelFactor = Phaser.Math.Clamp(1 - reverseSpeed / 6, 0.2, 1);
+          const reverseAssistPower =
+            this.reverseEnginePower *
+            Phaser.Math.Linear(0.18, 0.72, reverseAssistBlend);
+          this.velX -= forwardX * reverseAssistPower * reverseAccelFactor * dt;
+          this.velY -= forwardY * reverseAssistPower * reverseAccelFactor * dt;
+        }
+      } else {
+        const reverseSpeed = Math.max(0, -forwardSpeed);
+        const reverseAccelFactor = Phaser.Math.Clamp(1 - reverseSpeed / 6, 0.2, 1);
         // Resta impulso en eje frontal X.
-        this.velX -= forwardX * 0.7 * dt;
+        this.velX -= forwardX * this.reverseEnginePower * reverseAccelFactor * dt;
         // Resta impulso en eje frontal Y.
-        this.velY -= forwardY * 0.7 * dt;
+        this.velY -= forwardY * this.reverseEnginePower * reverseAccelFactor * dt;
       }
     }
 

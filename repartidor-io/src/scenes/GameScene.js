@@ -1,14 +1,13 @@
 import Phaser from "phaser";
 import Moto from "../entities/moto.js";
-import CityRaceMap from "../world/race/CityRaceMap.js";
-import { CITY_RACE_LAYOUT } from "../world/race/config/cityRaceLayout.js";
+import { ACTIVE_MAP, preloadActiveMapAssets } from "../world/activeMap.js";
 import InputSystem from "../systems/InputSystem.js";
 import DebugHUD from "../ui/DebugHUD.js";
 import MultiplayerSystem from "../network/MultiplayerSystem.js";
 import { speedPxPerSecToKmh } from "../world/race/utils/telemetry.js";
 
-const WORLD_WIDTH = 6000;
-const WORLD_HEIGHT = 6000;
+const DEFAULT_WORLD_WIDTH = 6000;
+const DEFAULT_WORLD_HEIGHT = 6000;
 const DESIGN_VIEWPORT_WIDTH = 1920;
 const DESIGN_VIEWPORT_HEIGHT = 1080;
 
@@ -107,6 +106,7 @@ export default class GameScene extends Phaser.Scene {
 
   preload() {
     this.load.image("moto", "assets/moto.png");
+    preloadActiveMapAssets(this);
   }
 
   create() {
@@ -224,7 +224,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.multiplayer.start({
       name: safeName,
-      preferredSpawn: CITY_RACE_LAYOUT.spawnPoint,
+      preferredSpawn: ACTIVE_MAP.getSpawnPoint(),
     });
   }
 
@@ -311,7 +311,7 @@ export default class GameScene extends Phaser.Scene {
     this.startButtonRect.setScrollFactor(0);
     this.startButtonRect.setDepth(2010);
     this.startButtonRect.on("pointerdown", () => {
-      this.multiplayer?.emitStartGame(CITY_RACE_LAYOUT.spawnPoint);
+      this.multiplayer?.emitStartGame(ACTIVE_MAP.getSpawnPoint());
     });
 
     this.startButtonLabel = this.add.text(width / 2, height - 95, "PLAY", {
@@ -461,14 +461,16 @@ export default class GameScene extends Phaser.Scene {
     if (this.matchRunning) return;
 
     const players = payload.players || {};
+    const objectiveSeed = Number(payload.startedAt || Date.now());
     const localState = players[this.multiplayer.selfId] || {
-      ...CITY_RACE_LAYOUT.spawnPoint,
+      ...ACTIVE_MAP.getSpawnPoint(),
       angle: 0,
     };
 
-    this.map = new CityRaceMap(this, {
-      worldWidth: WORLD_WIDTH,
-      worldHeight: WORLD_HEIGHT,
+    this.map = ACTIVE_MAP.create(this, {
+      worldWidth: DEFAULT_WORLD_WIDTH,
+      worldHeight: DEFAULT_WORLD_HEIGHT,
+      objectiveSeed,
     });
 
     this.moto = new Moto(this, localState.x, localState.y, this.inputSystem);
@@ -485,7 +487,12 @@ export default class GameScene extends Phaser.Scene {
     this.multiplayer.syncPlayers(players);
 
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    cam.setBounds(
+      0,
+      0,
+      this.map?.worldWidth || DEFAULT_WORLD_WIDTH,
+      this.map?.worldHeight || DEFAULT_WORLD_HEIGHT
+    );
     cam.setZoom(CAMERA_ZOOM_SETTINGS.baseZoom);
     cam.startFollow(this.moto.sprite, false, 1, 1);
     this.handleResize(this.scale.gameSize);
