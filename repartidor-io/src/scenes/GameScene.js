@@ -1229,14 +1229,12 @@ export default class GameScene extends Phaser.Scene {
     this.finishSent = false;
     this.finishWindowEndsAtMs = 0;
     this.matchResultText = "";
-    this.hud?.hideResults();
     this.cameraOffsetX = 0;
     this.cameraOffsetY = 0;
     this.hudFilterAccumulatorMs = 0;
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
     this.clearLocalWeatherEventState();
-    this.map?.endTrainEvent?.();
     this.setWeatherControlsVisible(false);
     this.itemInventoryState = createInventoryState([]);
     this.refreshItemUi();

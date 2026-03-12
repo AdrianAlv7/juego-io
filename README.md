@@ -185,6 +185,8 @@ npm run build
 
 ```text
 repartidor-io/
+  server/
+    index.js
   public/
     assets/
       moto.png
@@ -193,6 +195,10 @@ repartidor-io/
       gameConfig.js
     entities/
       moto.js
+    events/
+      weather/
+    items/
+    network/
     scenes/
       GameScene.js
     systems/
@@ -200,8 +206,16 @@ repartidor-io/
     ui/
       DebugHUD.js
     world/
-      Map.js
-      TrackMap.js
+      activeMap.js
+      race/
+      tiled/
+  tiled/
+    mapa1.json
+    map.png
+  unused-assets/
+    legacy-tiled/
+    template/
+    unused-source/
     main.js
     style.css
 ```
@@ -211,14 +225,15 @@ repartidor-io/
 - Sala unica de hasta 4 jugadores.
 - Login rapido con username corto antes de entrar a sala.
 - El host ve boton `Play` para iniciar.
-- Todos cargan el mapa 4 al iniciar.
+- Todos cargan el mapa `tiledPreview` al iniciar.
 - La partida termina para todos cuando un jugador completa la ruta.
 - Host puede reiniciar sala con `R` al finalizar.
 
 ## Notas
 
-- Los archivos que no estan conectados al juego se movieron a `repartidor-io/unused-assets/`.
-- Esta version usa solo sprite PNG para evitar dependencias de mapas Tiled por ahora.
+- Los archivos fuente no conectados al juego quedaron archivados en `repartidor-io/unused-assets/unused-source/`.
+- El mapa activo actual sale de `repartidor-io/src/world/activeMap.js`.
+- Esta version sigue usando un flujo Tiled para el mapa activo (`tiled/mapa1.json` + `tiled/map.png`).
 - La simulacion de gameplay corre en pasos fijos de 60 Hz, para que 60 FPS y 165 FPS se sientan igual.
 - La pista usa colision matematica (sin cientos de cuerpos fisicos), para evitar tirones y mejorar carga.
 
