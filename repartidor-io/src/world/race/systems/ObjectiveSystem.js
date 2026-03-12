@@ -25,6 +25,7 @@ export default class ObjectiveSystem {
     this.basePoint = options.basePoint;
     this.orders = options.orders;
     this.totalOrders = this.orders.length;
+    this.onObjectiveCompleted = options.onObjectiveCompleted || null;
     this.radii = options.radii;
     this.serviceTimeMs = options.serviceTimeMs;
     this.defaultEventDurationMs = options.defaultEventDurationMs;
@@ -283,6 +284,11 @@ export default class ObjectiveSystem {
       this.showEventMessage(`Entrega ${completed.label} completada. Ve a ${next.label}`, "#9cf5b8");
     }
 
+    this.onObjectiveCompleted?.({
+      kind: completed.kind,
+      orderNumber: completed.orderNumber,
+      label: completed.label,
+    });
     this.updateVisuals();
   }
 

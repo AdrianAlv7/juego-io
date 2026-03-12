@@ -33,6 +33,10 @@ export default class TachometerPanel {
       .graphics()
       .setScrollFactor(0)
       .setDepth(this.depth + 2);
+    this.heatBarGraphics = scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(this.depth + 2);
 
     const titleStyle = {
       fontFamily: "Trebuchet MS, Verdana, sans-serif",
@@ -92,6 +96,21 @@ export default class TachometerPanel {
         color: "#ffd27d",
       })
       .setOrigin(0.5);
+    this.heatLabelText = scene.add
+      .text(0, 0, "", {
+        ...bodyStyle,
+        fontSize: "18px",
+        color: "#ffda8a",
+      })
+      .setOrigin(0.5);
+    this.heatStatusText = scene.add
+      .text(0, 0, "", {
+        ...bodyStyle,
+        fontSize: "18px",
+        fontStyle: "bold",
+        color: "#ff8f6d",
+      })
+      .setOrigin(0.5);
 
     this.textNodes = [
       this.motoTitle,
@@ -101,10 +120,13 @@ export default class TachometerPanel {
       this.rpmValueText,
       this.motoHealthText,
       this.repairText,
+      this.heatLabelText,
+      this.heatStatusText,
     ];
     this.textNodes.forEach((textNode, i) =>
       textNode.setScrollFactor(0).setDepth(this.depth + 3 + i)
     );
+    this.renderHeatInfo({}, false);
 
     this.basePositions = {
       title: { x: 0, y: 0 },
@@ -114,6 +136,9 @@ export default class TachometerPanel {
       rpmVal: { x: 0, y: 0 },
       health: { x: 0, y: 0 },
       repair: { x: 0, y: 0 },
+      heatLabel: { x: 0, y: 0 },
+      heatStatus: { x: 0, y: 0 },
+      heatBar: { x: 0, y: 0, width: 0, height: 0 },
     };
 
     this.displayRpm = 1000;
@@ -142,6 +167,8 @@ export default class TachometerPanel {
     this.rpmValueText.setFontSize(Math.round(40 * uiScale));
     this.motoHealthText.setFontSize(Math.round(24 * uiScale));
     this.repairText.setFontSize(Math.round(20 * uiScale));
+    this.heatLabelText.setFontSize(Math.round(18 * uiScale));
+    this.heatStatusText.setFontSize(Math.round(18 * uiScale));
 
     this.basePositions = {
       title: {
@@ -170,7 +197,21 @@ export default class TachometerPanel {
       },
       repair: {
         x: this.layout.centerX,
-        y: this.layout.y + this.layout.height * 0.94,
+        y: this.layout.y + this.layout.height * 0.935,
+      },
+      heatLabel: {
+        x: this.layout.centerX,
+        y: this.layout.y + this.layout.height * 0.79,
+      },
+      heatStatus: {
+        x: this.layout.centerX,
+        y: this.layout.y + this.layout.height * 0.885,
+      },
+      heatBar: {
+        x: this.layout.x + this.layout.width * 0.18,
+        y: this.layout.y + this.layout.height * 0.82,
+        width: this.layout.width * 0.64,
+        height: Math.max(12, Math.round(14 * uiScale)),
       },
     };
 
@@ -208,6 +249,14 @@ export default class TachometerPanel {
     this.repairText.setPosition(
       this.basePositions.repair.x,
       this.basePositions.repair.y
+    );
+    this.heatLabelText.setPosition(
+      this.basePositions.heatLabel.x,
+      this.basePositions.heatLabel.y
+    );
+    this.heatStatusText.setPosition(
+      this.basePositions.heatStatus.x,
+      this.basePositions.heatStatus.y
     );
   }
 
@@ -357,6 +406,8 @@ export default class TachometerPanel {
     else if (health < 60) this.motoHealthText.setColor("#ffb347");
     else this.motoHealthText.setColor("#52d273");
 
+    this.renderHeatInfo({}, false);
+
     if (motoInfo.repairing) {
       const percent = Math.round(
         (1 - (motoInfo.repairRemainingMs || 0) / (motoInfo.repairDurationMs || 1800)) *
@@ -368,6 +419,55 @@ export default class TachometerPanel {
     }
 
     this.drawDynamicNeedle(speedRatio, shakeX, shakeY, rpm > 9500);
+  }
+
+  renderHeatInfo(heatInfo, visible) {
+    this.heatBarGraphics.clear();
+    this.heatLabelText.setVisible(visible);
+    this.heatStatusText.setVisible(visible);
+
+    if (!visible) {
+      this.heatLabelText.setText("");
+      this.heatStatusText.setText("");
+      return;
+    }
+
+    const heatPercent = Phaser.Math.Clamp(Number(heatInfo.percent || 0), 0, 1);
+    const bar = this.basePositions.heatBar;
+
+    this.heatBarGraphics.fillStyle(0x1f2630, 0.92);
+    this.heatBarGraphics.fillRoundedRect(bar.x, bar.y, bar.width, bar.height, 8);
+
+    const fillColor = heatInfo.cooling
+      ? 0x7ad7ff
+      : heatPercent >= 0.82
+        ? 0xff6e5f
+        : heatPercent >= 0.55
+          ? 0xffc75f
+          : 0x6ce18d;
+    if (heatPercent > 0) {
+      this.heatBarGraphics.fillStyle(fillColor, 0.98);
+      this.heatBarGraphics.fillRoundedRect(
+        bar.x,
+        bar.y,
+        bar.width * heatPercent,
+        bar.height,
+        8
+      );
+    }
+    this.heatBarGraphics.lineStyle(2, 0xffffff, 0.16);
+    this.heatBarGraphics.strokeRoundedRect(bar.x, bar.y, bar.width, bar.height, 8);
+
+    this.heatLabelText.setText(`Calor motor ${Math.round(heatPercent * 100)}%`);
+    this.heatStatusText.setText(heatInfo.statusText || "");
+
+    if (heatInfo.cooling) {
+      this.heatStatusText.setColor("#7ad7ff");
+    } else if (heatInfo.statusText) {
+      this.heatStatusText.setColor("#ff8f6d");
+    } else {
+      this.heatStatusText.setColor("#cfe2ff");
+    }
   }
 
   drawDynamicNeedle(ratio, shakeX, shakeY, overRev) {
@@ -424,6 +524,7 @@ export default class TachometerPanel {
     this.staticGraphics.destroy();
     this.flashGraphics.destroy();
     this.needleGraphics.destroy();
+    this.heatBarGraphics.destroy();
     this.textNodes.forEach((textNode) => textNode.destroy());
   }
 }

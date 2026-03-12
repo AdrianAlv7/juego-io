@@ -5,6 +5,7 @@ import ObjectiveSystem from "../race/systems/ObjectiveSystem.js";
 import PlayerHealthSystem from "../race/systems/PlayerHealthSystem.js";
 import RouteGuideSystem from "../race/systems/RouteGuideSystem.js";
 import MotoHealthSystem from "../race/systems/MotoHealthSystem.js";
+import TrackItemSystem from "../../items/TrackItemSystem.js";
 import { formatKm, speedPxPerSecToKmh } from "../race/utils/telemetry.js";
 
 const TILED_PREVIEW_TEXTURE_KEY = "tiled-preview-map";
@@ -47,7 +48,33 @@ const TILED_PREVIEW_TUNING = Object.freeze({
 const ORDERS_PER_MATCH = 3;
 
 const TILED_PREVIEW_LAYOUT_RAW = Object.freeze({
-  spawnPoint: { x: 300, y: 730, angle: 0 },
+  spawnPoint: { x: 75, y: 680, angle: 0 },
+});
+const TRAIN_BLOCKS_RAW = Object.freeze({
+  marketStreet: {
+    id: "marketStreet",
+    label: "Tren en Mercado",
+    center: { x: 700, y: 520 },
+    size: { width: 190, height: 38 },
+    orientation: "horizontal",
+    cars: 4,
+  },
+  riverCrossing: {
+    id: "riverCrossing",
+    label: "Tren en Cruce Rio",
+    center: { x: 860, y: 739 },
+    size: { width: 38, height: 195 },
+    orientation: "vertical",
+    cars: 4,
+  },
+  depotLane: {
+    id: "depotLane",
+    label: "Tren en Deposito",
+    center: { x: 1170, y: 307 },
+    size: { width: 176, height: 36 },
+    orientation: "horizontal",
+    cars: 3,
+  },
 });
 
 const PICKUP_POINT_POOL_RAW = Object.freeze([
@@ -142,6 +169,32 @@ function buildTiledPreviewLayout(seedValue) {
     orders: buildOrdersForSeed(seedValue).map(scaleOrder),
   });
 }
+
+function scaleTrainBlock(block) {
+  const center = scalePoint(block.center);
+  const width = block.size.width * TILED_PREVIEW_SCALE;
+  const height = block.size.height * TILED_PREVIEW_SCALE;
+  return {
+    ...block,
+    center,
+    width,
+    height,
+    rect: {
+      left: center.x - width / 2,
+      right: center.x + width / 2,
+      top: center.y - height / 2,
+      bottom: center.y + height / 2,
+      width,
+      height,
+    },
+  };
+}
+
+const TRAIN_BLOCKS = Object.freeze(
+  Object.fromEntries(
+    Object.entries(TRAIN_BLOCKS_RAW).map(([id, block]) => [id, scaleTrainBlock(block)])
+  )
+);
 
 function extractLayerBounds(mapData) {
   const tileWidth = Number(mapData?.tilewidth) || 8;
@@ -330,6 +383,13 @@ export default class TiledPreviewMap {
     this.contactStateByMoto = new WeakMap();
     this.lastHasPackage = false;
     this.raceStartedAtMs = null;
+    this.activeTrainEvent = null;
+    this.trainGraphics = scene.add.graphics().setDepth(-15);
+    this.trainShadowGraphics = scene.add.graphics().setDepth(-16);
+    this.trackItems = new TrackItemSystem(scene, {
+      localPlayerId: options.localPlayerId || "",
+      onTrigger: options.onTrackItemTriggered,
+    });
 
     const previewTexture = scene.textures.get(TILED_PREVIEW_TEXTURE_KEY);
     const sourceImage = previewTexture?.getSourceImage?.();
@@ -367,6 +427,7 @@ export default class TiledPreviewMap {
     this.objectives = new ObjectiveSystem(scene, {
       basePoint: this.basePoint,
       orders: this.layout.orders,
+      onObjectiveCompleted: options.onObjectiveCompleted,
       radii: {
         pickupRadius: TILED_PREVIEW_TUNING.pickupRadius,
         dropoffRadius: TILED_PREVIEW_TUNING.dropoffRadius,
@@ -384,6 +445,7 @@ export default class TiledPreviewMap {
       collisionDamageFactor: TILED_PREVIEW_TUNING.collisionDamageFactor,
       collisionCooldownMs: TILED_PREVIEW_TUNING.collisionDamageCooldownMs,
       totalOrders: this.layout.orders.length,
+      damageInterceptor: options.packageDamageInterceptor,
     });
 
     this.motoHealth = new MotoHealthSystem({
@@ -392,6 +454,13 @@ export default class TiledPreviewMap {
       collisionDamageFactor: TILED_PREVIEW_TUNING.motoCollisionDamageFactor,
       collisionCooldownMs: TILED_PREVIEW_TUNING.collisionDamageCooldownMs,
       repairDurationMs: TILED_PREVIEW_TUNING.motoRepairDurationMs,
+      damageInterceptor: options.motoDamageInterceptor,
+    });
+
+    scene.events.once("shutdown", () => {
+      this.trackItems.destroy();
+      this.trainGraphics.destroy();
+      this.trainShadowGraphics.destroy();
     });
   }
 
@@ -484,10 +553,251 @@ export default class TiledPreviewMap {
     };
   }
 
+  startTrainEvent(payload = {}) {
+    const block = TRAIN_BLOCKS[payload.id];
+    if (!block) return;
+
+    this.activeTrainEvent = {
+      ...payload,
+      block,
+    };
+    this.drawTrainBlock(block);
+    this.objectives.showEventMessage(
+      `${block.label}: calle cerrada`,
+      "#ff9e7a",
+      1800
+    );
+  }
+
+  endTrainEvent() {
+    if (!this.activeTrainEvent) return;
+    const label = this.activeTrainEvent.block?.label || "Tren";
+    this.activeTrainEvent = null;
+    this.trainGraphics.clear();
+    this.trainShadowGraphics.clear();
+    this.objectives.showEventMessage(`${label}: via libre`, "#9cf5b8", 1400);
+  }
+
+  setTrackItems(items = []) {
+    this.trackItems.setItems(items);
+  }
+
+  upsertTrackItem(payload = {}) {
+    this.trackItems.upsertItem(payload);
+  }
+
+  removeTrackItem(id) {
+    this.trackItems.removeItem(id);
+  }
+
+  setGuideSuppressed(suppressed) {
+    this.guide.setSuppressed(Boolean(suppressed));
+  }
+
+  getMotoMaxHealth() {
+    return this.motoHealth.maxHealth;
+  }
+
+  drawTrainBlock(block) {
+    this.trainGraphics.clear();
+    this.trainShadowGraphics.clear();
+
+    const { rect, orientation, cars } = block;
+    const thickness = Math.min(rect.width, rect.height);
+    const shadowPadding = Math.max(18, Math.round(thickness * 0.08));
+    const cornerRadius = Math.max(14, Math.round(thickness * 0.12));
+    const borderWidth = Math.max(5, Math.round(thickness * 0.015));
+    const separatorInset = Math.max(14, Math.round(thickness * 0.17));
+    const windowInset = Math.max(16, Math.round(thickness * 0.15));
+    const wheelInset = Math.max(26, Math.round(thickness * 0.23));
+    const wheelRadius = Math.max(8, Math.round(thickness * 0.02));
+    const horizontalWindowWidth = Math.max(
+      48,
+      Math.round((rect.width / Math.max(2, cars)) * 0.34)
+    );
+    const horizontalWindowHeight = Math.max(18, Math.round(thickness * 0.12));
+    const verticalWindowWidth = Math.max(18, Math.round(thickness * 0.12));
+    const verticalWindowHeight = Math.max(
+      48,
+      Math.round((rect.height / Math.max(2, cars)) * 0.34)
+    );
+
+    this.trainShadowGraphics.fillStyle(0x000000, 0.18);
+    this.trainShadowGraphics.fillRoundedRect(
+      rect.left - shadowPadding,
+      rect.top - shadowPadding,
+      rect.width + shadowPadding * 2,
+      rect.height + shadowPadding * 2,
+      cornerRadius
+    );
+
+    this.trainGraphics.fillStyle(0x9c1f1f, 1);
+    this.trainGraphics.fillRoundedRect(
+      rect.left,
+      rect.top,
+      rect.width,
+      rect.height,
+      cornerRadius
+    );
+    this.trainGraphics.lineStyle(borderWidth, 0xf4d35e, 0.95);
+    this.trainGraphics.strokeRoundedRect(
+      rect.left,
+      rect.top,
+      rect.width,
+      rect.height,
+      cornerRadius
+    );
+
+    const carCount = Math.max(2, Number(cars || 3));
+    for (let index = 1; index < carCount; index += 1) {
+      if (orientation === "horizontal") {
+        const x = rect.left + (rect.width / carCount) * index;
+        this.trainGraphics.lineStyle(Math.max(4, Math.round(borderWidth * 0.9)), 0x1d1d1d, 0.65);
+        this.trainGraphics.beginPath();
+        this.trainGraphics.moveTo(x, rect.top + separatorInset);
+        this.trainGraphics.lineTo(x, rect.bottom - separatorInset);
+        this.trainGraphics.strokePath();
+      } else {
+        const y = rect.top + (rect.height / carCount) * index;
+        this.trainGraphics.lineStyle(Math.max(4, Math.round(borderWidth * 0.9)), 0x1d1d1d, 0.65);
+        this.trainGraphics.beginPath();
+        this.trainGraphics.moveTo(rect.left + separatorInset, y);
+        this.trainGraphics.lineTo(rect.right - separatorInset, y);
+        this.trainGraphics.strokePath();
+      }
+    }
+
+    this.trainGraphics.fillStyle(0xf1f1f1, 0.95);
+    if (orientation === "horizontal") {
+      for (let index = 0; index < carCount; index += 1) {
+        const windowX =
+          rect.left +
+          rect.width * ((index + 0.5) / carCount) -
+          horizontalWindowWidth / 2;
+        this.trainGraphics.fillRoundedRect(
+          windowX,
+          rect.top + windowInset,
+          horizontalWindowWidth,
+          horizontalWindowHeight,
+          8
+        );
+        this.trainGraphics.fillRoundedRect(
+          windowX,
+          rect.bottom - windowInset - horizontalWindowHeight,
+          horizontalWindowWidth,
+          horizontalWindowHeight,
+          8
+        );
+      }
+    } else {
+      for (let index = 0; index < carCount; index += 1) {
+        const windowY =
+          rect.top +
+          rect.height * ((index + 0.5) / carCount) -
+          verticalWindowHeight / 2;
+        this.trainGraphics.fillRoundedRect(
+          rect.left + windowInset,
+          windowY,
+          verticalWindowWidth,
+          verticalWindowHeight,
+          8
+        );
+        this.trainGraphics.fillRoundedRect(
+          rect.right - windowInset - verticalWindowWidth,
+          windowY,
+          verticalWindowWidth,
+          verticalWindowHeight,
+          8
+        );
+      }
+    }
+
+    this.trainGraphics.fillStyle(0x232323, 0.95);
+    if (orientation === "horizontal") {
+      for (let index = 0; index < 6; index += 1) {
+        const wheelX = rect.left + wheelInset + index * ((rect.width - wheelInset * 2) / 5);
+        this.trainGraphics.fillCircle(wheelX, rect.bottom + wheelRadius, wheelRadius);
+        this.trainGraphics.fillCircle(wheelX, rect.top - wheelRadius, wheelRadius);
+      }
+    } else {
+      for (let index = 0; index < 6; index += 1) {
+        const wheelY = rect.top + wheelInset + index * ((rect.height - wheelInset * 2) / 5);
+        this.trainGraphics.fillCircle(rect.left - wheelRadius, wheelY, wheelRadius);
+        this.trainGraphics.fillCircle(rect.right + wheelRadius, wheelY, wheelRadius);
+      }
+    }
+  }
+
+  enforceTrainCollision(moto, collisionInfo) {
+    const contactState = this.contactStateByMoto.get(moto) || {
+      colliding: false,
+      trainBlocked: false,
+    };
+    this.contactStateByMoto.set(moto, contactState);
+
+    const block = this.activeTrainEvent?.block;
+    if (!block) {
+      contactState.trainBlocked = false;
+      return collisionInfo;
+    }
+
+    const clearance = Math.max(
+      18,
+      Math.round(
+        Math.min(moto?.sprite?.displayWidth || 0, moto?.sprite?.displayHeight || 0) * 0.18
+      )
+    );
+    const { x, y } = moto.sprite;
+    const rect = block.rect;
+    const inside =
+      x >= rect.left &&
+      x <= rect.right &&
+      y >= rect.top &&
+      y <= rect.bottom;
+
+    if (!inside) {
+      contactState.trainBlocked = false;
+      return collisionInfo;
+    }
+
+    const distances = [
+      { edge: "left", value: Math.abs(x - rect.left) },
+      { edge: "right", value: Math.abs(rect.right - x) },
+      { edge: "top", value: Math.abs(y - rect.top) },
+      { edge: "bottom", value: Math.abs(rect.bottom - y) },
+    ].sort((a, b) => a.value - b.value);
+
+    let targetX = x;
+    let targetY = y;
+    const nearestEdge = distances[0]?.edge || "left";
+    if (nearestEdge === "left") targetX = rect.left - clearance;
+    if (nearestEdge === "right") targetX = rect.right + clearance;
+    if (nearestEdge === "top") targetY = rect.top - clearance;
+    if (nearestEdge === "bottom") targetY = rect.bottom + clearance;
+
+    const justCollided = !contactState.trainBlocked;
+    contactState.trainBlocked = true;
+    moto.sprite.setPosition(targetX, targetY);
+    moto.sprite.body.updateFromGameObject();
+    moto.velX *= 0.2;
+    moto.velY *= 0.2;
+    moto.sprite.body.setVelocity(moto.velX * 60, moto.velY * 60);
+
+    return {
+      collided: true,
+      justCollided,
+      damageEvent: false,
+      impact: 0.2,
+      penetration: distances[0]?.value || 0,
+      speedKmh: collisionInfo.speedKmh,
+    };
+  }
+
   enforceRoadCollision(moto) {
     const speedKmh = speedPxPerSecToKmh(moto.speedPxPerSec);
     const contactState = this.contactStateByMoto.get(moto) || {
       colliding: false,
+      trainBlocked: false,
     };
     this.contactStateByMoto.set(moto, contactState);
 
@@ -504,7 +814,7 @@ export default class TiledPreviewMap {
         contactState.colliding = false;
       }
 
-      return this.getCollisionInfoDefaults(speedKmh);
+      return this.enforceTrainCollision(moto, this.getCollisionInfoDefaults(speedKmh));
     }
 
     const nearestRoadPosition = this.findNearestRoadPosition(
@@ -555,14 +865,14 @@ export default class TiledPreviewMap {
       });
     }
 
-    return {
+    return this.enforceTrainCollision(moto, {
       collided: true,
       justCollided,
       damageEvent: justCollided,
       impact: outwardSpeed + correctionLength / (TILED_PREVIEW_SCALE * 2.4),
       penetration: correctionLength,
       speedKmh,
-    };
+    });
   }
 
   enforcePlayer(moto) {
@@ -592,8 +902,21 @@ export default class TiledPreviewMap {
     this.lastHasPackage = riderState.hasPackage;
 
     const collisionInfo = this.enforceRoadCollision(moto);
+    moto.handleTrackCollision?.(collisionInfo);
+
+    let itemResult = null;
+    if (!locked && !repairing) {
+      itemResult = this.trackItems.handleLocalMoto(moto, nowMs);
+      if (itemResult?.collisionInfo) {
+        moto.handleTrackCollision?.(itemResult.collisionInfo);
+      }
+    }
+
     this.health.applyCollision(collisionInfo, nowMs);
     this.motoHealth.applyCollision(collisionInfo, nowMs);
+    if (itemResult?.wallDamagePercent) {
+      this.motoHealth.applyDirectDamagePercent(itemResult.wallDamagePercent, nowMs);
+    }
     this.motoHealth.update(nowMs, moto);
   }
 

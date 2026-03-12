@@ -8,6 +8,10 @@ export default class PlayerHealthSystem {
       Number(options.collisionCooldownMs || 180)
     );
     this.totalOrders = Math.max(1, Number(options.totalOrders || 1));
+    this.damageInterceptor =
+      typeof options.damageInterceptor === "function"
+        ? options.damageInterceptor
+        : null;
     this.health = this.maxHealth;
     this.packageActive = false;
     this.lastImpact = 0;
@@ -41,6 +45,13 @@ export default class PlayerHealthSystem {
     return (this.maxHealth * damagePercent) / 100;
   }
 
+  resolveDamage(damage, context = {}) {
+    const safeDamage = Math.max(0, Number(damage || 0));
+    if (!this.damageInterceptor) return safeDamage;
+    const nextDamage = this.damageInterceptor(safeDamage, context);
+    return Math.max(0, Number(nextDamage || 0));
+  }
+
   applyCollision(collisionInfo, nowMs) {
     if (!this.packageActive) return;
     this.lastImpact = collisionInfo?.impact || 0;
@@ -49,7 +60,13 @@ export default class PlayerHealthSystem {
     if (this.lastImpact <= this.minImpactForDamage) return;
     if (nowMs - this.lastDamageAtMs < this.collisionCooldownMs) return;
 
-    const damage = this.computeDamageBySpeed(collisionInfo);
+    const damage = this.resolveDamage(this.computeDamageBySpeed(collisionInfo), {
+      system: "package",
+      source: "collision",
+      nowMs,
+      collisionInfo,
+    });
+    if (damage <= 0) return;
     this.health = Math.max(0, this.health - damage);
     this.lastDamageAtMs = nowMs;
   }

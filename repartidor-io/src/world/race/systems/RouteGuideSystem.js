@@ -1,6 +1,7 @@
 export default class RouteGuideSystem {
   constructor(scene) {
     this.scene = scene;
+    this.suppressed = false;
     this.worldGraphics = scene.add.graphics();
     this.worldGraphics.setDepth(22);
 
@@ -9,10 +10,18 @@ export default class RouteGuideSystem {
     this.uiGraphics.setScrollFactor(0);
   }
 
+  setSuppressed(suppressed) {
+    this.suppressed = Boolean(suppressed);
+    if (this.suppressed) {
+      this.worldGraphics.clear();
+      this.uiGraphics.clear();
+    }
+  }
+
   update(moto, target, disabled = false) {
     this.worldGraphics.clear();
     this.uiGraphics.clear();
-    if (disabled || !moto || !target) return;
+    if (this.suppressed || disabled || !moto || !target) return;
 
     const distance = Math.hypot(target.x - moto.sprite.x, target.y - moto.sprite.y);
     const color = this.getDistanceColor(distance);

@@ -1,4 +1,5 @@
 import CargoPanel from "./hud/CargoPanel.js";
+import HeatPanel from "./hud/HeatPanel.js";
 import RaceStatusPanel from "./hud/RaceStatusPanel.js";
 import ResultsPanel from "./hud/ResultsPanel.js";
 import TachometerPanel from "./hud/TachometerPanel.js";
@@ -9,6 +10,7 @@ export default class DebugHUD {
   constructor(scene) {
     this.scene = scene;
     this.accumulator = 0;
+    this.visible = true;
 
     // Variables de estado para detectar eventos
     this.lastOrderCount = 0;
@@ -26,6 +28,10 @@ export default class DebugHUD {
       depth: 1300,
       margin: HUD_MARGIN,
     });
+    this.heatPanel = new HeatPanel(scene, {
+      depth: 1300,
+      margin: Math.max(16, HUD_MARGIN + 18),
+    });
     this.resultsPanel = new ResultsPanel(scene, { depth: 1360 });
     this.hudObjects = this.collectHudObjects();
     this.hudObjects.forEach((gameObject) => {
@@ -41,11 +47,13 @@ export default class DebugHUD {
     this.raceStatusPanel.resize(gameSize);
     this.cargoPanel.resize(gameSize);
     this.tachometerPanel.resize(gameSize);
+    this.heatPanel.resize(gameSize);
     this.resultsPanel.resize(gameSize);
   }
 
   update(moto, delta, info = {}) {
     this.tachometerPanel.update(moto, info.moto || {}, delta);
+    this.heatPanel.update(info.moto?.heat || {});
 
     this.accumulator += delta;
     if (this.accumulator < 50) return;
@@ -73,6 +81,12 @@ export default class DebugHUD {
 
     this.raceStatusPanel.update(deliveryData, info.timing || {});
     this.cargoPanel.update(deliveryData);
+
+    if (!this.visible) {
+      this.hudObjects.forEach((gameObject) => {
+        gameObject.setVisible?.(false);
+      });
+    }
   }
 
   showResults(results = [], winnerId = null, selfId = null) {
@@ -81,6 +95,13 @@ export default class DebugHUD {
 
   hideResults() {
     this.resultsPanel.hide();
+  }
+
+  setVisible(visible) {
+    this.visible = Boolean(visible);
+    this.hudObjects.forEach((gameObject) => {
+      gameObject.setVisible?.(this.visible);
+    });
   }
 
   collectHudObjects() {
@@ -94,7 +115,11 @@ export default class DebugHUD {
       this.tachometerPanel.staticGraphics,
       this.tachometerPanel.flashGraphics,
       this.tachometerPanel.needleGraphics,
+      this.tachometerPanel.heatBarGraphics,
       ...this.tachometerPanel.textNodes,
+      this.heatPanel.graphics,
+      this.heatPanel.barGraphics,
+      ...this.heatPanel.textNodes,
       this.resultsPanel.graphics,
       this.resultsPanel.titleText,
       this.resultsPanel.tableText,
@@ -114,6 +139,7 @@ export default class DebugHUD {
     this.raceStatusPanel.destroy();
     this.cargoPanel.destroy();
     this.tachometerPanel.destroy();
+    this.heatPanel.destroy();
     this.resultsPanel.destroy();
   }
 }

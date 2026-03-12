@@ -1,5 +1,18 @@
 import Phaser from "phaser";
 import Moto from "../entities/moto.js";
+import NightVisionOverlay from "../events/weather/NightVisionOverlay.js";
+import EmpPulseVisual from "../items/EmpPulseVisual.js";
+import ItemInventoryPanel from "../items/ItemInventoryPanel.js";
+import PositiveStockPanel from "../items/PositiveStockPanel.js";
+import PositiveStockSystem from "../items/PositiveStockSystem.js";
+import RouteRewardSystem from "../items/RouteRewardSystem.js";
+import ShieldEffectSystem from "../items/ShieldEffectSystem.js";
+import { ITEM_CONFIG, ITEM_TYPES, createInventoryState } from "../items/catalog.js";
+import {
+  WEATHER_EVENT_CONFIG,
+  WEATHER_EVENT_TYPES,
+  createEmptyWeatherEventState,
+} from "../events/weather/catalog.js";
 import { ACTIVE_MAP, preloadActiveMapAssets } from "../world/activeMap.js";
 import InputSystem from "../systems/InputSystem.js";
 import DebugHUD from "../ui/DebugHUD.js";
@@ -66,6 +79,8 @@ const TOP_SPEED_SCREEN_FX = {
 };
 const USERNAME_MAX_LENGTH = 16;
 const HUD_FILTER_REFRESH_MS = 250;
+const WEATHER_OVERLAY_DAMPING = 7;
+const WEATHER_UI_MARGIN = 18;
 
 function damp(current, target, dampingPerSecond, deltaMs) {
   const t = 1 - Math.exp((-dampingPerSecond * deltaMs) / 1000);
@@ -79,6 +94,7 @@ export default class GameScene extends Phaser.Scene {
     this.map = null;
     this.moto = null;
     this.hud = null;
+    this.effectCamera = null;
     this.hudCamera = null;
     this.playersGroup = null;
     this.multiplayer = null;
@@ -94,10 +110,39 @@ export default class GameScene extends Phaser.Scene {
     this.hudFilterAccumulatorMs = 0;
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
+    this.weatherEvent = this.createEmptyWeatherEventState();
+    this.weatherOverlayAlpha = 0;
 
     this.nameEntryRoot = null;
     this.nameInput = null;
     this.nameSubmitButton = null;
+    this.weatherOverlay = null;
+    this.weatherEventText = null;
+    this.weatherHintText = null;
+    this.weatherButtons = [];
+    this.nightVisionOverlay = null;
+    this.itemPanel = null;
+    this.stockPanel = null;
+    this.empPulseVisual = null;
+    this.itemInventoryState = createInventoryState([]);
+    this.positiveStockSystem = null;
+    this.shieldEffectSystem = null;
+    this.routeRewardSystem = null;
+    this.empHudSuppressedUntilMs = 0;
+    this.statusBannerVisibleBeforeEmp = false;
+    this.rainEventKey = null;
+    this.sunnyEventKey = null;
+    this.nightEventKey = null;
+    this.clearWeatherEventKey = null;
+    this.trainEventKey = null;
+    this.dropItemKey = null;
+    this.grantOilKey = null;
+    this.grantWallKey = null;
+    this.grantOilNumpadKey = null;
+    this.grantWallNumpadKey = null;
+    this.grantEmpKey = null;
+    this.grantEmpNumpadKey = null;
+    this.turboKey = null;
 
     this.onVisibilityChange = this.onVisibilityChange.bind(this);
     this.matchResultText = "";
@@ -114,10 +159,63 @@ export default class GameScene extends Phaser.Scene {
     this.restartLevelKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.R
     );
+    this.rainEventKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.ONE
+    );
+    this.sunnyEventKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.TWO
+    );
+    this.nightEventKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.THREE
+    );
+    this.clearWeatherEventKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.FOUR
+    );
+    this.trainEventKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.FIVE
+    );
+    this.grantOilKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SIX
+    );
+    this.grantWallKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SEVEN
+    );
+    this.grantOilNumpadKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.NUMPAD_SIX
+    );
+    this.grantWallNumpadKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.NUMPAD_SEVEN
+    );
+    this.grantEmpKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.EIGHT
+    );
+    this.grantEmpNumpadKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.NUMPAD_EIGHT
+    );
+    this.dropItemKey = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.Z
+    );
+    this.turboKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
 
     this.createLobbyUi();
     this.createStatusBanner();
+    this.createWeatherUi();
+    this.createPositiveStockUi();
+    this.createItemUi();
     this.createNameEntryUi();
+    this.empPulseVisual = new EmpPulseVisual(this, { depth: 26 });
+    this.positiveStockSystem = new PositiveStockSystem();
+    this.shieldEffectSystem = new ShieldEffectSystem();
+    this.routeRewardSystem = new RouteRewardSystem({
+      onGrantItem: (rewardKey) => this.multiplayer?.emitClaimRouteReward?.(rewardKey),
+      onGrantTurbo: () => {
+        if (!this.positiveStockSystem?.grantExtraTurbo()) return;
+        this.refreshPositiveStockUi();
+        this.statusBanner.setText("R2: turbo extra recibido");
+        this.statusBanner.setColor("#ffd27d");
+        this.statusBanner.setVisible(true);
+      },
+    });
 
     this.multiplayer = new MultiplayerSystem(this, {
       spriteKey: "moto",
@@ -130,6 +228,18 @@ export default class GameScene extends Phaser.Scene {
         onRoomError: (payload) => this.onRoomError(payload),
         onConnectError: (error) => this.onConnectError(error),
         onLobbyRestarted: () => this.onLobbyRestarted(),
+        onWeatherEventQueued: (payload) => this.onWeatherEventQueued(payload),
+        onWeatherEventStarted: (payload) => this.onWeatherEventStarted(payload),
+        onWeatherEventEnded: (payload) => this.onWeatherEventEnded(payload),
+        onTrainEventStarted: (payload) => this.onTrainEventStarted(payload),
+        onTrainEventEnded: (payload) => this.onTrainEventEnded(payload),
+        onTrackItemsSnapshot: (payload) => this.onTrackItemsSnapshot(payload),
+        onTrackItemAdded: (payload) => this.onTrackItemAdded(payload),
+        onTrackItemUpdated: (payload) => this.onTrackItemUpdated(payload),
+        onTrackItemRemoved: (payload) => this.onTrackItemRemoved(payload),
+        onInventoryState: (payload) => this.onInventoryState(payload),
+        onEmpPulseStarted: (payload) => this.onEmpPulseStarted(payload),
+        onInventoryItemActivated: (payload) => this.onInventoryItemActivated(payload),
       },
     });
 
@@ -147,13 +257,26 @@ export default class GameScene extends Phaser.Scene {
       document.removeEventListener("visibilitychange", this.onVisibilityChange);
       this.hud?.destroy();
       this.hud = null;
+      if (this.effectCamera) {
+        this.cameras.remove(this.effectCamera);
+        this.effectCamera = null;
+      }
       if (this.hudCamera) {
         this.cameras.remove(this.hudCamera);
         this.hudCamera = null;
       }
       this.multiplayer?.destroy();
       this.destroyNameEntryUi();
+      this.destroyWeatherUi();
+      this.destroyPositiveStockUi();
+      this.destroyItemUi();
+      this.empPulseVisual?.destroy();
+      this.empPulseVisual = null;
     });
+  }
+
+  createEmptyWeatherEventState() {
+    return createEmptyWeatherEventState();
   }
 
   createNameEntryUi() {
@@ -215,6 +338,7 @@ export default class GameScene extends Phaser.Scene {
     const safeName = (raw || "Jugador").slice(0, USERNAME_MAX_LENGTH);
     window.localStorage.setItem("repartidor_player_name", safeName);
 
+    this.blurNameEntry();
     this.nameInput.value = safeName;
     this.nameInput.disabled = true;
     this.nameSubmitButton.disabled = true;
@@ -230,10 +354,22 @@ export default class GameScene extends Phaser.Scene {
 
   onSocketInit() {
     this.isRegistered = true;
+    this.blurNameEntry();
     if (this.nameEntryRoot) {
       this.nameEntryRoot.style.display = "none";
     }
     this.renderLobbyState();
+  }
+
+  blurNameEntry() {
+    if (
+      typeof document !== "undefined" &&
+      document.activeElement instanceof HTMLElement
+    ) {
+      document.activeElement.blur?.();
+    }
+    this.nameInput?.blur?.();
+    this.nameSubmitButton?.blur?.();
   }
 
   destroyNameEntryUi() {
@@ -339,6 +475,296 @@ export default class GameScene extends Phaser.Scene {
     this.statusBanner.setScrollFactor(0);
     this.statusBanner.setDepth(2100);
     this.statusBanner.setVisible(false);
+    this.statusBanner.__isHudObject = true;
+  }
+
+  createWeatherUi() {
+    const { width, height } = this.scale.gameSize;
+
+    this.weatherOverlay = this.add.rectangle(
+      0,
+      0,
+      width,
+      height,
+      0x6ea7ff,
+      1
+    );
+    this.weatherOverlay.setOrigin(0);
+    this.weatherOverlay.setScrollFactor(0);
+    this.weatherOverlay.setDepth(2110);
+    this.weatherOverlay.setAlpha(0);
+    this.weatherOverlay.setVisible(false);
+    this.nightVisionOverlay = new NightVisionOverlay(this, {
+      depth: 2120,
+      blockedRatio:
+        WEATHER_EVENT_CONFIG[WEATHER_EVENT_TYPES.NIGHT].nightVision?.blockedRatio ?? 0.35,
+      color: WEATHER_EVENT_CONFIG[WEATHER_EVENT_TYPES.NIGHT].nightVision?.color ?? 0x000000,
+      alpha: WEATHER_EVENT_CONFIG[WEATHER_EVENT_TYPES.NIGHT].nightVision?.alpha ?? 1,
+    });
+    this.nightVisionOverlay.resize(this.scale.gameSize);
+
+    this.weatherEventText = this.add.text(width / 2, 108, "", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "24px",
+      fontStyle: "bold",
+      color: "#d7e1ef",
+      stroke: "#111822",
+      strokeThickness: 6,
+    });
+    this.weatherEventText.setOrigin(0.5);
+    this.weatherEventText.setScrollFactor(0);
+    this.weatherEventText.setDepth(2140);
+    this.weatherEventText.setVisible(false);
+    this.weatherEventText.__isHudObject = true;
+
+    this.weatherHintText = this.add.text(0, 0, "Eventos: [1] lluvia  [2] asoleado  [3] noche  [4] limpiar  [5] tren", {
+      fontFamily: "Consolas, monospace",
+      fontSize: "18px",
+      color: "#e7eef8",
+    });
+    this.weatherHintText.setScrollFactor(0);
+    this.weatherHintText.setDepth(2140);
+    this.weatherHintText.setVisible(false);
+    this.weatherHintText.__isHudObject = true;
+
+    const buttonConfigs = [
+      {
+        type: WEATHER_EVENT_TYPES.RAIN,
+        label: "Lluvia",
+        keyLabel: "[1]",
+        fillColor: 0x2f5f90,
+      },
+      {
+        type: WEATHER_EVENT_TYPES.SUNNY,
+        label: "Asoleado",
+        keyLabel: "[2]",
+        fillColor: 0x995c24,
+      },
+      {
+        type: WEATHER_EVENT_TYPES.NIGHT,
+        label: "Noche",
+        keyLabel: "[3]",
+        fillColor: 0x283047,
+      },
+      {
+        type: WEATHER_EVENT_TYPES.NONE,
+        label: "Quitar",
+        keyLabel: "[4]",
+        fillColor: 0x39424d,
+        action: "clear",
+      },
+      {
+        type: "train",
+        label: "Tren",
+        keyLabel: "[5]",
+        fillColor: 0x6a2d2d,
+        action: "train",
+      },
+    ];
+
+    this.weatherButtons = buttonConfigs.map((config) => {
+      const background = this.add.rectangle(0, 0, 156, 38, config.fillColor, 0.92);
+      background.setOrigin(0, 0);
+      background.setScrollFactor(0);
+      background.setDepth(2140);
+      background.setStrokeStyle(2, 0xffffff, 0.18);
+      background.setVisible(false);
+      background.setInteractive({ useHandCursor: true });
+      background.on("pointerdown", () => {
+        if (config.action === "clear" || config.type === WEATHER_EVENT_TYPES.NONE) {
+          this.multiplayer?.emitClearWeatherEvent();
+        } else if (config.action === "train") {
+          this.multiplayer?.emitStartTrainEvent();
+        } else {
+          this.multiplayer?.emitQueueWeatherEvent(config.type);
+        }
+      });
+      background.__isHudObject = true;
+
+      const label = this.add.text(0, 0, `${config.keyLabel} ${config.label}`, {
+        fontFamily: "Consolas, monospace",
+        fontSize: "18px",
+        color: "#ffffff",
+      });
+      label.setOrigin(0.5);
+      label.setScrollFactor(0);
+      label.setDepth(2141);
+      label.setVisible(false);
+      label.__isHudObject = true;
+
+      return {
+        ...config,
+        background,
+        label,
+      };
+    });
+
+    this.layoutWeatherUi(this.scale.gameSize);
+    this.setWeatherControlsVisible(false);
+  }
+
+  layoutWeatherUi(gameSize) {
+    if (this.weatherOverlay) {
+      this.weatherOverlay.setSize(gameSize.width, gameSize.height);
+    }
+    this.nightVisionOverlay?.resize(gameSize);
+
+    if (this.weatherEventText) {
+      this.weatherEventText.setPosition(gameSize.width / 2, 108);
+    }
+
+    if (this.weatherHintText) {
+      this.weatherHintText.setPosition(
+        WEATHER_UI_MARGIN,
+        gameSize.height - 128
+      );
+    }
+
+    const startX = WEATHER_UI_MARGIN;
+    const y = gameSize.height - 92;
+    const gap = 12;
+    let currentX = startX;
+
+    this.weatherButtons.forEach((button) => {
+      button.background.setPosition(currentX, y);
+      button.label.setPosition(currentX + 78, y + 19);
+      currentX += button.background.width + gap;
+    });
+  }
+
+  setWeatherControlsVisible(visible) {
+    const showControls = visible && this.isLocalHost();
+    this.weatherHintText?.setVisible(showControls);
+    this.weatherButtons.forEach((button) => {
+      button.background.setVisible(showControls);
+      button.label.setVisible(showControls);
+      if (showControls) {
+        button.background.setInteractive({ useHandCursor: true });
+      } else {
+        button.background.disableInteractive();
+      }
+    });
+
+    if (!visible) {
+      this.weatherEventText?.setVisible(false);
+    } else {
+      this.refreshWeatherUi();
+    }
+  }
+
+  refreshWeatherUi() {
+    const hasWeatherState = this.weatherEvent.type !== WEATHER_EVENT_TYPES.NONE;
+
+    this.weatherButtons.forEach((button) => {
+      const selected =
+        button.action !== "clear" &&
+        button.action !== "train" &&
+        button.type === this.weatherEvent.type;
+      button.background.setAlpha(selected ? 1 : 0.88);
+      button.background.setStrokeStyle(
+        selected ? 3 : 2,
+        selected ? 0xffffff : 0xffffff,
+        selected ? 0.42 : 0.18
+      );
+      button.label.setAlpha(selected ? 1 : 0.9);
+    });
+
+    if (!this.weatherEventText) return;
+
+    if (!hasWeatherState || !this.matchRunning) {
+      this.weatherEventText.setVisible(false);
+      return;
+    }
+
+    const now = Date.now();
+    if (this.weatherEvent.phase === "countdown") {
+      const remainingMs = Math.max(0, this.weatherEvent.startsAtMs - now);
+      const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+      this.weatherEventText.setText(
+        `${this.weatherEvent.label} en ${remainingSeconds}`
+      );
+    } else {
+      const remainingMs = Math.max(0, this.weatherEvent.endsAtMs - now);
+      const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+      this.weatherEventText.setText(
+        `${this.weatherEvent.label} activa | ${remainingSeconds}s`
+      );
+    }
+    this.weatherEventText.setColor(this.weatherEvent.accentColor);
+    this.weatherEventText.setVisible(true);
+  }
+
+  destroyWeatherUi() {
+    this.weatherOverlay?.destroy();
+    this.weatherOverlay = null;
+    this.nightVisionOverlay?.destroy();
+    this.nightVisionOverlay = null;
+    this.weatherEventText?.destroy();
+    this.weatherEventText = null;
+    this.weatherHintText?.destroy();
+    this.weatherHintText = null;
+    this.weatherButtons.forEach((button) => {
+      button.background.destroy();
+      button.label.destroy();
+    });
+    this.weatherButtons = [];
+  }
+
+  createPositiveStockUi() {
+    this.stockPanel = new PositiveStockPanel(this, {
+      depth: 2140,
+      margin: WEATHER_UI_MARGIN,
+    });
+    this.stockPanel.setVisible(false);
+  }
+
+  destroyPositiveStockUi() {
+    this.stockPanel?.destroy();
+    this.stockPanel = null;
+  }
+
+  setPositiveStockUiVisible(visible) {
+    this.stockPanel?.setVisible(Boolean(visible));
+  }
+
+  refreshPositiveStockUi() {
+    this.stockPanel?.update(this.positiveStockSystem?.getHudState?.() || {});
+  }
+
+  createItemUi() {
+    this.itemPanel = new ItemInventoryPanel(this, {
+      depth: 2140,
+      margin: WEATHER_UI_MARGIN,
+      onGrantOil: () => {
+        if (!this.matchRunning || !this.isLocalHost()) return;
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.OIL);
+      },
+      onGrantWall: () => {
+        if (!this.matchRunning || !this.isLocalHost()) return;
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.WALL);
+      },
+      onGrantEmp: () => {
+        if (!this.matchRunning || !this.isLocalHost()) return;
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.EMP);
+      },
+    });
+    this.itemPanel.setInventory(this.itemInventoryState);
+    this.itemPanel.setVisible(false);
+  }
+
+  destroyItemUi() {
+    this.itemPanel?.destroy();
+    this.itemPanel = null;
+  }
+
+  setItemUiVisible(visible) {
+    this.itemPanel?.setVisible(Boolean(visible));
+    this.itemPanel?.setHostControlsVisible(Boolean(visible) && this.isLocalHost());
+  }
+
+  refreshItemUi() {
+    this.itemPanel?.setInventory(this.itemInventoryState);
+    this.itemPanel?.setHostControlsVisible(this.matchRunning && this.isLocalHost());
   }
 
   handleResize(gameSize) {
@@ -357,6 +783,11 @@ export default class GameScene extends Phaser.Scene {
       this.statusBanner.setPosition(gameSize.width / 2, 60);
     }
 
+    this.layoutWeatherUi(gameSize);
+    if (this.effectCamera) {
+      this.effectCamera.setViewport(0, 0, gameSize.width, gameSize.height);
+    }
+
     if (this.matchRunning && this.moto) {
       const cam = this.cameras.main;
       cam.setViewport(0, 0, gameSize.width, gameSize.height);
@@ -373,6 +804,8 @@ export default class GameScene extends Phaser.Scene {
   onLobbyState(payload = {}) {
     this.currentLobbyState = payload;
     this.renderLobbyState();
+    this.setWeatherControlsVisible(this.matchRunning && !this.matchEnded);
+    this.refreshItemUi();
   }
 
   onRoomError(payload = {}) {
@@ -455,6 +888,8 @@ export default class GameScene extends Phaser.Scene {
       this.lobbyMessage.setText("Conectando sala...");
       this.lobbyMessage.setColor("#ffd27d");
     }
+
+    this.setWeatherControlsVisible(this.matchRunning && !this.matchEnded);
   }
 
   onGameStarted(payload = {}) {
@@ -471,6 +906,19 @@ export default class GameScene extends Phaser.Scene {
       worldWidth: DEFAULT_WORLD_WIDTH,
       worldHeight: DEFAULT_WORLD_HEIGHT,
       objectiveSeed,
+      localPlayerId: this.multiplayer.selfId,
+      onTrackItemTriggered: (trackItemPayload = {}) => {
+        this.multiplayer?.emitTriggerTrackItem(
+          trackItemPayload.id,
+          trackItemPayload.type
+        );
+      },
+      motoDamageInterceptor: (damage) =>
+        this.shieldEffectSystem?.interceptMotoDamage?.(damage) ?? damage,
+      packageDamageInterceptor: (damage) =>
+        this.shieldEffectSystem?.interceptPackageDamage?.(damage) ?? damage,
+      onObjectiveCompleted: (completed) =>
+        this.routeRewardSystem?.handleCompletedObjective?.(completed),
     });
 
     this.moto = new Moto(this, localState.x, localState.y, this.inputSystem);
@@ -498,9 +946,8 @@ export default class GameScene extends Phaser.Scene {
     this.handleResize(this.scale.gameSize);
 
     this.hud = new DebugHUD(this);
+    this.ensureEffectCamera();
     this.ensureHudCamera();
-    this.applyHudCameraFilters();
-
     this.matchRunning = true;
     this.matchEnded = false;
     this.finishSent = false;
@@ -509,6 +956,21 @@ export default class GameScene extends Phaser.Scene {
     this.hud?.hideResults();
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
+    this.clearLocalWeatherEventState();
+    this.map?.endTrainEvent?.();
+    this.setWeatherControlsVisible(true);
+    this.itemInventoryState = createInventoryState([]);
+    this.refreshItemUi();
+    this.setItemUiVisible(true);
+    this.positiveStockSystem?.resetForMatch();
+    this.shieldEffectSystem?.reset();
+    this.routeRewardSystem?.reset();
+    this.refreshPositiveStockUi();
+    this.setPositiveStockUiVisible(true);
+    this.empHudSuppressedUntilMs = 0;
+    this.statusBannerVisibleBeforeEmp = false;
+    this.applyEmpHudSuppression(false);
+    this.applyHudCameraFilters();
 
     this.setLobbyVisible(false);
     this.statusBanner.setVisible(false);
@@ -554,6 +1016,14 @@ export default class GameScene extends Phaser.Scene {
       payload.winnerId || null,
       this.multiplayer?.selfId || null
     );
+    this.clearLocalWeatherEventState();
+    this.map?.endTrainEvent?.();
+    this.setWeatherControlsVisible(false);
+    this.setItemUiVisible(false);
+    this.setPositiveStockUiVisible(false);
+    this.empHudSuppressedUntilMs = 0;
+    this.statusBannerVisibleBeforeEmp = true;
+    this.applyEmpHudSuppression(false);
 
     const isHost = this.currentLobbyState?.hostId === this.multiplayer.selfId;
     if (isHost) {
@@ -569,6 +1039,124 @@ export default class GameScene extends Phaser.Scene {
     this.scene.restart();
   }
 
+  onWeatherEventQueued(payload = {}) {
+    this.applyWeatherEventPayload(payload, "countdown");
+  }
+
+  onWeatherEventStarted(payload = {}) {
+    this.applyWeatherEventPayload(payload, "active");
+  }
+
+  onWeatherEventEnded() {
+    this.clearLocalWeatherEventState();
+  }
+
+  onTrainEventStarted(payload = {}) {
+    this.map?.startTrainEvent?.(payload);
+  }
+
+  onTrainEventEnded(payload = {}) {
+    this.map?.endTrainEvent?.(payload);
+  }
+
+  onTrackItemsSnapshot(payload = {}) {
+    this.map?.setTrackItems?.(payload.items || []);
+  }
+
+  onTrackItemAdded(payload = {}) {
+    this.map?.upsertTrackItem?.(payload);
+  }
+
+  onTrackItemUpdated(payload = {}) {
+    this.map?.upsertTrackItem?.(payload);
+  }
+
+  onTrackItemRemoved(payload = {}) {
+    this.map?.removeTrackItem?.(payload.id);
+  }
+
+  onInventoryState(payload = {}) {
+    this.itemInventoryState = payload;
+    this.refreshItemUi();
+  }
+
+  onInventoryItemActivated(payload = {}) {
+    if (!this.matchRunning) return;
+    if (payload.type !== ITEM_TYPES.SHIELD) return;
+    if (this.shieldEffectSystem?.activate(this.map?.getMotoMaxHealth?.())) {
+      this.statusBanner.setText("Escudo activo");
+      this.statusBanner.setColor("#7fe7ff");
+      this.statusBanner.setVisible(true);
+    }
+  }
+
+  onEmpPulseStarted(payload = {}) {
+    this.empPulseVisual?.trigger({
+      ...payload,
+      color: ITEM_CONFIG[ITEM_TYPES.EMP].draw.color,
+      ringColor: ITEM_CONFIG[ITEM_TYPES.EMP].draw.ringColor,
+    });
+
+    if (!this.matchRunning || !this.moto) return;
+    if (payload.ownerId === this.multiplayer?.selfId) return;
+
+    const radius = Math.max(80, Number(payload.radius || ITEM_CONFIG[ITEM_TYPES.EMP].radius));
+    const distance = Math.hypot(
+      Number(payload.x || 0) - this.moto.sprite.x,
+      Number(payload.y || 0) - this.moto.sprite.y
+    );
+    if (distance > radius) return;
+
+    this.moto.applyEmpEffect({
+      durationMs:
+        Number(payload.effectDurationMs || ITEM_CONFIG[ITEM_TYPES.EMP].effectDurationMs),
+      initialSpeedFactor: ITEM_CONFIG[ITEM_TYPES.EMP].initialSpeedFactor,
+      handling: ITEM_CONFIG[ITEM_TYPES.EMP].handling,
+    });
+    this.startEmpHudSuppression(
+      Number(payload.effectDurationMs || ITEM_CONFIG[ITEM_TYPES.EMP].effectDurationMs)
+    );
+    this.cameras.main.shake(280, 0.005);
+  }
+
+  startEmpHudSuppression(durationMs) {
+    const safeDurationMs = Math.max(200, Number(durationMs || 0));
+    if (this.empHudSuppressedUntilMs <= this.time.now) {
+      this.statusBannerVisibleBeforeEmp = Boolean(this.statusBanner?.visible);
+    }
+    this.empHudSuppressedUntilMs = Math.max(
+      this.empHudSuppressedUntilMs,
+      this.time.now + safeDurationMs
+    );
+    this.applyEmpHudSuppression(true);
+  }
+
+  applyEmpHudSuppression(suppressed) {
+    this.hud?.setVisible?.(!suppressed);
+    this.statusBanner?.setVisible(
+      suppressed ? false : Boolean(this.statusBannerVisibleBeforeEmp)
+    );
+    this.weatherEventText?.setVisible(!suppressed && this.matchRunning);
+    this.weatherHintText?.setVisible(
+      !suppressed && this.matchRunning && this.isLocalHost()
+    );
+    this.weatherButtons.forEach((button) => {
+      const visible = !suppressed && this.isLocalHost() && !this.matchEnded;
+      button.background.setVisible(visible);
+      button.label.setVisible(visible);
+      button.background.disableInteractive();
+      if (visible) {
+        button.background.setInteractive({ useHandCursor: true });
+      }
+    });
+    this.itemPanel?.setVisible(!suppressed && this.matchRunning && !this.matchEnded);
+    this.itemPanel?.setHostControlsVisible(
+      !suppressed && this.matchRunning && !this.matchEnded && this.isLocalHost()
+    );
+    this.stockPanel?.setVisible(!suppressed && this.matchRunning && !this.matchEnded);
+    this.map?.setGuideSuppressed?.(suppressed);
+  }
+
   ensureHudCamera() {
     const { width, height } = this.scale.gameSize;
     if (!this.hudCamera) {
@@ -582,18 +1170,37 @@ export default class GameScene extends Phaser.Scene {
     this.hudCamera.setZoom(CAMERA_ZOOM_SETTINGS.hudBaseZoom);
   }
 
+  ensureEffectCamera() {
+    const { width, height } = this.scale.gameSize;
+    if (!this.effectCamera) {
+      this.effectCamera = this.cameras.add(0, 0, width, height);
+      this.effectCamera.setName("effects-camera");
+    } else {
+      this.effectCamera.setViewport(0, 0, width, height);
+    }
+
+    this.effectCamera.setScroll(0, 0);
+    this.effectCamera.setBackgroundColor("rgba(0, 0, 0, 0)");
+  }
+
   applyHudCameraFilters() {
     if (!this.hud || !this.hudCamera) return;
 
     const mainCam = this.cameras.main;
     const hudObjects = new Set(this.hud.getHudObjects?.() || []);
+    const effectObjects = new Set(this.nightVisionOverlay?.getObjects?.() || []);
 
     this.children.list.forEach((gameObject) => {
       if (!gameObject) return;
-      if (hudObjects.has(gameObject) || gameObject.__isHudObject) {
+      if (effectObjects.has(gameObject)) {
+        mainCam.ignore(gameObject);
+        this.hudCamera.ignore(gameObject);
+      } else if (hudObjects.has(gameObject) || gameObject.__isHudObject) {
+        this.effectCamera?.ignore(gameObject);
         mainCam.ignore(gameObject);
       } else {
         this.hudCamera.ignore(gameObject);
+        this.effectCamera?.ignore(gameObject);
       }
     });
   }
@@ -611,6 +1218,10 @@ export default class GameScene extends Phaser.Scene {
       this.cameras.remove(this.hudCamera);
       this.hudCamera = null;
     }
+    if (this.effectCamera) {
+      this.cameras.remove(this.effectCamera);
+      this.effectCamera = null;
+    }
 
     this.map = null;
     this.matchRunning = false;
@@ -624,6 +1235,20 @@ export default class GameScene extends Phaser.Scene {
     this.hudFilterAccumulatorMs = 0;
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
+    this.clearLocalWeatherEventState();
+    this.map?.endTrainEvent?.();
+    this.setWeatherControlsVisible(false);
+    this.itemInventoryState = createInventoryState([]);
+    this.refreshItemUi();
+    this.setItemUiVisible(false);
+    this.positiveStockSystem?.resetForMatch();
+    this.shieldEffectSystem?.reset();
+    this.routeRewardSystem?.reset();
+    this.refreshPositiveStockUi();
+    this.setPositiveStockUiVisible(false);
+    this.empHudSuppressedUntilMs = 0;
+    this.statusBannerVisibleBeforeEmp = false;
+    this.applyEmpHudSuppression(false);
 
     this.multiplayer?.attachGroup(null);
     this.setLobbyVisible(true);
@@ -643,6 +1268,7 @@ export default class GameScene extends Phaser.Scene {
       }
       this.renderLobbyState();
     } else {
+      this.blurNameEntry();
       this.startButtonRect.setVisible(false);
       this.startButtonLabel.setVisible(false);
       if (this.nameEntryRoot) {
@@ -662,6 +1288,9 @@ export default class GameScene extends Phaser.Scene {
   runSimulationStep(stepMs) {
     if (!this.moto || !this.map) return;
 
+    this.moto.setShieldVisualActive?.(
+      Boolean(this.shieldEffectSystem?.getState?.().active)
+    );
     const playerLocked =
       this.matchEnded ||
       (this.map.isPlayerLocked?.() ?? false) ||
@@ -672,6 +1301,119 @@ export default class GameScene extends Phaser.Scene {
       this.moto.update(stepMs);
     }
     this.map.enforcePlayer(this.moto, stepMs);
+    this.moto.setShieldVisualActive?.(
+      Boolean(this.shieldEffectSystem?.getState?.().active)
+    );
+  }
+
+  isLocalHost() {
+    return this.currentLobbyState?.hostId === this.multiplayer?.selfId;
+  }
+
+  applyWeatherEventPayload(payload = {}, phase = "active") {
+    if (!this.matchRunning || !this.moto) return;
+
+    const config = WEATHER_EVENT_CONFIG[payload.type];
+    if (!config) return;
+
+    const startsAtMs = Number(payload.startsAt || payload.startedAt || Date.now());
+    const endsAtMs = Number(
+      payload.endsAt || payload.startedAt + config.durationMs || Date.now()
+    );
+
+    this.weatherEvent = {
+      type: config.type,
+      phase,
+      label: payload.label || config.label,
+      startsAtMs,
+      endsAtMs,
+      overlayColor: config.overlayColor,
+      overlayAlpha: config.overlayAlpha,
+      accentColor: config.accentColor,
+      source: payload.source || "",
+    };
+
+    if (config.type === WEATHER_EVENT_TYPES.NIGHT) {
+      this.weatherOverlay?.setVisible(false);
+      this.weatherOverlay?.setAlpha(0);
+      this.weatherOverlayAlpha = 0;
+    } else {
+      this.weatherOverlay?.setFillStyle(config.overlayColor, 1);
+      this.weatherOverlay?.setVisible(true);
+    }
+
+    if (phase === "active") {
+      this.moto.setWeatherEvent({
+        type: config.type,
+        handling: config.handling,
+        heat: config.heat,
+      });
+    } else {
+      this.moto.setWeatherEvent(null);
+    }
+    this.refreshWeatherUi();
+  }
+
+  clearLocalWeatherEventState() {
+    this.weatherEvent = this.createEmptyWeatherEventState();
+    this.moto?.setWeatherEvent(null);
+    this.nightVisionOverlay?.setActive(false);
+    this.refreshWeatherUi();
+  }
+
+  updateWeatherEvent(deltaMs) {
+    if (
+      this.weatherEvent.phase === "active" &&
+      this.weatherEvent.type !== WEATHER_EVENT_TYPES.NONE &&
+      Date.now() >= this.weatherEvent.endsAtMs
+    ) {
+      this.clearLocalWeatherEventState();
+    }
+
+    const overlayTargetAlpha =
+      this.matchRunning &&
+      this.weatherEvent.phase === "active" &&
+      this.weatherEvent.type !== WEATHER_EVENT_TYPES.NIGHT
+        ? this.weatherEvent.overlayAlpha
+        : 0;
+    this.weatherOverlayAlpha = damp(
+      this.weatherOverlayAlpha,
+      overlayTargetAlpha,
+      WEATHER_OVERLAY_DAMPING,
+      deltaMs
+    );
+
+    if (this.weatherOverlay) {
+      this.weatherOverlay.setAlpha(this.weatherOverlayAlpha);
+      this.weatherOverlay.setVisible(this.weatherOverlayAlpha > 0.01);
+    }
+    const isNightActive =
+      this.matchRunning &&
+      this.weatherEvent.phase === "active" &&
+      this.weatherEvent.type === WEATHER_EVENT_TYPES.NIGHT;
+    const nightConfig = WEATHER_EVENT_CONFIG[WEATHER_EVENT_TYPES.NIGHT].nightVision || {};
+    this.nightVisionOverlay?.setActive(isNightActive, {
+      blockedRatio: nightConfig.blockedRatio ?? 0.35,
+      color: nightConfig.color ?? 0x000000,
+      alpha: nightConfig.alpha ?? 1,
+    });
+
+    this.refreshWeatherUi();
+  }
+
+  syncNightVisionFocus() {
+    if (!this.nightVisionOverlay || !this.moto) return;
+
+    const cam = this.cameras.main;
+    if (!cam) return;
+
+    cam.preRender();
+    const worldView = cam.worldView;
+    const screenX =
+      ((this.moto.sprite.x - worldView.x) / Math.max(1, worldView.width)) * cam.width + cam.x;
+    const screenY =
+      ((this.moto.sprite.y - worldView.y) / Math.max(1, worldView.height)) * cam.height + cam.y;
+    this.nightVisionOverlay.setFocus(screenX, screenY);
   }
 
   updateCameraAndHud(deltaMs) {
@@ -722,8 +1464,8 @@ export default class GameScene extends Phaser.Scene {
       TOP_SPEED_SCREEN_FX.extraZoomOut * topSpeedIntensity +
       highSpeedZoomPulse +
       topSpeedZoomPulse;
-    const viewportWidth = cam.width || this.scale.gameSize.width || DESIGN_VIEWPORT_WIDTH;
-    const viewportHeight = cam.height || this.scale.gameSize.height || DESIGN_VIEWPORT_HEIGHT;
+    const viewportWidth = this.scale.gameSize.width || DESIGN_VIEWPORT_WIDTH;
+    const viewportHeight = this.scale.gameSize.height || DESIGN_VIEWPORT_HEIGHT;
     const viewportScale = Math.max(
       viewportWidth / DESIGN_VIEWPORT_WIDTH,
       viewportHeight / DESIGN_VIEWPORT_HEIGHT
@@ -790,12 +1532,19 @@ export default class GameScene extends Phaser.Scene {
       deltaMs
     );
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
+    this.syncNightVisionFocus();
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
+    this.refreshPositiveStockUi();
     const finishWindowRemainingMs = this.finishWindowEndsAtMs
       ? Math.max(0, this.finishWindowEndsAtMs - Date.now())
       : 0;
+    const motoHudInfo = {
+      ...(mapHudInfo.moto || {}),
+      ...(this.moto.getHudState?.() || {}),
+    };
     this.hud.update(this.moto, deltaMs, {
       ...mapHudInfo,
+      moto: motoHudInfo,
       timing: {
         ...(mapHudInfo.timing || {}),
         finishWindowRemainingMs,
@@ -829,8 +1578,69 @@ export default class GameScene extends Phaser.Scene {
 
   update(_time, delta) {
     this.multiplayer?.update(delta);
+    this.empPulseVisual?.update();
 
     if (!this.matchRunning) return;
+
+    if (this.isLocalHost() && Phaser.Input.Keyboard.JustDown(this.rainEventKey)) {
+      this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.RAIN);
+    }
+    if (this.isLocalHost() && Phaser.Input.Keyboard.JustDown(this.sunnyEventKey)) {
+      this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.SUNNY);
+    }
+    if (this.isLocalHost() && Phaser.Input.Keyboard.JustDown(this.nightEventKey)) {
+      this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.NIGHT);
+    }
+    if (
+      this.isLocalHost() &&
+      Phaser.Input.Keyboard.JustDown(this.clearWeatherEventKey)
+    ) {
+      this.multiplayer?.emitClearWeatherEvent();
+    }
+    if (this.isLocalHost() && Phaser.Input.Keyboard.JustDown(this.trainEventKey)) {
+      this.multiplayer?.emitStartTrainEvent();
+    }
+    if (
+      this.isLocalHost() &&
+      (Phaser.Input.Keyboard.JustDown(this.grantOilKey) ||
+        Phaser.Input.Keyboard.JustDown(this.grantOilNumpadKey))
+    ) {
+      this.multiplayer?.emitGrantItem(ITEM_TYPES.OIL);
+    }
+    if (
+      this.isLocalHost() &&
+      (Phaser.Input.Keyboard.JustDown(this.grantWallKey) ||
+        Phaser.Input.Keyboard.JustDown(this.grantWallNumpadKey))
+    ) {
+      this.multiplayer?.emitGrantItem(ITEM_TYPES.WALL);
+    }
+    if (
+      this.isLocalHost() &&
+      (Phaser.Input.Keyboard.JustDown(this.grantEmpKey) ||
+        Phaser.Input.Keyboard.JustDown(this.grantEmpNumpadKey))
+    ) {
+      this.multiplayer?.emitGrantItem(ITEM_TYPES.EMP);
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.dropItemKey)) {
+      this.multiplayer?.emitDropItem();
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.turboKey)) {
+      if (this.positiveStockSystem?.useTurbo(this.moto)) {
+        this.refreshPositiveStockUi();
+        this.cameras.main.shake(140, 0.0022);
+      }
+    }
+
+    if (this.empHudSuppressedUntilMs > 0) {
+      const stillSuppressed = this.time.now < this.empHudSuppressedUntilMs;
+      this.applyEmpHudSuppression(stillSuppressed);
+      if (!stillSuppressed) {
+        this.empHudSuppressedUntilMs = 0;
+        this.refreshWeatherUi();
+        this.refreshItemUi();
+        this.refreshPositiveStockUi();
+      }
+    }
 
     this.hudFilterAccumulatorMs += delta;
     if (this.hudFilterAccumulatorMs >= HUD_FILTER_REFRESH_MS) {
@@ -849,6 +1659,7 @@ export default class GameScene extends Phaser.Scene {
 
     const cappedDelta = Math.min(delta, MAX_ACCUMULATED_DELTA_MS);
     const presentationDelta = Math.min(cappedDelta, CAMERA_DELTA_CAP_MS);
+    this.updateWeatherEvent(presentationDelta);
 
     if (cappedDelta >= DELTA_SPIKE_RESET_MS) {
       this.simulationAccumulatorMs = 0;

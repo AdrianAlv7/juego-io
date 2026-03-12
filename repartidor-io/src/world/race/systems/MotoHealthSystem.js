@@ -10,6 +10,10 @@ export default class MotoHealthSystem {
       Number(options.collisionCooldownMs || 180)
     );
     this.repairDurationMs = Math.max(900, Number(options.repairDurationMs || 1800));
+    this.damageInterceptor =
+      typeof options.damageInterceptor === "function"
+        ? options.damageInterceptor
+        : null;
 
     this.health = this.maxHealth;
     this.repairingUntilMs = 0;
@@ -67,6 +71,13 @@ export default class MotoHealthSystem {
     return (this.maxHealth * damagePercent) / 100;
   }
 
+  resolveDamage(damage, context = {}) {
+    const safeDamage = Math.max(0, Number(damage || 0));
+    if (!this.damageInterceptor) return safeDamage;
+    const nextDamage = this.damageInterceptor(safeDamage, context);
+    return Math.max(0, Number(nextDamage || 0));
+  }
+
   applyCollision(collisionInfo, nowMs) {
     if (this.isRepairing(nowMs)) return;
     if (!collisionInfo?.collided) return;
@@ -76,12 +87,41 @@ export default class MotoHealthSystem {
     if (impact <= this.minImpactForDamage) return;
     if (nowMs - this.lastDamageAtMs < this.collisionCooldownMs) return;
 
-    const damage = this.computeDamageBySpeed(collisionInfo);
+    const damage = this.resolveDamage(this.computeDamageBySpeed(collisionInfo), {
+      system: "moto",
+      source: "collision",
+      nowMs,
+      collisionInfo,
+    });
+    if (damage <= 0) return;
     this.health = Math.max(0, this.health - damage);
     this.lastDamageAtMs = nowMs;
     if (this.health <= 0) {
       this.startRepair(nowMs);
     }
+  }
+
+  applyDirectDamagePercent(percent, nowMs) {
+    if (this.isRepairing(nowMs)) return false;
+
+    const damagePercent = Phaser.Math.Clamp(Number(percent) || 0, 0, 100);
+    if (damagePercent <= 0) return false;
+
+    const damage = this.resolveDamage((this.maxHealth * damagePercent) / 100, {
+      system: "moto",
+      source: "direct",
+      nowMs,
+      percent: damagePercent,
+    });
+    if (damage <= 0) return false;
+    this.health = Math.max(0, this.health - damage);
+    this.lastDamageAtMs = nowMs;
+
+    if (this.health <= 0) {
+      this.startRepair(nowMs);
+    }
+
+    return true;
   }
 
   update(nowMs, moto) {
@@ -92,7 +132,6 @@ export default class MotoHealthSystem {
     }
 
     if (!this.isRepairing(nowMs)) {
-      moto.sprite.setAlpha(1);
       return;
     }
 

@@ -29,6 +29,19 @@ export default class MultiplayerSystem {
     this.handleFinishWindowStarted = this.handleFinishWindowStarted.bind(this);
     this.handleMatchFinished = this.handleMatchFinished.bind(this);
     this.handleLobbyRestarted = this.handleLobbyRestarted.bind(this);
+    this.handleWeatherEventQueued = this.handleWeatherEventQueued.bind(this);
+    this.handleWeatherEventStarted = this.handleWeatherEventStarted.bind(this);
+    this.handleWeatherEventEnded = this.handleWeatherEventEnded.bind(this);
+    this.handleTrainEventStarted = this.handleTrainEventStarted.bind(this);
+    this.handleTrainEventEnded = this.handleTrainEventEnded.bind(this);
+    this.handleTrackItemsSnapshot = this.handleTrackItemsSnapshot.bind(this);
+    this.handleTrackItemAdded = this.handleTrackItemAdded.bind(this);
+    this.handleTrackItemUpdated = this.handleTrackItemUpdated.bind(this);
+    this.handleTrackItemRemoved = this.handleTrackItemRemoved.bind(this);
+    this.handleInventoryState = this.handleInventoryState.bind(this);
+    this.handleEmpPulseStarted = this.handleEmpPulseStarted.bind(this);
+    this.handleInventoryItemActivated =
+      this.handleInventoryItemActivated.bind(this);
   }
 
   start(registerPayload = {}) {
@@ -54,6 +67,18 @@ export default class MultiplayerSystem {
     this.socket.on("finishWindowStarted", this.handleFinishWindowStarted);
     this.socket.on("matchFinished", this.handleMatchFinished);
     this.socket.on("lobbyRestarted", this.handleLobbyRestarted);
+    this.socket.on("weatherEventQueued", this.handleWeatherEventQueued);
+    this.socket.on("weatherEventStarted", this.handleWeatherEventStarted);
+    this.socket.on("weatherEventEnded", this.handleWeatherEventEnded);
+    this.socket.on("trainEventStarted", this.handleTrainEventStarted);
+    this.socket.on("trainEventEnded", this.handleTrainEventEnded);
+    this.socket.on("trackItemsSnapshot", this.handleTrackItemsSnapshot);
+    this.socket.on("trackItemAdded", this.handleTrackItemAdded);
+    this.socket.on("trackItemUpdated", this.handleTrackItemUpdated);
+    this.socket.on("trackItemRemoved", this.handleTrackItemRemoved);
+    this.socket.on("inventoryState", this.handleInventoryState);
+    this.socket.on("empPulseStarted", this.handleEmpPulseStarted);
+    this.socket.on("inventoryItemActivated", this.handleInventoryItemActivated);
 
     this.socket.on("connect", () => {
       this.socket.emit("registerPlayer", registerPayload);
@@ -131,6 +156,54 @@ export default class MultiplayerSystem {
     this.callbacks.onLobbyRestarted?.();
   }
 
+  handleWeatherEventQueued(payload = {}) {
+    this.callbacks.onWeatherEventQueued?.(payload);
+  }
+
+  handleWeatherEventStarted(payload = {}) {
+    this.callbacks.onWeatherEventStarted?.(payload);
+  }
+
+  handleWeatherEventEnded(payload = {}) {
+    this.callbacks.onWeatherEventEnded?.(payload);
+  }
+
+  handleTrainEventStarted(payload = {}) {
+    this.callbacks.onTrainEventStarted?.(payload);
+  }
+
+  handleTrainEventEnded(payload = {}) {
+    this.callbacks.onTrainEventEnded?.(payload);
+  }
+
+  handleTrackItemsSnapshot(payload = {}) {
+    this.callbacks.onTrackItemsSnapshot?.(payload);
+  }
+
+  handleTrackItemAdded(payload = {}) {
+    this.callbacks.onTrackItemAdded?.(payload);
+  }
+
+  handleTrackItemUpdated(payload = {}) {
+    this.callbacks.onTrackItemUpdated?.(payload);
+  }
+
+  handleTrackItemRemoved(payload = {}) {
+    this.callbacks.onTrackItemRemoved?.(payload);
+  }
+
+  handleInventoryState(payload = {}) {
+    this.callbacks.onInventoryState?.(payload);
+  }
+
+  handleEmpPulseStarted(payload = {}) {
+    this.callbacks.onEmpPulseStarted?.(payload);
+  }
+
+  handleInventoryItemActivated(payload = {}) {
+    this.callbacks.onInventoryItemActivated?.(payload);
+  }
+
   ensureRemotePlayer(id, state) {
     if (this.remotePlayers.has(id)) return;
     if (!this.playersGroup) return;
@@ -161,6 +234,41 @@ export default class MultiplayerSystem {
   emitRestartLobby() {
     if (!this.socket?.connected) return;
     this.socket.emit("restartLobby");
+  }
+
+  emitQueueWeatherEvent(type) {
+    if (!this.socket?.connected) return;
+    this.socket.emit("queueWeatherEvent", { type });
+  }
+
+  emitClearWeatherEvent() {
+    if (!this.socket?.connected) return;
+    this.socket.emit("clearWeatherEvent");
+  }
+
+  emitStartTrainEvent(id = "") {
+    if (!this.socket?.connected) return;
+    this.socket.emit("startTrainEvent", { id });
+  }
+
+  emitGrantItem(type) {
+    if (!this.socket?.connected) return;
+    this.socket.emit("grantItem", { type });
+  }
+
+  emitDropItem() {
+    if (!this.socket?.connected) return;
+    this.socket.emit("dropItem");
+  }
+
+  emitTriggerTrackItem(id, type = "") {
+    if (!this.socket?.connected || !id) return;
+    this.socket.emit("triggerTrackItem", { id, type });
+  }
+
+  emitClaimRouteReward(rewardKey) {
+    if (!this.socket?.connected || !rewardKey) return;
+    this.socket.emit("claimRouteReward", { rewardKey });
   }
 
   emitLocalState() {
@@ -216,6 +324,18 @@ export default class MultiplayerSystem {
     this.socket.off("finishWindowStarted", this.handleFinishWindowStarted);
     this.socket.off("matchFinished", this.handleMatchFinished);
     this.socket.off("lobbyRestarted", this.handleLobbyRestarted);
+    this.socket.off("weatherEventQueued", this.handleWeatherEventQueued);
+    this.socket.off("weatherEventStarted", this.handleWeatherEventStarted);
+    this.socket.off("weatherEventEnded", this.handleWeatherEventEnded);
+    this.socket.off("trainEventStarted", this.handleTrainEventStarted);
+    this.socket.off("trainEventEnded", this.handleTrainEventEnded);
+    this.socket.off("trackItemsSnapshot", this.handleTrackItemsSnapshot);
+    this.socket.off("trackItemAdded", this.handleTrackItemAdded);
+    this.socket.off("trackItemUpdated", this.handleTrackItemUpdated);
+    this.socket.off("trackItemRemoved", this.handleTrackItemRemoved);
+    this.socket.off("inventoryState", this.handleInventoryState);
+    this.socket.off("empPulseStarted", this.handleEmpPulseStarted);
+    this.socket.off("inventoryItemActivated", this.handleInventoryItemActivated);
     this.socket.disconnect();
   }
 }
