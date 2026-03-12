@@ -396,6 +396,39 @@ export default class ObjectiveSystem {
     return this.hasPackage ? "Carga: pedido a bordo" : "Carga: sin pedido";
   }
 
+  getProgressSnapshot(moto) {
+    const totalObjectives = Math.max(1, this.sequence.length);
+    const active = this.getCurrentObjective();
+    const distanceToObjectivePx =
+      active && moto
+        ? Math.round(
+            Phaser.Math.Distance.Between(
+              moto.sprite.x,
+              moto.sprite.y,
+              active.x,
+              active.y
+            )
+          )
+        : 0;
+    const serviceProgress = this.isServingCurrentObjective()
+      ? Phaser.Math.Clamp(this.serviceProgress, 0, 1)
+      : 0;
+    const proximityScore = Math.max(0, 50000 - distanceToObjectivePx);
+    const progressValue = this.finished
+      ? totalObjectives * 1000000
+      : this.currentIndex * 1000000 +
+        Math.round(serviceProgress * 100000) +
+        proximityScore;
+
+    return {
+      objectiveIndex: this.currentIndex,
+      totalObjectives,
+      serviceProgress: Number(serviceProgress.toFixed(3)),
+      distanceToObjectivePx,
+      progressValue,
+    };
+  }
+
   getRiderState() {
     return {
       hasPackage: this.hasPackage,
@@ -405,5 +438,16 @@ export default class ObjectiveSystem {
       serviceLabel: this.serviceTargetLabel,
       finished: this.finished,
     };
+  }
+
+  destroy() {
+    this.markerNodes.forEach((node) => {
+      node.zone.destroy();
+      node.label.destroy();
+    });
+    this.markerNodes = [];
+    this.eventText.destroy();
+    this.finishBanner.destroy();
+    this.scene.scale.off("resize", this.handleResize, this);
   }
 }

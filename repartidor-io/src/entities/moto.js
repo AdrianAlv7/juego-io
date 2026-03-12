@@ -10,7 +10,11 @@ const DEFAULT_EVENT_HANDLING = Object.freeze({
   turnMultiplier: 1,
   dragMultiplier: 1,
   enginePowerMultiplier: 1,
+  brakeMultiplier: 1,
 });
+// Sube este valor si quieres que el drift conserve mas inercia lateral.
+// Mas alto = menos correccion lateral durante drift = arrastre mas largo.
+const DRIFT_INERTIA_GRIP_BONUS = 0.01;
 const DEFAULT_HEAT_CONFIG = Object.freeze({
   maxHeat: 100,
   warningHeat: 82,
@@ -77,6 +81,8 @@ function createTurboState() {
     active: false,
     untilMs: 0,
     maxSpeedMultiplier: 1,
+    autoThrottlePower: 0,
+    autoThrottleMinFactor: 0.2,
     handling: {
       ...DEFAULT_EVENT_HANDLING,
     },
@@ -229,6 +235,11 @@ export default class Moto {
         this.trackItemEffect.handling.enginePowerMultiplier *
         this.empEffect.handling.enginePowerMultiplier *
         this.turboState.handling.enginePowerMultiplier,
+      brakeMultiplier:
+        this.eventHandling.brakeMultiplier *
+        this.trackItemEffect.handling.brakeMultiplier *
+        this.empEffect.handling.brakeMultiplier *
+        this.turboState.handling.brakeMultiplier,
     };
     const effectiveMaxSpeed = this.maxSpeed * this.turboState.maxSpeedMultiplier;
     const effectiveEnginePower =
@@ -262,6 +273,19 @@ export default class Moto {
       this.velX += forwardX * effectiveEnginePower * accelFactor * dt;
       // Suma impulso en Y.
       this.velY += forwardY * effectiveEnginePower * accelFactor * dt;
+    }
+
+    if (this.turboState.active && this.turboState.autoThrottlePower > 0) {
+      const forwardSpeed = Math.max(0, this.velX * forwardX + this.velY * forwardY);
+      const turboAssistFactor = Phaser.Math.Clamp(
+        1 - forwardSpeed / effectiveMaxSpeed,
+        this.turboState.autoThrottleMinFactor,
+        1
+      );
+      this.velX +=
+        forwardX * this.turboState.autoThrottlePower * turboAssistFactor * dt;
+      this.velY +=
+        forwardY * this.turboState.autoThrottlePower * turboAssistFactor * dt;
     }
 
     // Reversa: reduce velocidad hacia adelante con un freno suave
@@ -317,7 +341,9 @@ export default class Moto {
       const speedRatio = Phaser.Math.Clamp(speed / effectiveMaxSpeed, 0, 1);
       // Intensidad final de frenado.
       const brakeStrength =
-        this.brakePower * Phaser.Math.Linear(0.35, 1, speedRatio);
+        this.brakePower *
+        combinedHandling.brakeMultiplier *
+        Phaser.Math.Linear(0.35, 1, speedRatio);
       // Convierte intensidad a multiplicador de velocidad.
       const brakeFactor = Phaser.Math.Clamp(1 - brakeStrength * dt, 0, 1);
       // Aplica frenado en X.
@@ -371,7 +397,7 @@ export default class Moto {
     const lateralSpeed = this.velX * lateralX + this.velY * lateralY;
     // Con drift hay menos agarre.
     const grip = this.isDrifting
-      ? Math.min(0.995, effectiveLateralGrip + 0.045)
+      ? Math.min(0.995, effectiveLateralGrip + DRIFT_INERTIA_GRIP_BONUS)
       : effectiveLateralGrip;
 
     // Corrige componente lateral en X.
@@ -598,6 +624,12 @@ export default class Moto {
       active: true,
       untilMs: nowMs + durationMs,
       maxSpeedMultiplier: Math.max(1, Number(turboConfig.maxSpeedMultiplier || 1)),
+      autoThrottlePower: Math.max(0, Number(turboConfig.autoThrottlePower || 0)),
+      autoThrottleMinFactor: Phaser.Math.Clamp(
+        Number(turboConfig.autoThrottleMinFactor || 0.2),
+        0.12,
+        0.65
+      ),
       handling: {
         ...DEFAULT_EVENT_HANDLING,
         ...(turboConfig.handling || {}),

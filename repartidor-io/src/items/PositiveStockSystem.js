@@ -35,10 +35,25 @@ export default class PositiveStockSystem {
     return true;
   }
 
+  grantDebugTurbo(amount = 1) {
+    const nextAmount = Math.max(1, Number(amount || 1));
+    const debugMaxCharges =
+      STOCK_ITEM_CONFIG.turbo.debugMaxCharges ||
+      STOCK_ITEM_CONFIG.turbo.maxCharges;
+    const previousCharges = this.turboCharges;
+    this.turboCharges = Math.min(debugMaxCharges, this.turboCharges + nextAmount);
+    if (this.turboCharges === previousCharges) return false;
+    this.emitStateChanged();
+    return true;
+  }
+
   getHudState() {
     return {
       turboCharges: this.turboCharges,
       turboMaxCharges: STOCK_ITEM_CONFIG.turbo.maxCharges,
+      turboDebugMaxCharges:
+        STOCK_ITEM_CONFIG.turbo.debugMaxCharges ||
+        STOCK_ITEM_CONFIG.turbo.maxCharges,
       extraTurboGranted: this.extraTurboGranted,
     };
   }

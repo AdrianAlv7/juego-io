@@ -9,6 +9,7 @@ export default class MultiplayerSystem {
     this.spriteKey = options.spriteKey;
     this.playersGroup = options.playersGroup;
     this.callbacks = options.callbacks || {};
+    this.getLocalProgress = options.getLocalProgress || null;
 
     this.socket = null;
     this.selfId = null;
@@ -221,6 +222,16 @@ export default class MultiplayerSystem {
     }
   }
 
+  getRemotePlayerStates() {
+    return Array.from(this.remotePlayers.values(), (remote) => ({
+      id: remote.id,
+      x: remote.sprite.x,
+      y: remote.sprite.y,
+      angle: remote.sprite.rotation,
+      color: remote.sprite.tintTopLeft || 0xff8c6b,
+    }));
+  }
+
   emitStartGame(preferredSpawn) {
     if (!this.socket?.connected) return;
     this.socket.emit("startGame", { preferredSpawn });
@@ -231,9 +242,24 @@ export default class MultiplayerSystem {
     this.socket.emit("finishMatch", payload);
   }
 
+  emitDebugSetFinishReport(payload = {}) {
+    if (!this.socket?.connected) return;
+    this.socket.emit("debugSetFinishReport", payload);
+  }
+
+  emitDebugFinalizeMatch() {
+    if (!this.socket?.connected) return;
+    this.socket.emit("debugFinalizeMatch");
+  }
+
   emitRestartLobby() {
     if (!this.socket?.connected) return;
     this.socket.emit("restartLobby");
+  }
+
+  emitRequestLobbyReturn() {
+    if (!this.socket?.connected) return;
+    this.socket.emit("requestLobbyReturn");
   }
 
   emitQueueWeatherEvent(type) {
@@ -280,12 +306,18 @@ export default class MultiplayerSystem {
       y: Number(this.localSprite.y.toFixed(2)),
       angle: Number(this.localSprite.rotation.toFixed(4)),
     };
+    const progress = this.getLocalProgress?.() || null;
+    if (progress) {
+      nextState.progress = progress;
+    }
 
     const unchanged =
       this.lastSentState &&
       this.lastSentState.x === nextState.x &&
       this.lastSentState.y === nextState.y &&
-      this.lastSentState.angle === nextState.angle;
+      this.lastSentState.angle === nextState.angle &&
+      JSON.stringify(this.lastSentState.progress || null) ===
+        JSON.stringify(nextState.progress || null);
     if (unchanged) return;
 
     this.lastSentState = nextState;

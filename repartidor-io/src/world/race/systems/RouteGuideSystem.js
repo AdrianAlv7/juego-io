@@ -126,4 +126,9 @@ export default class RouteGuideSystem {
     this.uiGraphics.lineTo(tailX, tailY);
     this.uiGraphics.strokePath();
   }
+
+  destroy() {
+    this.worldGraphics.destroy();
+    this.uiGraphics.destroy();
+  }
 }

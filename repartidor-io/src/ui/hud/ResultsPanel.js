@@ -70,19 +70,27 @@ export default class ResultsPanel {
   }
 
   buildRows(results = []) {
-    const header = "Pos  Jugador      Pts   Tiempo    Calidad";
-    const sep = "------------------------------------------";
+    const header = "Pos  Jugador      Pts   Dif   Tpo      Cal   Q/T";
+    const sep = "------------------------------------------------";
     const rows = results.map((entry, index) => {
       const pos = String(index + 1).padStart(2, " ");
       const name = String(entry.name || "Jugador").slice(0, 11).padEnd(11, " ");
       const score = String(Number.isFinite(entry.score) ? entry.score : 0).padStart(3, " ");
+      const timeDelta = entry.didFinish
+        ? `+${Number(entry.timeDeltaSeconds || 0)}s`.padStart(4, " ")
+        : " DNF";
       const time = entry.didFinish
-        ? `${(entry.elapsedMs / 1000).toFixed(2)}s`.padStart(8, " ")
-        : "   DNF  ";
+        ? `${(entry.elapsedMs / 1000).toFixed(2)}s`.padStart(7, " ")
+        : "  DNF  ";
       const quality = entry.didFinish
-        ? `${entry.qualityPercent}%`.padStart(6, " ")
-        : "   -  ";
-      return `${pos}   ${name}   ${score}   ${time}   ${quality}`;
+        ? `${entry.qualityPercent}%`.padStart(4, " ")
+        : "  - ";
+      const breakdown = entry.didFinish
+        ? `${String(entry.qualityScore || 0).padStart(3, " ")}/${String(
+            entry.timeScore || 0
+          ).padStart(2, " ")}`
+        : " 0/ 0";
+      return `${pos}   ${name}   ${score}   ${timeDelta}   ${time}   ${quality}   ${breakdown}`;
     });
 
     return [header, sep, ...rows].join("\n");

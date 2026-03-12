@@ -76,11 +76,15 @@ export const STOCK_ITEM_CONFIG = Object.freeze({
   turbo: Object.freeze({
     startingCharges: 2,
     maxCharges: 3,
+    debugMaxCharges: 9,
     durationMs: 950,
-    forwardImpulse: 9.5,
+    forwardImpulse: 10.5,
+    autoThrottlePower: 0.52,
+    autoThrottleMinFactor: 0.22,
     handling: Object.freeze({
       dragMultiplier: 0.9,
       enginePowerMultiplier: 1.9,
+      brakeMultiplier: 0.3,
     }),
     maxSpeedMultiplier: 1.3,
   }),

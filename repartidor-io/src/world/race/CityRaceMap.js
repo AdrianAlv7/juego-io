@@ -25,6 +25,7 @@ export default class CityRaceMap {
 
     this.roadCurves = this.createRoadCurves();
     const { segments, sampledRoutes } = this.buildRoadGeometry();
+    this.sampledRoutes = sampledRoutes;
 
     this.renderer = new CityRaceRenderer(scene, {
       worldWidth,
@@ -184,13 +185,45 @@ export default class CityRaceMap {
     return Math.max(0, endMs - this.raceStartedAtMs);
   }
 
-  getMatchStats() {
+  getRaceProgress(moto) {
+    return {
+      ...this.objectives.getProgressSnapshot(moto),
+      liveQualityPercent: this.health.getAverageQualityPercent(),
+    };
+  }
+
+  getMatchStats(moto) {
     const healthData = this.health.getHudData();
     return {
       elapsedMs: this.getElapsedRaceTimeMs(),
       qualityPercent: healthData.qualityPercent,
       deliveredCount: healthData.deliveredCount,
       totalOrders: healthData.totalOrders,
+      progress: this.getRaceProgress(moto),
+    };
+  }
+
+  getMinimapData() {
+    return {
+      type: "paths",
+      worldWidth: this.worldWidth,
+      worldHeight: this.worldHeight,
+      pathColor: 0xf1f4f8,
+      pathAlpha: 0.92,
+      paths: this.sampledRoutes || [],
+    };
+  }
+
+  getMinimapTarget() {
+    const objective = this.objectives.getCurrentObjective?.();
+    if (!objective || this.objectives.isFinished()) return null;
+
+    return {
+      x: objective.x,
+      y: objective.y,
+      kind: objective.kind,
+      label: objective.label,
+      color: objective.color,
     };
   }
 
@@ -208,5 +241,12 @@ export default class CityRaceMap {
 
   isRiderRepairing() {
     return this.motoHealth.isRepairing(this.scene.time.now);
+  }
+
+  destroy() {
+    this.guide?.destroy?.();
+    this.objectives?.destroy?.();
+    this.countdown?.destroy?.();
+    this.renderer?.destroy?.();
   }
 }

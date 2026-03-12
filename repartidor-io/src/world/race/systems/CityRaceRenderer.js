@@ -7,6 +7,9 @@ export default class CityRaceRenderer {
     this.roadCurves = options.roadCurves;
     this.sampledRoutes = options.sampledRoutes;
     this.drawSamples = options.drawSamples;
+    this.background = null;
+    this.cityGraphics = null;
+    this.roadGraphics = null;
   }
 
   render() {
@@ -15,42 +18,42 @@ export default class CityRaceRenderer {
   }
 
   drawEnvironment() {
-    const bg = this.scene.add.rectangle(
+    this.background = this.scene.add.rectangle(
       this.worldWidth / 2,
       this.worldHeight / 2,
       this.worldWidth,
       this.worldHeight,
       0x0d1117
     );
-    bg.setDepth(-50);
+    this.background.setDepth(-50);
 
-    const city = this.scene.add.graphics();
-    city.setDepth(-40);
-    city.fillStyle(0x1e262f, 1);
+    this.cityGraphics = this.scene.add.graphics();
+    this.cityGraphics.setDepth(-40);
+    this.cityGraphics.fillStyle(0x1e262f, 1);
 
     const blockStep = 650;
     for (let y = 300; y <= this.worldHeight; y += blockStep) {
       for (let x = 300; x <= this.worldWidth; x += blockStep) {
-        city.fillRoundedRect(x - 180, y - 180, 360, 360, 12);
+        this.cityGraphics.fillRoundedRect(x - 180, y - 180, 360, 360, 12);
       }
     }
   }
 
   drawRoads() {
-    const g = this.scene.add.graphics();
-    g.setDepth(-25);
+    this.roadGraphics = this.scene.add.graphics();
+    this.roadGraphics.setDepth(-25);
 
-    g.lineStyle(this.roadHalfWidth * 2 + 30, 0x333b42, 1);
-    this.roadCurves.forEach((curve) => curve.draw(g, this.drawSamples));
+    this.roadGraphics.lineStyle(this.roadHalfWidth * 2 + 30, 0x333b42, 1);
+    this.roadCurves.forEach((curve) => curve.draw(this.roadGraphics, this.drawSamples));
 
-    g.lineStyle(this.roadHalfWidth * 2, 0x48515a, 1);
-    this.roadCurves.forEach((curve) => curve.draw(g, this.drawSamples));
+    this.roadGraphics.lineStyle(this.roadHalfWidth * 2, 0x48515a, 1);
+    this.roadCurves.forEach((curve) => curve.draw(this.roadGraphics, this.drawSamples));
 
-    g.lineStyle(6, 0xffffff, 0.4);
-    this.roadCurves.forEach((curve) => curve.draw(g, this.drawSamples));
+    this.roadGraphics.lineStyle(6, 0xffffff, 0.4);
+    this.roadCurves.forEach((curve) => curve.draw(this.roadGraphics, this.drawSamples));
 
-    g.lineStyle(4, 0xf4d35e, 0.8);
-    this.drawDashedCenterLines(g);
+    this.roadGraphics.lineStyle(4, 0xf4d35e, 0.8);
+    this.drawDashedCenterLines(this.roadGraphics);
   }
 
   drawDashedCenterLines(graphics) {
@@ -88,5 +91,14 @@ export default class CityRaceRenderer {
         }
       }
     }
+  }
+
+  destroy() {
+    this.background?.destroy();
+    this.cityGraphics?.destroy();
+    this.roadGraphics?.destroy();
+    this.background = null;
+    this.cityGraphics = null;
+    this.roadGraphics = null;
   }
 }

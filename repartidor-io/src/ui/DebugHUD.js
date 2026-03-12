@@ -1,5 +1,6 @@
 import CargoPanel from "./hud/CargoPanel.js";
 import HeatPanel from "./hud/HeatPanel.js";
+import MiniMapPanel from "./hud/MiniMapPanel.js";
 import RaceStatusPanel from "./hud/RaceStatusPanel.js";
 import ResultsPanel from "./hud/ResultsPanel.js";
 import TachometerPanel from "./hud/TachometerPanel.js";
@@ -32,6 +33,10 @@ export default class DebugHUD {
       depth: 1300,
       margin: Math.max(16, HUD_MARGIN + 18),
     });
+    this.miniMapPanel = new MiniMapPanel(scene, {
+      depth: 1310,
+      margin: Math.max(16, HUD_MARGIN + 18),
+    });
     this.resultsPanel = new ResultsPanel(scene, { depth: 1360 });
     this.hudObjects = this.collectHudObjects();
     this.hudObjects.forEach((gameObject) => {
@@ -54,6 +59,7 @@ export default class DebugHUD {
   update(moto, delta, info = {}) {
     this.tachometerPanel.update(moto, info.moto || {}, delta);
     this.heatPanel.update(info.moto?.heat || {});
+    this.miniMapPanel.update(info.minimap || {});
 
     this.accumulator += delta;
     if (this.accumulator < 50) return;
@@ -89,6 +95,10 @@ export default class DebugHUD {
     }
   }
 
+  setMinimapData(minimapData) {
+    this.miniMapPanel.setMapData(minimapData);
+  }
+
   showResults(results = [], winnerId = null, selfId = null) {
     this.resultsPanel.show(results, winnerId, selfId);
   }
@@ -120,6 +130,7 @@ export default class DebugHUD {
       this.heatPanel.graphics,
       this.heatPanel.barGraphics,
       ...this.heatPanel.textNodes,
+      ...this.miniMapPanel.getObjects(),
       this.resultsPanel.graphics,
       this.resultsPanel.titleText,
       this.resultsPanel.tableText,
@@ -140,6 +151,7 @@ export default class DebugHUD {
     this.cargoPanel.destroy();
     this.tachometerPanel.destroy();
     this.heatPanel.destroy();
+    this.miniMapPanel.destroy();
     this.resultsPanel.destroy();
   }
 }

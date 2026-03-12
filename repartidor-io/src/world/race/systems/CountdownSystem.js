@@ -55,4 +55,9 @@ export default class CountdownSystem {
     this.text.setScale(nextLabel === "GO!" ? 1.12 : 1);
     this.text.setColor(nextLabel === "GO!" ? "#94f7a0" : "#ffffff");
   }
+
+  destroy() {
+    this.scene.scale.off("resize", this.handleResize, this);
+    this.text.destroy();
+  }
 }

@@ -17,6 +17,8 @@ const SPAWN_GAP = 90;
 const SPAWN_COLUMNS = 1;
 const MATCH_PRESTART_MS = 3000;
 const FINISH_WINDOW_MS = 20000;
+const LOBBY_RETURN_DELAY_MS = 20000;
+const DEBUG_FINALIZE_GRACE_MS = 120;
 const WEATHER_EVENT_WARNING_MS = 5000;
 const WEATHER_EVENT_CONFIG = {
   rain: {
@@ -81,6 +83,12 @@ const TRAIN_GAP_DELAY_RANGE_MS = {
   min: 18000,
   max: 32000,
 };
+// Calidad pesa mas, pero el lider conserva una ventaja corta que cae por segundos.
+const RESULT_SCORE_CONFIG = {
+  qualityWeight: 1.25,
+  leaderTimeBonus: 24,
+  timePenaltyPerSecond: 4,
+};
 const ROUTE_REWARD_ITEM_MILESTONES = new Set([
   ROUTE_REWARD_KEYS.R1_ITEM,
   ROUTE_REWARD_KEYS.E2_ITEM,
@@ -105,6 +113,8 @@ const room = {
   finishReports: new Map(),
   finishWindowEndsAtMs: 0,
   finishWindowTimer: null,
+  lobbyResetAtMs: 0,
+  lobbyResetTimer: null,
   weatherQueuedEvent: null,
   weatherActiveEvent: null,
   weatherRuntimeTimers: new Set(),
@@ -140,6 +150,62 @@ function sanitizeElapsedMs(value, fallback = 0) {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return fallback;
   return Math.max(0, Math.round(raw));
+}
+
+function sanitizeElapsedSeconds(value, fallback = 0) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(0, raw);
+}
+
+function createEmptyProgressState() {
+  return {
+    objectiveIndex: 0,
+    totalObjectives: 1,
+    serviceProgress: 0,
+    distanceToObjectivePx: 0,
+    progressValue: 0,
+    liveQualityPercent: 0,
+  };
+}
+
+function sanitizeProgressPayload(payload = {}, fallback = {}) {
+  return {
+    objectiveIndex: Math.max(
+      0,
+      Math.round(toFiniteNumber(payload.objectiveIndex, fallback.objectiveIndex ?? 0))
+    ),
+    totalObjectives: Math.max(
+      1,
+      Math.round(toFiniteNumber(payload.totalObjectives, fallback.totalObjectives ?? 1))
+    ),
+    serviceProgress: Math.max(
+      0,
+      Math.min(1, toFiniteNumber(payload.serviceProgress, fallback.serviceProgress ?? 0))
+    ),
+    distanceToObjectivePx: Math.max(
+      0,
+      Math.round(
+        toFiniteNumber(
+          payload.distanceToObjectivePx,
+          fallback.distanceToObjectivePx ?? 0
+        )
+      )
+    ),
+    progressValue: Math.max(
+      0,
+      Math.round(toFiniteNumber(payload.progressValue, fallback.progressValue ?? 0))
+    ),
+    liveQualityPercent: Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          toFiniteNumber(payload.liveQualityPercent, fallback.liveQualityPercent ?? 0)
+        )
+      )
+    ),
+  };
 }
 
 function randomInt(min, max) {
@@ -203,6 +269,7 @@ function emitLobbyState() {
     hostId: room.hostId,
     started: room.started,
     finished: room.finished,
+    lobbyResetAt: room.lobbyResetAtMs,
     maxPlayers: MAX_PLAYERS,
   });
 }
@@ -212,12 +279,17 @@ function resetMatchState() {
     clearTimeout(room.finishWindowTimer);
     room.finishWindowTimer = null;
   }
+  if (room.lobbyResetTimer) {
+    clearTimeout(room.lobbyResetTimer);
+    room.lobbyResetTimer = null;
+  }
   room.started = false;
   room.finished = false;
   room.baseSpawn = null;
   room.matchStartedAtMs = 0;
   room.finishReports.clear();
   room.finishWindowEndsAtMs = 0;
+  room.lobbyResetAtMs = 0;
   room.weatherQueuedEvent = null;
   room.weatherActiveEvent = null;
   clearTimerSet(room.weatherRuntimeTimers);
@@ -228,6 +300,7 @@ function resetMatchState() {
   clearRoomItems();
   for (const player of room.players.values()) {
     player.state = { x: 0, y: 0, angle: 0 };
+    player.progress = createEmptyProgressState();
     player.inventory = [];
     player.claimedRouteRewards = new Set();
   }
@@ -417,25 +490,36 @@ function triggerTrackItem(playerId, itemId, reportedType = "") {
   return false;
 }
 
+function buildTimeDeltaSeconds(elapsedMs, fastestMs) {
+  if (!Number.isFinite(elapsedMs) || !Number.isFinite(fastestMs)) return 0;
+  return Math.max(0, Math.round((elapsedMs - fastestMs) / 1000));
+}
+
 function scoreAndRankResults(results = [], timeCapMs = 0) {
   const finishers = results.filter((entry) => entry.didFinish);
   const fastestMs = finishers.length
     ? Math.min(...finishers.map((entry) => entry.elapsedMs))
     : Math.max(0, timeCapMs);
-  const safeCapMs = Math.max(fastestMs + 1, Math.round(timeCapMs));
-  const rangeMs = Math.max(1, safeCapMs - fastestMs);
 
   const withScores = results.map((entry) => {
-    const qualityScore = entry.didFinish ? entry.qualityPercent : 0;
+    const timeDeltaSeconds = entry.didFinish
+      ? buildTimeDeltaSeconds(entry.elapsedMs, fastestMs)
+      : null;
+    const qualityScore = entry.didFinish
+      ? Math.round(entry.qualityPercent * RESULT_SCORE_CONFIG.qualityWeight)
+      : 0;
     const timeScore = entry.didFinish
-      ? Math.round(
-          Math.max(0, ((safeCapMs - entry.elapsedMs) / rangeMs) * 100)
+      ? Math.max(
+          0,
+          RESULT_SCORE_CONFIG.leaderTimeBonus -
+            timeDeltaSeconds * RESULT_SCORE_CONFIG.timePenaltyPerSecond
         )
       : 0;
-    const score = qualityScore + timeScore;
+    const score = entry.didFinish ? qualityScore + timeScore : 0;
 
     return {
       ...entry,
+      timeDeltaSeconds,
       qualityScore,
       timeScore,
       score,
@@ -444,12 +528,132 @@ function scoreAndRankResults(results = [], timeCapMs = 0) {
 
   return withScores.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
+    if (a.didFinish !== b.didFinish) return a.didFinish ? -1 : 1;
+    if (!a.didFinish && !b.didFinish) {
+      if (b.objectiveIndex !== a.objectiveIndex) {
+        return b.objectiveIndex - a.objectiveIndex;
+      }
+      if (b.qualityPercent !== a.qualityPercent) {
+        return b.qualityPercent - a.qualityPercent;
+      }
+      if (a.elapsedMs !== b.elapsedMs) return a.elapsedMs - b.elapsedMs;
+      return a.name.localeCompare(b.name);
+    }
     if (b.qualityPercent !== a.qualityPercent) {
       return b.qualityPercent - a.qualityPercent;
     }
     if (a.elapsedMs !== b.elapsedMs) return a.elapsedMs - b.elapsedMs;
     return a.name.localeCompare(b.name);
   });
+}
+
+function storeFinishReport(playerId, payload = {}, options = {}) {
+  const { allowOverride = false } = options;
+  if (!allowOverride && room.finishReports.has(playerId)) return null;
+
+  const player = room.players.get(playerId);
+  if (!player) return null;
+
+  const report = {
+    id: playerId,
+    name: player.name,
+    elapsedMs: sanitizeElapsedMs(payload.elapsedMs, getElapsedSinceStartMs()),
+    qualityPercent: sanitizeQualityPercent(payload.qualityPercent, 0),
+    didFinish: payload.didFinish !== false,
+    ...sanitizeProgressPayload(payload.progress, player.progress),
+  };
+
+  room.finishReports.set(playerId, report);
+  return report;
+}
+
+function restartLobbyForEveryone(reason = "manual") {
+  resetMatchState();
+  io.emit("lobbyRestarted", {
+    reason,
+    restartedAt: Date.now(),
+  });
+  emitLobbyState();
+}
+
+function scheduleLobbyReset() {
+  if (room.lobbyResetTimer) {
+    clearTimeout(room.lobbyResetTimer);
+    room.lobbyResetTimer = null;
+  }
+
+  room.lobbyResetAtMs = Date.now() + LOBBY_RETURN_DELAY_MS;
+  room.lobbyResetTimer = setTimeout(() => {
+    room.lobbyResetTimer = null;
+    restartLobbyForEveryone("auto");
+  }, LOBBY_RETURN_DELAY_MS + 50);
+}
+
+function scheduleDebugFinalize(includeMissingPlayers = true) {
+  setTimeout(() => {
+    if (!room.started || room.finished) return;
+
+    const currentReports = Array.from(room.finishReports.values());
+    const timeCapMs = currentReports.length
+      ? Math.max(...currentReports.map((entry) => entry.elapsedMs))
+      : getElapsedSinceStartMs();
+    finalizeMatchWithReports(timeCapMs, includeMissingPlayers);
+  }, DEBUG_FINALIZE_GRACE_MS);
+}
+
+function finalizeMatchWithReports(timeCapMs, includeMissingPlayers = false) {
+  if (!room.started || room.finished) return false;
+  if (room.players.size === 0) return false;
+
+  if (room.finishWindowTimer) {
+    clearTimeout(room.finishWindowTimer);
+    room.finishWindowTimer = null;
+  }
+
+  const safeTimeCapMs = sanitizeElapsedMs(timeCapMs, getElapsedSinceStartMs());
+  const resultsById = new Map(room.finishReports);
+
+  if (includeMissingPlayers) {
+    for (const [id, player] of room.players.entries()) {
+      if (resultsById.has(id)) continue;
+      resultsById.set(id, {
+        id,
+        name: player.name,
+        elapsedMs: safeTimeCapMs,
+        qualityPercent: sanitizeQualityPercent(player.progress.liveQualityPercent, 0),
+        didFinish: false,
+        ...sanitizeProgressPayload(player.progress, createEmptyProgressState()),
+      });
+    }
+  }
+
+  const ranked = scoreAndRankResults(Array.from(resultsById.values()), safeTimeCapMs);
+  room.finished = true;
+  room.finishWindowEndsAtMs = 0;
+  room.weatherQueuedEvent = null;
+  room.weatherActiveEvent = null;
+  clearTimerSet(room.weatherRuntimeTimers);
+  clearTimerSet(room.weatherScheduleTimers);
+  room.trainActiveEvent = null;
+  clearTimerSet(room.trainRuntimeTimers);
+  clearTimerSet(room.trainScheduleTimers);
+  clearRoomItems();
+  for (const player of room.players.values()) {
+    player.inventory = [];
+  }
+  scheduleLobbyReset();
+  emitTrackItemsSnapshot();
+  emitAllInventoryStates();
+  io.emit("matchFinished", {
+    winnerId: ranked[0]?.id || null,
+    results: ranked,
+    finishedAt: Date.now(),
+    lobbyResetAt: room.lobbyResetAtMs,
+    lobbyResetDelayMs: LOBBY_RETURN_DELAY_MS,
+    scoring: RESULT_SCORE_CONFIG,
+  });
+  emitLobbyState();
+  return true;
 }
 
 function getElapsedSinceStartMs() {
@@ -653,55 +857,20 @@ function maybeFinalizeMatch(reason = "all_finished") {
 
   if (!everyoneFinished && !timeoutReached) return false;
 
-  if (room.finishWindowTimer) {
-    clearTimeout(room.finishWindowTimer);
-    room.finishWindowTimer = null;
-  }
-
   const currentReports = Array.from(room.finishReports.values());
+  const maxReportedElapsedMs = currentReports.length
+    ? Math.max(...currentReports.map((entry) => entry.elapsedMs))
+    : 0;
   const timeCapMs = timeoutReached
-    ? Math.max(0, room.finishWindowEndsAtMs - room.matchStartedAtMs - MATCH_PRESTART_MS)
-    : currentReports.length
-      ? Math.max(...currentReports.map((entry) => entry.elapsedMs))
-      : getElapsedSinceStartMs();
-
-  const resultsById = new Map(room.finishReports);
-  if (timeoutReached) {
-    for (const [id, player] of room.players.entries()) {
-      if (resultsById.has(id)) continue;
-      resultsById.set(id, {
-        id,
-        name: player.name,
-        elapsedMs: timeCapMs,
-        qualityPercent: 0,
-        didFinish: false,
-      });
-    }
-  }
-
-  const ranked = scoreAndRankResults(Array.from(resultsById.values()), timeCapMs);
-  room.finished = true;
-  room.finishWindowEndsAtMs = 0;
-  room.weatherQueuedEvent = null;
-  room.weatherActiveEvent = null;
-  clearTimerSet(room.weatherRuntimeTimers);
-  clearTimerSet(room.weatherScheduleTimers);
-  room.trainActiveEvent = null;
-  clearTimerSet(room.trainRuntimeTimers);
-  clearTimerSet(room.trainScheduleTimers);
-  clearRoomItems();
-  for (const player of room.players.values()) {
-    player.inventory = [];
-  }
-  emitTrackItemsSnapshot();
-  emitAllInventoryStates();
-  io.emit("matchFinished", {
-    winnerId: ranked[0]?.id || null,
-    results: ranked,
-    finishedAt: Date.now(),
-  });
-  emitLobbyState();
-  return true;
+    ? Math.max(
+        maxReportedElapsedMs,
+        Math.max(
+          0,
+          room.finishWindowEndsAtMs - room.matchStartedAtMs - MATCH_PRESTART_MS
+        )
+      )
+    : maxReportedElapsedMs || getElapsedSinceStartMs();
+  return finalizeMatchWithReports(timeCapMs, timeoutReached);
 }
 
 function startFinishWindowIfNeeded(firstReport) {
@@ -760,6 +929,7 @@ io.on("connection", (socket) => {
     room.players.set(socket.id, {
       name,
       state: { x: 0, y: 0, angle: 0 },
+      progress: createEmptyProgressState(),
       inventory: [],
       claimedRouteRewards: new Set(),
     });
@@ -809,6 +979,7 @@ io.on("connection", (socket) => {
     clearRoomItems();
     for (const player of room.players.values()) {
       player.inventory = [];
+      player.progress = createEmptyProgressState();
       player.claimedRouteRewards = new Set();
     }
 
@@ -829,7 +1000,9 @@ io.on("connection", (socket) => {
     if (!player) return;
 
     const next = sanitizeState(payload, player.state);
+    const nextProgress = sanitizeProgressPayload(payload.progress, player.progress);
     player.state = next;
+    player.progress = nextProgress;
 
     socket.broadcast.emit("playerMoved", {
       id: socket.id,
@@ -839,32 +1012,68 @@ io.on("connection", (socket) => {
 
   socket.on("finishMatch", (payload = {}) => {
     if (!room.started || room.finished) return;
-    const player = room.players.get(socket.id);
-    if (!player) return;
-    if (room.finishReports.has(socket.id)) return;
+    const report = storeFinishReport(socket.id, payload);
+    if (!report) return;
 
-    const elapsedMs = sanitizeElapsedMs(payload.elapsedMs, getElapsedSinceStartMs());
-    const report = {
-      id: socket.id,
-      name: player.name,
-      elapsedMs,
-      qualityPercent: sanitizeQualityPercent(payload.qualityPercent, 0),
-      didFinish: true,
-    };
-    room.finishReports.set(socket.id, report);
-
-    if (room.finishReports.size === 1) {
+    if (!payload.finalizeNow && room.finishReports.size === 1) {
       startFinishWindowIfNeeded(report);
     }
 
     maybeFinalizeMatch("all_finished");
   });
 
+  socket.on("debugSetFinishReport", (payload = {}) => {
+    if (socket.id !== room.hostId) return;
+    if (!room.started || room.finished) return;
+
+    const requestedPlayerId =
+      typeof payload.playerId === "string" ? payload.playerId.trim() : "";
+    const targetPlayerId = requestedPlayerId || socket.id;
+    if (!room.players.has(targetPlayerId)) return;
+
+    const elapsedSeconds = sanitizeElapsedSeconds(
+      payload.elapsedSeconds,
+      getElapsedSinceStartMs() / 1000
+    );
+    const report = storeFinishReport(
+      targetPlayerId,
+      {
+        elapsedMs: elapsedSeconds * 1000,
+        qualityPercent: payload.qualityPercent,
+        didFinish: true,
+      },
+      { allowOverride: true }
+    );
+    if (!report) return;
+
+    if (!payload.finalizeNow && room.finishReports.size === 1) {
+      startFinishWindowIfNeeded(report);
+    }
+
+    if (payload.finalizeNow) {
+      scheduleDebugFinalize(true);
+      return;
+    }
+
+    maybeFinalizeMatch("all_finished");
+  });
+
+  socket.on("debugFinalizeMatch", () => {
+    if (socket.id !== room.hostId) return;
+    if (!room.started || room.finished) return;
+
+    scheduleDebugFinalize(true);
+  });
+
   socket.on("restartLobby", () => {
     if (socket.id !== room.hostId) return;
-    resetMatchState();
-    io.emit("lobbyRestarted");
-    emitLobbyState();
+    restartLobbyForEveryone("host");
+  });
+
+  socket.on("requestLobbyReturn", () => {
+    if (!room.players.has(socket.id)) return;
+    if (!room.finished) return;
+    restartLobbyForEveryone("player");
   });
 
   socket.on("queueWeatherEvent", (payload = {}) => {

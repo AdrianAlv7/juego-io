@@ -143,7 +143,7 @@ export default class ItemInventoryPanel {
     this.dropHintText.setText("Soltar actual: [Z]");
     this.slotTexts[0].setText(this.buildSlotLabel(0));
     this.slotTexts[1].setText(this.buildSlotLabel(1));
-    this.hostHintText.setText("Host debug negativos: [6]/[7]/[8]");
+    this.hostHintText.setText("Host debug negativos: [6]/[7]/[8]/[9]");
     this.refreshVisibility();
   }
 
