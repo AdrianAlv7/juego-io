@@ -83,11 +83,12 @@ const TRAIN_GAP_DELAY_RANGE_MS = {
   min: 18000,
   max: 32000,
 };
-// Calidad pesa mas, pero el lider conserva una ventaja corta que cae por segundos.
+// Puntaje final: calidad (0-100) + tiempo relativo al lider (0-100).
+// 200 pts es la carrera perfecta: calidad 100% y llegar primero.
 const RESULT_SCORE_CONFIG = {
-  qualityWeight: 1.25,
-  leaderTimeBonus: 24,
-  timePenaltyPerSecond: 4,
+  qualityMaxScore: 100,
+  leaderTimeScore: 100,
+  maxScore: 200,
 };
 const ROUTE_REWARD_ITEM_MILESTONES = new Set([
   ROUTE_REWARD_KEYS.R1_ITEM,
@@ -495,6 +496,17 @@ function buildTimeDeltaSeconds(elapsedMs, fastestMs) {
   return Math.max(0, Math.round((elapsedMs - fastestMs) / 1000));
 }
 
+function buildRelativeTimeScore(elapsedMs, fastestMs) {
+  const safeFastestMs = Math.max(1, sanitizeElapsedMs(fastestMs, 1));
+  const safeElapsedMs = Math.max(
+    safeFastestMs,
+    sanitizeElapsedMs(elapsedMs, safeFastestMs)
+  );
+  return Math.round(
+    RESULT_SCORE_CONFIG.leaderTimeScore * (safeFastestMs / safeElapsedMs)
+  );
+}
+
 function scoreAndRankResults(results = [], timeCapMs = 0) {
   const finishers = results.filter((entry) => entry.didFinish);
   const fastestMs = finishers.length
@@ -506,16 +518,17 @@ function scoreAndRankResults(results = [], timeCapMs = 0) {
       ? buildTimeDeltaSeconds(entry.elapsedMs, fastestMs)
       : null;
     const qualityScore = entry.didFinish
-      ? Math.round(entry.qualityPercent * RESULT_SCORE_CONFIG.qualityWeight)
-      : 0;
-    const timeScore = entry.didFinish
-      ? Math.max(
-          0,
-          RESULT_SCORE_CONFIG.leaderTimeBonus -
-            timeDeltaSeconds * RESULT_SCORE_CONFIG.timePenaltyPerSecond
+      ? Math.round(
+          (sanitizeQualityPercent(entry.qualityPercent, 0) / 100) *
+            RESULT_SCORE_CONFIG.qualityMaxScore
         )
       : 0;
-    const score = entry.didFinish ? qualityScore + timeScore : 0;
+    const timeScore = entry.didFinish
+      ? buildRelativeTimeScore(entry.elapsedMs, fastestMs)
+      : 0;
+    const score = entry.didFinish
+      ? Math.min(RESULT_SCORE_CONFIG.maxScore, qualityScore + timeScore)
+      : 0;
 
     return {
       ...entry,

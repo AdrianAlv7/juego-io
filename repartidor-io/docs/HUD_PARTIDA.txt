@@ -1,0 +1,269 @@
+HUD PARTIDA - REFERENCIA ACTUAL
+
+Este archivo describe la interfaz actual de la partida.
+No contiene codigo. Solo explica que muestra cada panel, donde vive y que conflictos visuales existen hoy.
+
+NOTA GENERAL
+- La partida actual mezcla HUD base, overlays de evento, controles host-only y pantallas de cierre.
+- Hay dos zonas con choque visual importante:
+- Arriba derecha: panel de calor y minimapa comparten esquina.
+- Abajo derecha: tacometro y panel de objetos compiten por espacio.
+
+SECCION A - HUD BASE DURANTE LA CARRERA
+
+1. PANEL DE ESTADO DE CARRERA
+Nombre visual:
+- Panel de pedido / destino / tiempo.
+
+Informacion que guarda:
+- Pedido actual y total de pedidos. Ejemplo: "Pedido 2/3".
+- Destino actual resumido.
+- Tiempo de carrera.
+- Cuenta regresiva inicial: "Inicio 3", "Inicio 2", "Inicio 1", "Inicio GO!".
+- Cuenta regresiva de cierre cuando el primero llega: "Cierre XXs".
+
+Ubicacion en pantalla:
+- Arriba izquierda.
+
+Funcion:
+- Es el bloque principal de progreso de carrera.
+- Debe decirle al jugador que pedido va y cuanto tiempo queda o lleva.
+
+2. BANNER DE ESTADO GLOBAL
+Informacion que guarda:
+- Feedback rapido del sistema.
+- Avisos de turbo, debug, clima, cierre o estado general.
+
+Ubicacion en pantalla:
+- Arriba centro.
+
+Funcion:
+- Aviso temporal de alto impacto.
+- No debe competir con paneles persistentes.
+
+3. OVERLAY DE CUENTA REGRESIVA
+Informacion que guarda:
+- "3", "2", "1", "GO!" antes de poder mover la moto.
+
+Ubicacion en pantalla:
+- Centro alto.
+
+Funcion:
+- Confirmar inicio bloqueado y arranque oficial de carrera.
+
+4. PANEL DE CARGA / PEDIDO
+Nombre visual:
+- Integridad y calidad.
+
+Informacion que guarda:
+- Integridad del paquete actual.
+- Calidad promedio acumulada de los pedidos.
+
+Ubicacion en pantalla:
+- Abajo izquierda.
+
+Funcion:
+- Mostrar el estado del pedido, no de la moto.
+- Debe ser el panel principal para entender si la entrega va limpia o ya se dano.
+
+5. TACOMETRO / PANEL DE MOTO
+Nombre visual:
+- "Taco"
+
+Informacion que guarda:
+- Velocidad actual en km/h.
+- RPM.
+- Salud de la moto.
+- Estado de reparacion.
+- Informacion compacta de calor dentro del mismo panel.
+
+Ubicacion en pantalla:
+- Abajo derecha.
+
+Funcion:
+- Es el panel principal de conduccion.
+- Debe concentrar velocidad, salud y lectura general de la moto.
+
+Nota actual:
+- Ya contiene informacion de calor, asi que hoy se cruza en responsabilidad con el panel de calor dedicado.
+
+6. PANEL DE CALOR DEL MOTOR
+Nombre visual:
+- "CALOR MOTOR"
+
+Informacion que guarda:
+- Porcentaje de calor.
+- Estado del motor. Ejemplo: estable, caliente, enfriando.
+- Texto de ayuda sobre el sobrecalentamiento.
+- Barra de calor.
+
+Ubicacion en pantalla:
+- Arriba derecha.
+
+Funcion:
+- Dar protagonismo al sistema de calor cuando esta activo.
+
+Nota actual:
+- Hoy choca con el minimapa porque ambos usan la esquina superior derecha.
+- En redisenio conviene decidir si vive arriba derecha y el minimapa baja, o si se integra al tacometro.
+
+7. MINIMAPA
+Informacion que guarda:
+- Vista compacta del mapa activo.
+- Posicion del jugador local.
+- Posicion de jugadores remotos.
+- Punto del objetivo actual: recoleccion, entrega o regreso.
+
+Ubicacion en pantalla:
+- Arriba derecha.
+
+Funcion:
+- Orientacion rapida.
+- Debe permitir leer avance y ubicacion general sin abrir mapa grande.
+
+Nota actual:
+- Comparte la misma zona del panel de calor.
+- Para un HUD mas limpio conviene separar ambas piezas.
+
+8. TEXTO DE EVENTO CLIMATICO
+Informacion que guarda:
+- Nombre del evento.
+- Si esta por iniciar o si ya esta activo.
+- Segundos restantes.
+
+Ubicacion en pantalla:
+- Parte alta central, debajo o cerca del banner global.
+
+Funcion:
+- Confirmar que el clima o evento especial esta corriendo.
+
+9. OVERLAY VISUAL DE CLIMA
+Informacion que guarda:
+- No muestra numeros.
+- Cambia el look general de la pantalla segun lluvia, noche u otro evento.
+
+Ubicacion en pantalla:
+- Pantalla completa.
+
+Funcion:
+- Capa atmosferica visual.
+- Refuerza que la jugabilidad cambio por un evento.
+
+SECCION B - HUD DE APOYO DURANTE LA CARRERA
+
+10. PANEL DE STOCK POSITIVO
+Nombre visual:
+- "Stock Fijo"
+
+Informacion que guarda:
+- Cantidad de turbos disponibles.
+- Pista de como se consigue o si el host puede agregar mas para test.
+
+Ubicacion en pantalla:
+- Abajo centro.
+
+Funcion:
+- Mostrar el recurso de turbo y su stock actual.
+
+Notas:
+- Para host puede mostrar boton "+ Turbo".
+- Es un panel importante de recurso, pero no tan prioritario como velocidad o pedido.
+
+11. PANEL DE OBJETOS
+Nombre visual:
+- "Objetos X/2"
+
+Informacion que guarda:
+- Cantidad de objetos cargados.
+- Slot 1.
+- Slot 2.
+- Tecla para soltar el objeto actual: [Z].
+- Pista host debug negativos: [6]/[7]/[8]/[9].
+
+Ubicacion en pantalla:
+- Abajo derecha.
+
+Funcion:
+- Mostrar inventario de items negativos y accion de soltar.
+
+Nota actual:
+- Vive en la misma esquina del tacometro, asi que hoy compiten por espacio.
+- En redisenio conviene apilarlo arriba del tacometro o moverlo a una banda lateral.
+
+12. CONTROLES DE CLIMA HOST-ONLY
+Informacion que guarda:
+- Botones y teclas para lluvia, asoleado, noche, quitar clima y tren.
+
+Ubicacion en pantalla:
+- Abajo izquierda.
+
+Funcion:
+- Panel de prueba / administracion para el host.
+
+Nota:
+- Es interfaz de debug o control interno, no HUD base del jugador final.
+
+13. PANEL DEBUG DE RESULTADO HOST-ONLY
+Nombre visual:
+- "Debug resultado"
+
+Informacion que guarda:
+- Jugador a simular.
+- Calidad.
+- Tiempo.
+- Boton "Simular".
+- Boton "Simular + cerrar".
+- Boton "Cerrar partida actual".
+
+Ubicacion en pantalla:
+- Arriba izquierda, debajo del margen superior.
+
+Funcion:
+- Probar resultados sin jugar toda la carrera.
+
+Nota actual:
+- Puede pisar o competir con el panel de estado de carrera.
+- Es util para desarrollo, pero no debe mezclarse con el HUD final de produccion.
+
+SECCION C - INTERFAZ DE CIERRE DE PARTIDA
+
+14. PANEL DE RESULTADOS
+Informacion que guarda:
+- Titulo final. Ejemplo: "GANASTE" o "RESULTADOS FINALES".
+- Tabla con posicion, nombre, puntos, diferencia de tiempo, tiempo total, calidad y desglose Q/T.
+
+Ubicacion en pantalla:
+- Centro de pantalla.
+
+Funcion:
+- Resumen final competitivo.
+- Es la capa principal al terminar la carrera.
+
+15. PANEL DE REGRESO AL LOBBY
+Informacion que guarda:
+- Cuenta regresiva para volver al lobby.
+- Boton "Regresar al lobby".
+
+Ubicacion en pantalla:
+- Parte baja central.
+
+Funcion:
+- Salida clara de la partida terminada.
+- Evita que el jugador tenga que recargar la pagina.
+
+RESUMEN DE LAYOUT DE PARTIDA
+- Arriba izquierda: progreso de carrera.
+- Arriba centro: banner de estado y textos temporales.
+- Arriba derecha: calor y/o minimapa.
+- Abajo izquierda: estado del paquete.
+- Abajo centro: stock positivo.
+- Abajo derecha: conduccion e inventario.
+- Centro: overlays de countdown y resultados cuando aplique.
+
+PUNTOS IMPORTANTES PARA EL FUTURO REDISENO
+- Separar minimapa y calor.
+- Separar tacometro e inventario.
+- Mantener progreso de carrera como prioridad visual numero uno.
+- Mantener velocidad/salud como prioridad visual numero dos.
+- Mantener paquete/calidad como prioridad visual numero tres.
+- Los paneles host-only deben quedar aparte o en modo debug, no mezclados con el HUD final bonito.

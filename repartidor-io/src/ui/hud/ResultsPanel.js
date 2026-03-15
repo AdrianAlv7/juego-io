@@ -82,13 +82,13 @@ export default class ResultsPanel {
       const time = entry.didFinish
         ? `${(entry.elapsedMs / 1000).toFixed(2)}s`.padStart(7, " ")
         : "  DNF  ";
-      const quality = entry.didFinish
+      const quality = Number.isFinite(entry.qualityPercent)
         ? `${entry.qualityPercent}%`.padStart(4, " ")
         : "  - ";
       const breakdown = entry.didFinish
         ? `${String(entry.qualityScore || 0).padStart(3, " ")}/${String(
             entry.timeScore || 0
-          ).padStart(2, " ")}`
+          ).padStart(3, " ")}`
         : " 0/ 0";
       return `${pos}   ${name}   ${score}   ${timeDelta}   ${time}   ${quality}   ${breakdown}`;
     });

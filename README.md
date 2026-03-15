@@ -269,3 +269,79 @@ Valores recomendados actuales:
 - `STARTUP_STABILIZE_FRAMES = 8`
 - `RESUME_STABILIZE_FRAMES = 6`
 - `DELTA_SPIKE_RESET_MS = 90`
+- `MAX_CATCH_UP_STEPS = 4`
+
+## Formula actual de resultados
+
+Archivo principal: `repartidor-io/server/index.js`
+
+Objetivo del sistema:
+
+- `200 pts` es el score perfecto.
+- Ese score perfecto solo ocurre si un jugador termina primero y ademas trae `100%` de calidad.
+- El tiempo del primer lugar es la referencia para medir a todos los demas.
+
+Formula para jugadores que si terminan:
+
+```txt
+deltaSeg = round((tiempoJugadorMs - tiempoPrimerLugarMs) / 1000)
+
+calidadPts = clamp(calidadPorcentaje, 0, 100)
+tiempoPts = round(100 * tiempoPrimerLugarMs / tiempoJugadorMs)
+
+scoreFinal = calidadPts + tiempoPts
+scoreFinal maximo = 200
+```
+
+Como se interpreta:
+
+- El primer lugar siempre tiene `tiempoPrimerLugarMs = tiempoJugadorMs`.
+- Por eso el primer lugar siempre conserva `100 pts` de tiempo.
+- Entonces al primer lugar solo se le resta por calidad.
+- No existe una barrera fija de `5s`, `7s` o `10s`.
+- El castigo de tiempo es relacional: depende de que tan lejos quedaste respecto al tiempo real del primer lugar.
+
+Ejemplos:
+
+```txt
+Primer lugar con calidad 100:
+score = 100 + 100 = 200
+
+Primer lugar con calidad 82:
+score = 82 + 100 = 182
+
+Segundo lugar en 45s con calidad 96, si el primero hizo 40s:
+tiempoPts = round(100 * 40/45) = 89
+score = 96 + 89 = 185
+
+Primer lugar en 40s con calidad 20:
+score = 20 + 100 = 120
+
+Segundo lugar en 80s con calidad 100:
+tiempoPts = round(100 * 40/80) = 50
+score = 100 + 50 = 150
+```
+
+Con esto, un jugador puede seguir ganando por mucha calidad aunque haya llegado despues, pero de forma proporcional al tiempo real del lider y no por una ventana fija de segundos.
+
+Desempate para jugadores que no terminan (`DNF`):
+
+- Un `DNF` nunca se pone arriba de un jugador que si termino.
+- Si dos o mas jugadores quedan `DNF`, el desempate se hace asi:
+
+```txt
+1. Mayor numero de etapa / pedido alcanzado (`objectiveIndex`)
+2. Si empatan en etapa, mayor calidad viva registrada
+3. Si siguen empatados, menor tiempo acumulado
+```
+
+Orden de etapas usado:
+
+```txt
+inicio -> R1 -> E1 -> R2 -> E2 -> R3 -> E3 -> final
+```
+
+Lectura practica:
+
+- Ir mas a la derecha en esa secuencia te da mejor lugar.
+- Si dos jugadores quedaron en la misma etapa, gana el que traia mejor calidad.
