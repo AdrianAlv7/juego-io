@@ -15,6 +15,7 @@ export default class MultiplayerSystem {
     this.selfId = null;
     this.localSprite = null;
     this.gameStarted = false;
+    this.roomInfo = null;
     this.remotePlayers = new Map();
 
     this.sendAccumulatorMs = 0;
@@ -48,12 +49,6 @@ export default class MultiplayerSystem {
   start(registerPayload = {}) {
     if (this.socket) {
       this.destroy();
-      this.socket = null;
-      this.selfId = null;
-      this.gameStarted = false;
-      this.localSprite = null;
-      this.sendAccumulatorMs = 0;
-      this.lastSentState = null;
     }
 
     this.socket = createSocketConnection();
@@ -100,10 +95,20 @@ export default class MultiplayerSystem {
 
   handleInitState(payload = {}) {
     this.selfId = payload.selfId || null;
+    this.roomInfo = payload.room || null;
     this.callbacks.onInit?.(payload);
   }
 
   handleLobbyState(payload = {}) {
+    if (payload.roomId) {
+      this.roomInfo = {
+        roomId: payload.roomId,
+        roomType: payload.roomType || "",
+        roomCode: payload.roomCode || "",
+        roomLabel: payload.roomLabel || "",
+        maxPlayers: payload.maxPlayers || 4,
+      };
+    }
     this.callbacks.onLobbyState?.(payload);
   }
 
@@ -116,6 +121,15 @@ export default class MultiplayerSystem {
   }
 
   handleGameStarted(payload = {}) {
+    if (payload.roomId) {
+      this.roomInfo = {
+        roomId: payload.roomId,
+        roomType: payload.roomType || "",
+        roomCode: payload.roomCode || "",
+        roomLabel: payload.roomLabel || "",
+        maxPlayers: payload.maxPlayers || 4,
+      };
+    }
     this.gameStarted = true;
     this.clearRemotePlayers();
     this.callbacks.onGameStarted?.(payload);
@@ -155,6 +169,10 @@ export default class MultiplayerSystem {
     this.sendAccumulatorMs = 0;
     this.lastSentState = null;
     this.callbacks.onLobbyRestarted?.();
+  }
+
+  getRoomInfo() {
+    return this.roomInfo;
   }
 
   handleWeatherEventQueued(payload = {}) {
@@ -369,5 +387,12 @@ export default class MultiplayerSystem {
     this.socket.off("empPulseStarted", this.handleEmpPulseStarted);
     this.socket.off("inventoryItemActivated", this.handleInventoryItemActivated);
     this.socket.disconnect();
+    this.socket = null;
+    this.selfId = null;
+    this.localSprite = null;
+    this.gameStarted = false;
+    this.roomInfo = null;
+    this.sendAccumulatorMs = 0;
+    this.lastSentState = null;
   }
 }

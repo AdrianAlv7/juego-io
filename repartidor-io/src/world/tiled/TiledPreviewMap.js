@@ -9,7 +9,7 @@ import TrackItemSystem from "../../items/TrackItemSystem.js";
 import { formatKm, speedPxPerSecToKmh } from "../race/utils/telemetry.js";
 
 const TILED_PREVIEW_TEXTURE_KEY = "tiled-preview-map";
-const TILED_PREVIEW_SCALE = 9;
+const TILED_PREVIEW_SCALE = 11;
 
 const ROAD_COVERAGE_SAMPLE_RADIUS = 1.4;
 const ROAD_COVERAGE_THRESHOLD = 0.34;

@@ -20,6 +20,14 @@ const FINISH_WINDOW_MS = 20000;
 const LOBBY_RETURN_DELAY_MS = 20000;
 const DEBUG_FINALIZE_GRACE_MS = 120;
 const WEATHER_EVENT_WARNING_MS = 5000;
+const ROOM_CODE_LENGTH = 6;
+const ROOM_TYPE_PUBLIC = "public";
+const ROOM_TYPE_PRIVATE = "private";
+const REGISTER_ROOM_MODES = {
+  PUBLIC: "public",
+  PRIVATE_CREATE: "private_create",
+  PRIVATE_JOIN: "private_join",
+};
 const WEATHER_EVENT_CONFIG = {
   rain: {
     type: "rain",
@@ -83,8 +91,6 @@ const TRAIN_GAP_DELAY_RANGE_MS = {
   min: 18000,
   max: 32000,
 };
-// Puntaje final: calidad (0-100) + tiempo relativo al lider (0-100).
-// 200 pts es la carrera perfecta: calidad 100% y llegar primero.
 const RESULT_SCORE_CONFIG = {
   qualityMaxScore: 100,
   leaderTimeScore: 100,
@@ -103,30 +109,9 @@ const io = new Server(httpServer, {
   },
 });
 
-// Estado unico de sala (version inicial para pruebas LAN).
-const room = {
-  players: new Map(),
-  hostId: null,
-  started: false,
-  finished: false,
-  baseSpawn: null,
-  matchStartedAtMs: 0,
-  finishReports: new Map(),
-  finishWindowEndsAtMs: 0,
-  finishWindowTimer: null,
-  lobbyResetAtMs: 0,
-  lobbyResetTimer: null,
-  weatherQueuedEvent: null,
-  weatherActiveEvent: null,
-  weatherRuntimeTimers: new Set(),
-  weatherScheduleTimers: new Set(),
-  trainActiveEvent: null,
-  trainRuntimeTimers: new Set(),
-  trainScheduleTimers: new Set(),
-  items: new Map(),
-  itemRuntimeTimers: new Set(),
-  nextItemSeq: 1,
-};
+const rooms = new Map();
+const playerRoomIds = new Map();
+let nextRoomSequence = 1;
 
 function toFiniteNumber(value, fallback) {
   const next = Number(value);
@@ -257,16 +242,136 @@ function pickRandomRouteRewardItem() {
   );
 }
 
-function getLobbyPlayers() {
+function normalizeRoomCode(value = "") {
+  return String(value).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+}
+
+function makeRandomRoomCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let index = 0; index < ROOM_CODE_LENGTH; index += 1) {
+    code += alphabet[randomInt(0, alphabet.length - 1)];
+  }
+  return code;
+}
+
+function getRoomChannel(roomId) {
+  return `room:${roomId}`;
+}
+
+function createRoomState({ type = ROOM_TYPE_PUBLIC, code = "" } = {}) {
+  const normalizedCode = type === ROOM_TYPE_PRIVATE ? normalizeRoomCode(code) : "";
+  return {
+    id: `room-${nextRoomSequence++}`,
+    type,
+    code: normalizedCode,
+    players: new Map(),
+    hostId: null,
+    started: false,
+    finished: false,
+    baseSpawn: null,
+    matchStartedAtMs: 0,
+    finishReports: new Map(),
+    finishWindowEndsAtMs: 0,
+    finishWindowTimer: null,
+    lobbyResetAtMs: 0,
+    lobbyResetTimer: null,
+    weatherQueuedEvent: null,
+    weatherActiveEvent: null,
+    weatherRuntimeTimers: new Set(),
+    weatherScheduleTimers: new Set(),
+    trainActiveEvent: null,
+    trainRuntimeTimers: new Set(),
+    trainScheduleTimers: new Set(),
+    items: new Map(),
+    itemRuntimeTimers: new Set(),
+    nextItemSeq: 1,
+  };
+}
+
+function createRoom(options = {}) {
+  const room = createRoomState(options);
+  rooms.set(room.id, room);
+  return room;
+}
+
+function getRoomBySocketId(socketId) {
+  const roomId = playerRoomIds.get(socketId);
+  if (!roomId) return null;
+  return rooms.get(roomId) || null;
+}
+
+function findRoomByCode(code = "") {
+  const normalizedCode = normalizeRoomCode(code);
+  if (!normalizedCode) return null;
+  for (const room of rooms.values()) {
+    if (room.type === ROOM_TYPE_PRIVATE && room.code === normalizedCode) {
+      return room;
+    }
+  }
+  return null;
+}
+
+function generateUniquePrivateCode(preferredCode = "") {
+  const normalizedPreferredCode = normalizeRoomCode(preferredCode);
+  if (normalizedPreferredCode && !findRoomByCode(normalizedPreferredCode)) {
+    return normalizedPreferredCode;
+  }
+
+  let nextCode = makeRandomRoomCode();
+  while (findRoomByCode(nextCode)) {
+    nextCode = makeRandomRoomCode();
+  }
+  return nextCode;
+}
+
+function getOrCreatePublicRoom() {
+  for (const room of rooms.values()) {
+    if (
+      room.type === ROOM_TYPE_PUBLIC &&
+      !room.started &&
+      room.players.size < MAX_PLAYERS
+    ) {
+      return room;
+    }
+  }
+
+  return createRoom({ type: ROOM_TYPE_PUBLIC });
+}
+
+function getRoomMeta(room) {
+  return {
+    roomId: room.id,
+    roomType: room.type,
+    roomCode: room.code || "",
+    roomLabel:
+      room.type === ROOM_TYPE_PUBLIC
+        ? "Sala publica"
+        : `Sala privada ${room.code || ""}`.trim(),
+    maxPlayers: MAX_PLAYERS,
+  };
+}
+
+function emitToRoom(room, eventName, payload) {
+  io.to(getRoomChannel(room.id)).emit(eventName, payload);
+}
+function getLobbyPlayers(room) {
   return Array.from(room.players.entries()).map(([id, player]) => ({
     id,
     name: player.name,
   }));
 }
 
-function emitLobbyState() {
-  io.emit("lobbyState", {
-    players: getLobbyPlayers(),
+function emitLobbyState(room) {
+  emitToRoom(room, "lobbyState", {
+    roomId: room.id,
+    roomType: room.type,
+    roomCode: room.code || "",
+    roomLabel:
+      room.type === ROOM_TYPE_PUBLIC
+        ? "Sala publica"
+        : `Sala privada ${room.code || ""}`.trim(),
+    players: getLobbyPlayers(room),
     hostId: room.hostId,
     started: room.started,
     finished: room.finished,
@@ -275,44 +380,12 @@ function emitLobbyState() {
   });
 }
 
-function resetMatchState() {
-  if (room.finishWindowTimer) {
-    clearTimeout(room.finishWindowTimer);
-    room.finishWindowTimer = null;
-  }
-  if (room.lobbyResetTimer) {
-    clearTimeout(room.lobbyResetTimer);
-    room.lobbyResetTimer = null;
-  }
-  room.started = false;
-  room.finished = false;
-  room.baseSpawn = null;
-  room.matchStartedAtMs = 0;
-  room.finishReports.clear();
-  room.finishWindowEndsAtMs = 0;
-  room.lobbyResetAtMs = 0;
-  room.weatherQueuedEvent = null;
-  room.weatherActiveEvent = null;
-  clearTimerSet(room.weatherRuntimeTimers);
-  clearTimerSet(room.weatherScheduleTimers);
-  room.trainActiveEvent = null;
-  clearTimerSet(room.trainRuntimeTimers);
-  clearTimerSet(room.trainScheduleTimers);
-  clearRoomItems();
-  for (const player of room.players.values()) {
-    player.state = { x: 0, y: 0, angle: 0 };
-    player.progress = createEmptyProgressState();
-    player.inventory = [];
-    player.claimedRouteRewards = new Set();
-  }
-}
-
-function ensureHost() {
+function ensureHost(room) {
   if (room.hostId && room.players.has(room.hostId)) return;
   room.hostId = room.players.size > 0 ? room.players.keys().next().value : null;
 }
 
-function buildSpawnState(index) {
+function buildSpawnState(room, index) {
   const column = index % SPAWN_COLUMNS;
   const row = Math.floor(index / SPAWN_COLUMNS);
   const x = room.baseSpawn.x + column * SPAWN_GAP;
@@ -324,7 +397,7 @@ function buildSpawnState(index) {
   };
 }
 
-function buildPlayersPayload() {
+function buildPlayersPayload(room) {
   const result = {};
   for (const [id, player] of room.players.entries()) {
     result[id] = player.state;
@@ -332,17 +405,18 @@ function buildPlayersPayload() {
   return result;
 }
 
-function buildTrackItemsPayload() {
+function buildTrackItemsPayload(room) {
   return Array.from(room.items.values()).map((item) => ({ ...item }));
 }
 
-function emitTrackItemsSnapshot(target = io) {
-  target.emit("trackItemsSnapshot", {
-    items: buildTrackItemsPayload(),
+function emitTrackItemsSnapshot(room, target = null) {
+  const emitter = target || io.to(getRoomChannel(room.id));
+  emitter.emit("trackItemsSnapshot", {
+    items: buildTrackItemsPayload(room),
   });
 }
 
-function emitInventoryState(playerId) {
+function emitInventoryState(room, playerId) {
   const player = room.players.get(playerId);
   if (!player) return;
   io.to(playerId).emit("inventoryState", {
@@ -351,40 +425,40 @@ function emitInventoryState(playerId) {
   });
 }
 
-function emitAllInventoryStates() {
+function emitAllInventoryStates(room) {
   for (const playerId of room.players.keys()) {
-    emitInventoryState(playerId);
+    emitInventoryState(room, playerId);
   }
 }
 
-function makeTrackItemId() {
+function makeTrackItemId(room) {
   const nextId = room.nextItemSeq;
   room.nextItemSeq += 1;
-  return `track-item-${nextId}`;
+  return `track-item-${room.id}-${nextId}`;
 }
 
-function clearRoomItems() {
+function clearRoomItems(room) {
   room.items.clear();
   clearTimerSet(room.itemRuntimeTimers);
 }
 
-function removeTrackItem(id) {
+function removeTrackItem(room, id) {
   if (!id || !room.items.has(id)) return false;
   room.items.delete(id);
-  io.emit("trackItemRemoved", { id });
+  emitToRoom(room, "trackItemRemoved", { id });
   return true;
 }
 
-function scheduleTrackItemRemoval(id, delayMs) {
+function scheduleTrackItemRemoval(room, id, delayMs) {
   const safeDelayMs = Math.max(0, Number(delayMs) || 0);
   const timer = setTimeout(() => {
     room.itemRuntimeTimers.delete(timer);
-    removeTrackItem(id);
+    removeTrackItem(room, id);
   }, safeDelayMs);
   trackTimer(room.itemRuntimeTimers, timer);
 }
 
-function grantInventoryItem(playerId, type) {
+function grantInventoryItem(room, playerId, type) {
   const player = room.players.get(playerId);
   if (!player || !isItemType(type)) return false;
 
@@ -393,11 +467,11 @@ function grantInventoryItem(playerId, type) {
 
   inventory.push(type);
   player.inventory = inventory;
-  emitInventoryState(playerId);
+  emitInventoryState(room, playerId);
   return true;
 }
 
-function claimRouteReward(playerId, rewardKey) {
+function claimRouteReward(room, playerId, rewardKey) {
   const player = room.players.get(playerId);
   if (!player) return false;
   if (!ROUTE_REWARD_ITEM_MILESTONES.has(rewardKey)) return false;
@@ -407,20 +481,20 @@ function claimRouteReward(playerId, rewardKey) {
 
   claimed.add(rewardKey);
   player.claimedRouteRewards = claimed;
-  return grantInventoryItem(playerId, pickRandomRouteRewardItem());
+  return grantInventoryItem(room, playerId, pickRandomRouteRewardItem());
 }
 
-function dropInventoryItem(playerId) {
+function dropInventoryItem(room, playerId) {
   const player = room.players.get(playerId);
   if (!player || !Array.isArray(player.inventory) || player.inventory.length <= 0) {
     return null;
   }
 
   const [type] = player.inventory.splice(0, 1);
-  if (type === "emp") {
+  if (type === ITEM_TYPES.EMP) {
     const config = ITEM_CONFIG[type];
     const pulsePayload = {
-      id: makeTrackItemId(),
+      id: makeTrackItemId(room),
       type,
       ownerId: playerId,
       x: Number(player.state.x || 0),
@@ -432,20 +506,20 @@ function dropInventoryItem(playerId) {
       ringColor: Number(config?.draw?.ringColor || 0xffffff),
       createdAt: Date.now(),
     };
-    io.emit("empPulseStarted", pulsePayload);
-    emitInventoryState(playerId);
+    emitToRoom(room, "empPulseStarted", pulsePayload);
+    emitInventoryState(room, playerId);
     return pulsePayload;
   }
 
   if (type === ITEM_TYPES.SHIELD) {
     const activationPayload = {
-      id: makeTrackItemId(),
+      id: makeTrackItemId(room),
       type,
       ownerId: playerId,
       createdAt: Date.now(),
     };
     io.to(playerId).emit("inventoryItemActivated", activationPayload);
-    emitInventoryState(playerId);
+    emitInventoryState(room, playerId);
     return activationPayload;
   }
 
@@ -453,39 +527,39 @@ function dropInventoryItem(playerId) {
     type,
     playerId,
     player.state,
-    makeTrackItemId(),
+    makeTrackItemId(room),
     Date.now()
   );
   if (!payload) {
-    emitInventoryState(playerId);
+    emitInventoryState(room, playerId);
     return null;
   }
 
   room.items.set(payload.id, payload);
-  io.emit("trackItemAdded", payload);
-  emitInventoryState(playerId);
+  emitToRoom(room, "trackItemAdded", payload);
+  emitInventoryState(room, playerId);
   return payload;
 }
 
-function triggerTrackItem(playerId, itemId, reportedType = "") {
+function triggerTrackItem(room, playerId, itemId, reportedType = "") {
   const player = room.players.get(playerId);
   const item = room.items.get(itemId);
   if (!player || !item) return false;
   if (item.ownerId === playerId) return false;
   if (reportedType && item.type !== reportedType) return false;
 
-  if (item.type === "oil") {
+  if (item.type === ITEM_TYPES.OIL) {
     if (item.triggeredAt) return false;
     item.triggeredAt = Date.now();
     item.removesAt =
       item.triggeredAt + (ITEM_CONFIG[item.type]?.removalDelayMs || 1500);
-    io.emit("trackItemUpdated", { ...item });
-    scheduleTrackItemRemoval(item.id, item.removesAt - Date.now());
+    emitToRoom(room, "trackItemUpdated", { ...item });
+    scheduleTrackItemRemoval(room, item.id, item.removesAt - Date.now());
     return true;
   }
 
-  if (item.type === "wall") {
-    return removeTrackItem(item.id);
+  if (item.type === ITEM_TYPES.WALL) {
+    return removeTrackItem(room, item.id);
   }
 
   return false;
@@ -560,7 +634,12 @@ function scoreAndRankResults(results = [], timeCapMs = 0) {
   });
 }
 
-function storeFinishReport(playerId, payload = {}, options = {}) {
+function getElapsedSinceStartMs(room) {
+  if (!room.matchStartedAtMs) return 0;
+  return Math.max(0, Date.now() - room.matchStartedAtMs - MATCH_PRESTART_MS);
+}
+
+function storeFinishReport(room, playerId, payload = {}, options = {}) {
   const { allowOverride = false } = options;
   if (!allowOverride && room.finishReports.has(playerId)) return null;
 
@@ -570,7 +649,7 @@ function storeFinishReport(playerId, payload = {}, options = {}) {
   const report = {
     id: playerId,
     name: player.name,
-    elapsedMs: sanitizeElapsedMs(payload.elapsedMs, getElapsedSinceStartMs()),
+    elapsedMs: sanitizeElapsedMs(payload.elapsedMs, getElapsedSinceStartMs(room)),
     qualityPercent: sanitizeQualityPercent(payload.qualityPercent, 0),
     didFinish: payload.didFinish !== false,
     ...sanitizeProgressPayload(payload.progress, player.progress),
@@ -579,17 +658,54 @@ function storeFinishReport(playerId, payload = {}, options = {}) {
   room.finishReports.set(playerId, report);
   return report;
 }
-
-function restartLobbyForEveryone(reason = "manual") {
-  resetMatchState();
-  io.emit("lobbyRestarted", {
-    reason,
-    restartedAt: Date.now(),
-  });
-  emitLobbyState();
+function resetMatchState(room) {
+  if (room.finishWindowTimer) {
+    clearTimeout(room.finishWindowTimer);
+    room.finishWindowTimer = null;
+  }
+  if (room.lobbyResetTimer) {
+    clearTimeout(room.lobbyResetTimer);
+    room.lobbyResetTimer = null;
+  }
+  room.started = false;
+  room.finished = false;
+  room.baseSpawn = null;
+  room.matchStartedAtMs = 0;
+  room.finishReports.clear();
+  room.finishWindowEndsAtMs = 0;
+  room.lobbyResetAtMs = 0;
+  room.weatherQueuedEvent = null;
+  room.weatherActiveEvent = null;
+  clearTimerSet(room.weatherRuntimeTimers);
+  clearTimerSet(room.weatherScheduleTimers);
+  room.trainActiveEvent = null;
+  clearTimerSet(room.trainRuntimeTimers);
+  clearTimerSet(room.trainScheduleTimers);
+  clearRoomItems(room);
+  for (const player of room.players.values()) {
+    player.state = { x: 0, y: 0, angle: 0 };
+    player.progress = createEmptyProgressState();
+    player.inventory = [];
+    player.claimedRouteRewards = new Set();
+  }
 }
 
-function scheduleLobbyReset() {
+function destroyRoom(room) {
+  resetMatchState(room);
+  rooms.delete(room.id);
+}
+
+function restartLobbyForEveryone(room, reason = "manual") {
+  resetMatchState(room);
+  emitToRoom(room, "lobbyRestarted", {
+    reason,
+    restartedAt: Date.now(),
+    ...getRoomMeta(room),
+  });
+  emitLobbyState(room);
+}
+
+function scheduleLobbyReset(room) {
   if (room.lobbyResetTimer) {
     clearTimeout(room.lobbyResetTimer);
     room.lobbyResetTimer = null;
@@ -598,23 +714,25 @@ function scheduleLobbyReset() {
   room.lobbyResetAtMs = Date.now() + LOBBY_RETURN_DELAY_MS;
   room.lobbyResetTimer = setTimeout(() => {
     room.lobbyResetTimer = null;
-    restartLobbyForEveryone("auto");
+    if (!rooms.has(room.id)) return;
+    restartLobbyForEveryone(room, "auto");
   }, LOBBY_RETURN_DELAY_MS + 50);
 }
 
-function scheduleDebugFinalize(includeMissingPlayers = true) {
+function scheduleDebugFinalize(room, includeMissingPlayers = true) {
   setTimeout(() => {
+    if (!rooms.has(room.id)) return;
     if (!room.started || room.finished) return;
 
     const currentReports = Array.from(room.finishReports.values());
     const timeCapMs = currentReports.length
       ? Math.max(...currentReports.map((entry) => entry.elapsedMs))
-      : getElapsedSinceStartMs();
-    finalizeMatchWithReports(timeCapMs, includeMissingPlayers);
+      : getElapsedSinceStartMs(room);
+    finalizeMatchWithReports(room, timeCapMs, includeMissingPlayers);
   }, DEBUG_FINALIZE_GRACE_MS);
 }
 
-function finalizeMatchWithReports(timeCapMs, includeMissingPlayers = false) {
+function finalizeMatchWithReports(room, timeCapMs, includeMissingPlayers = false) {
   if (!room.started || room.finished) return false;
   if (room.players.size === 0) return false;
 
@@ -623,7 +741,7 @@ function finalizeMatchWithReports(timeCapMs, includeMissingPlayers = false) {
     room.finishWindowTimer = null;
   }
 
-  const safeTimeCapMs = sanitizeElapsedMs(timeCapMs, getElapsedSinceStartMs());
+  const safeTimeCapMs = sanitizeElapsedMs(timeCapMs, getElapsedSinceStartMs(room));
   const resultsById = new Map(room.finishReports);
 
   if (includeMissingPlayers) {
@@ -650,54 +768,51 @@ function finalizeMatchWithReports(timeCapMs, includeMissingPlayers = false) {
   room.trainActiveEvent = null;
   clearTimerSet(room.trainRuntimeTimers);
   clearTimerSet(room.trainScheduleTimers);
-  clearRoomItems();
+  clearRoomItems(room);
   for (const player of room.players.values()) {
     player.inventory = [];
   }
-  scheduleLobbyReset();
-  emitTrackItemsSnapshot();
-  emitAllInventoryStates();
-  io.emit("matchFinished", {
+
+  scheduleLobbyReset(room);
+  emitTrackItemsSnapshot(room);
+  emitAllInventoryStates(room);
+  emitToRoom(room, "matchFinished", {
     winnerId: ranked[0]?.id || null,
     results: ranked,
     finishedAt: Date.now(),
     lobbyResetAt: room.lobbyResetAtMs,
     lobbyResetDelayMs: LOBBY_RETURN_DELAY_MS,
     scoring: RESULT_SCORE_CONFIG,
+    ...getRoomMeta(room),
   });
-  emitLobbyState();
+  emitLobbyState(room);
   return true;
 }
 
-function getElapsedSinceStartMs() {
-  if (!room.matchStartedAtMs) return 0;
-  return Math.max(0, Date.now() - room.matchStartedAtMs - MATCH_PRESTART_MS);
-}
-
-function emitWeatherEventQueued(eventPayload) {
-  io.emit("weatherEventQueued", {
+function emitWeatherEventQueued(room, eventPayload) {
+  emitToRoom(room, "weatherEventQueued", {
     ...eventPayload,
     warningMs: WEATHER_EVENT_WARNING_MS,
   });
 }
 
-function emitWeatherEventStarted(eventPayload) {
-  io.emit("weatherEventStarted", eventPayload);
+function emitWeatherEventStarted(room, eventPayload) {
+  emitToRoom(room, "weatherEventStarted", eventPayload);
 }
 
-function emitWeatherEventEnded(eventPayload) {
-  io.emit("weatherEventEnded", eventPayload);
+function emitWeatherEventEnded(room, eventPayload) {
+  emitToRoom(room, "weatherEventEnded", eventPayload);
 }
 
-function emitTrainEventStarted(eventPayload) {
-  io.emit("trainEventStarted", eventPayload);
+function emitTrainEventStarted(room, eventPayload) {
+  emitToRoom(room, "trainEventStarted", eventPayload);
 }
 
-function emitTrainEventEnded(eventPayload) {
-  io.emit("trainEventEnded", eventPayload);
+function emitTrainEventEnded(room, eventPayload) {
+  emitToRoom(room, "trainEventEnded", eventPayload);
 }
 
-function clearCurrentWeatherEvent(reason = "cleared") {
+function clearCurrentWeatherEvent(room, reason = "cleared") {
   const currentEvent = room.weatherActiveEvent || room.weatherQueuedEvent;
   if (!currentEvent) return false;
 
@@ -705,7 +820,7 @@ function clearCurrentWeatherEvent(reason = "cleared") {
   room.weatherQueuedEvent = null;
   room.weatherActiveEvent = null;
 
-  emitWeatherEventEnded({
+  emitWeatherEventEnded(room, {
     type: currentEvent.type,
     label: currentEvent.label,
     reason,
@@ -714,7 +829,7 @@ function clearCurrentWeatherEvent(reason = "cleared") {
   return true;
 }
 
-function startQueuedWeatherEvent() {
+function startQueuedWeatherEvent(room) {
   if (!room.started || room.finished) return false;
   if (!room.weatherQueuedEvent) return false;
 
@@ -735,17 +850,18 @@ function startQueuedWeatherEvent() {
     endsAt: Date.now() + config.durationMs,
   };
 
-  emitWeatherEventStarted(room.weatherActiveEvent);
+  emitWeatherEventStarted(room, room.weatherActiveEvent);
 
   const endTimer = setTimeout(() => {
     room.weatherRuntimeTimers.delete(endTimer);
-    clearCurrentWeatherEvent("completed");
+    if (!rooms.has(room.id)) return;
+    clearCurrentWeatherEvent(room, "completed");
   }, config.durationMs + 30);
   trackTimer(room.weatherRuntimeTimers, endTimer);
   return true;
 }
 
-function queueRoomWeatherEvent(type, source = "rng") {
+function queueRoomWeatherEvent(room, type, source = "rng") {
   if (!room.started || room.finished) return false;
   if (room.weatherQueuedEvent || room.weatherActiveEvent) return false;
 
@@ -760,17 +876,18 @@ function queueRoomWeatherEvent(type, source = "rng") {
     startsAt: Date.now() + WEATHER_EVENT_WARNING_MS,
     durationMs: config.durationMs,
   };
-  emitWeatherEventQueued(room.weatherQueuedEvent);
+  emitWeatherEventQueued(room, room.weatherQueuedEvent);
 
   const startTimer = setTimeout(() => {
     room.weatherRuntimeTimers.delete(startTimer);
-    startQueuedWeatherEvent();
+    if (!rooms.has(room.id)) return;
+    startQueuedWeatherEvent(room);
   }, WEATHER_EVENT_WARNING_MS);
   trackTimer(room.weatherRuntimeTimers, startTimer);
   return true;
 }
 
-function scheduleRandomWeatherEvents() {
+function scheduleRandomWeatherEvents(room) {
   clearTimerSet(room.weatherScheduleTimers);
   if (!room.started || room.finished) return;
 
@@ -784,7 +901,8 @@ function scheduleRandomWeatherEvents() {
     const type = pickRandomWeatherType();
     const timer = setTimeout(() => {
       room.weatherScheduleTimers.delete(timer);
-      queueRoomWeatherEvent(type, "rng");
+      if (!rooms.has(room.id)) return;
+      queueRoomWeatherEvent(room, type, "rng");
     }, nextQueueDelayMs);
     trackTimer(room.weatherScheduleTimers, timer);
 
@@ -795,13 +913,13 @@ function scheduleRandomWeatherEvents() {
   }
 }
 
-function clearCurrentTrainEvent(reason = "completed") {
+function clearCurrentTrainEvent(room, reason = "completed") {
   const currentEvent = room.trainActiveEvent;
   if (!currentEvent) return false;
 
   clearTimerSet(room.trainRuntimeTimers);
   room.trainActiveEvent = null;
-  emitTrainEventEnded({
+  emitTrainEventEnded(room, {
     id: currentEvent.id,
     label: currentEvent.label,
     endedAt: Date.now(),
@@ -810,7 +928,7 @@ function clearCurrentTrainEvent(reason = "completed") {
   return true;
 }
 
-function startTrainEvent(id, source = "rng") {
+function startTrainEvent(room, id, source = "rng") {
   if (!room.started || room.finished) return false;
   if (room.trainActiveEvent) return false;
 
@@ -825,17 +943,18 @@ function startTrainEvent(id, source = "rng") {
     startedAt: Date.now(),
     endsAt: Date.now() + config.durationMs,
   };
-  emitTrainEventStarted(room.trainActiveEvent);
+  emitTrainEventStarted(room, room.trainActiveEvent);
 
   const timer = setTimeout(() => {
     room.trainRuntimeTimers.delete(timer);
-    clearCurrentTrainEvent("completed");
+    if (!rooms.has(room.id)) return;
+    clearCurrentTrainEvent(room, "completed");
   }, config.durationMs + 30);
   trackTimer(room.trainRuntimeTimers, timer);
   return true;
 }
 
-function scheduleRandomTrainEvents() {
+function scheduleRandomTrainEvents(room) {
   clearTimerSet(room.trainScheduleTimers);
   if (!room.started || room.finished) return;
 
@@ -849,7 +968,8 @@ function scheduleRandomTrainEvents() {
     const eventId = pickRandomTrainEventId();
     const timer = setTimeout(() => {
       room.trainScheduleTimers.delete(timer);
-      startTrainEvent(eventId, "rng");
+      if (!rooms.has(room.id)) return;
+      startTrainEvent(room, eventId, "rng");
     }, nextDelayMs);
     trackTimer(room.trainScheduleTimers, timer);
 
@@ -858,8 +978,7 @@ function scheduleRandomTrainEvents() {
       randomInt(TRAIN_GAP_DELAY_RANGE_MS.min, TRAIN_GAP_DELAY_RANGE_MS.max);
   }
 }
-
-function maybeFinalizeMatch(reason = "all_finished") {
+function maybeFinalizeMatch(room, reason = "all_finished") {
   if (!room.started || room.finished) return false;
   if (room.players.size === 0) return false;
 
@@ -882,44 +1001,159 @@ function maybeFinalizeMatch(reason = "all_finished") {
           room.finishWindowEndsAtMs - room.matchStartedAtMs - MATCH_PRESTART_MS
         )
       )
-    : maxReportedElapsedMs || getElapsedSinceStartMs();
-  return finalizeMatchWithReports(timeCapMs, timeoutReached);
+    : maxReportedElapsedMs || getElapsedSinceStartMs(room);
+  return finalizeMatchWithReports(room, timeCapMs, timeoutReached);
 }
 
-function startFinishWindowIfNeeded(firstReport) {
+function startFinishWindowIfNeeded(room, firstReport) {
   if (room.finishWindowEndsAtMs > 0) return;
   if (room.players.size <= 1) {
-    maybeFinalizeMatch("all_finished");
+    maybeFinalizeMatch(room, "all_finished");
     return;
   }
 
   room.finishWindowEndsAtMs = Date.now() + FINISH_WINDOW_MS;
-  io.emit("finishWindowStarted", {
+  emitToRoom(room, "finishWindowStarted", {
     leaderId: firstReport.id,
     leaderName: firstReport.name,
     startedAt: Date.now(),
     endsAt: room.finishWindowEndsAtMs,
     durationMs: FINISH_WINDOW_MS,
+    ...getRoomMeta(room),
   });
 
   room.finishWindowTimer = setTimeout(() => {
-    maybeFinalizeMatch("timeout");
+    if (!rooms.has(room.id)) return;
+    maybeFinalizeMatch(room, "timeout");
   }, FINISH_WINDOW_MS + 50);
+}
+
+function sanitizeRoomJoinPayload(payload = {}) {
+  const roomMode = Object.values(REGISTER_ROOM_MODES).includes(payload.roomMode)
+    ? payload.roomMode
+    : REGISTER_ROOM_MODES.PUBLIC;
+  const name = typeof payload.name === "string" ? payload.name : "";
+  const roomCode = normalizeRoomCode(payload.roomCode || "");
+  return {
+    roomMode,
+    name,
+    roomCode,
+  };
+}
+
+function buildPlayerRecord(name) {
+  return {
+    name,
+    state: { x: 0, y: 0, angle: 0 },
+    progress: createEmptyProgressState(),
+    inventory: [],
+    claimedRouteRewards: new Set(),
+  };
+}
+
+function assignPlayerToRoom(room, socket, payload = {}) {
+  const number = room.players.size + 1;
+  const safeName =
+    typeof payload.name === "string" && payload.name.trim()
+      ? payload.name.trim().slice(0, 18)
+      : `Jugador ${number}`;
+
+  socket.join(getRoomChannel(room.id));
+  room.players.set(socket.id, buildPlayerRecord(safeName));
+  playerRoomIds.set(socket.id, room.id);
+  ensureHost(room);
+
+  socket.emit("initState", {
+    selfId: socket.id,
+    players: buildPlayersPayload(room),
+    room: getRoomMeta(room),
+  });
+  emitLobbyState(room);
+}
+
+function resolveTargetRoom(joinPayload) {
+  if (joinPayload.roomMode === REGISTER_ROOM_MODES.PUBLIC) {
+    return { room: getOrCreatePublicRoom(), error: null };
+  }
+
+  if (joinPayload.roomMode === REGISTER_ROOM_MODES.PRIVATE_CREATE) {
+    const roomCode = generateUniquePrivateCode(joinPayload.roomCode);
+    return {
+      room: createRoom({
+        type: ROOM_TYPE_PRIVATE,
+        code: roomCode,
+      }),
+      error: null,
+    };
+  }
+
+  if (joinPayload.roomMode === REGISTER_ROOM_MODES.PRIVATE_JOIN) {
+    if (!joinPayload.roomCode) {
+      return {
+        room: null,
+        error: {
+          code: "ROOM_CODE_REQUIRED",
+          message: "Escribe un codigo para entrar a una sala privada.",
+        },
+      };
+    }
+
+    const room = findRoomByCode(joinPayload.roomCode);
+    if (!room) {
+      return {
+        room: null,
+        error: {
+          code: "ROOM_NOT_FOUND",
+          message: "No existe una sala privada con ese codigo.",
+        },
+      };
+    }
+
+    return { room, error: null };
+  }
+
+  return {
+    room: null,
+    error: {
+      code: "ROOM_MODE_INVALID",
+      message: "Modo de sala invalido.",
+    },
+  };
+}
+
+function emitRoomError(socket, payload) {
+  socket.emit("roomError", payload);
 }
 
 io.on("connection", (socket) => {
   socket.on("registerPlayer", (payload = {}) => {
-    if (room.players.has(socket.id)) {
+    const existingRoom = getRoomBySocketId(socket.id);
+    if (existingRoom?.players.has(socket.id)) {
       socket.emit("initState", {
         selfId: socket.id,
-        players: buildPlayersPayload(),
+        players: buildPlayersPayload(existingRoom),
+        room: getRoomMeta(existingRoom),
       });
-      emitLobbyState();
+      emitLobbyState(existingRoom);
+      return;
+    }
+
+    const joinPayload = sanitizeRoomJoinPayload(payload);
+    const { room, error } = resolveTargetRoom(joinPayload);
+    if (error) {
+      emitRoomError(socket, error);
+      return;
+    }
+    if (!room) {
+      emitRoomError(socket, {
+        code: "ROOM_UNAVAILABLE",
+        message: "No se pudo resolver la sala.",
+      });
       return;
     }
 
     if (room.players.size >= MAX_PLAYERS) {
-      socket.emit("roomError", {
+      emitRoomError(socket, {
         code: "ROOM_FULL",
         message: "Sala llena (maximo 4 jugadores).",
       });
@@ -927,35 +1161,19 @@ io.on("connection", (socket) => {
     }
 
     if (room.started) {
-      socket.emit("roomError", {
+      emitRoomError(socket, {
         code: "ROOM_IN_PROGRESS",
         message: "La partida ya inicio. Espera reinicio de sala.",
       });
       return;
     }
 
-    const number = room.players.size + 1;
-    const name = typeof payload.name === "string" && payload.name.trim()
-      ? payload.name.trim().slice(0, 18)
-      : `Jugador ${number}`;
-
-    room.players.set(socket.id, {
-      name,
-      state: { x: 0, y: 0, angle: 0 },
-      progress: createEmptyProgressState(),
-      inventory: [],
-      claimedRouteRewards: new Set(),
-    });
-
-    ensureHost();
-    socket.emit("initState", {
-      selfId: socket.id,
-      players: buildPlayersPayload(),
-    });
-    emitLobbyState();
+    assignPlayerToRoom(room, socket, joinPayload);
   });
 
   socket.on("startGame", (payload = {}) => {
+    const room = getRoomBySocketId(socket.id);
+    if (!room) return;
     if (socket.id !== room.hostId) return;
     if (room.started) return;
     if (room.players.size === 0) return;
@@ -969,7 +1187,7 @@ io.on("connection", (socket) => {
 
     let index = 0;
     for (const player of room.players.values()) {
-      player.state = buildSpawnState(index);
+      player.state = buildSpawnState(room, index);
       index += 1;
     }
 
@@ -989,26 +1207,29 @@ io.on("connection", (socket) => {
     room.trainActiveEvent = null;
     clearTimerSet(room.trainRuntimeTimers);
     clearTimerSet(room.trainScheduleTimers);
-    clearRoomItems();
+    clearRoomItems(room);
     for (const player of room.players.values()) {
       player.inventory = [];
       player.progress = createEmptyProgressState();
       player.claimedRouteRewards = new Set();
     }
 
-    io.emit("gameStarted", {
+    emitToRoom(room, "gameStarted", {
       startedAt: Date.now(),
-      players: buildPlayersPayload(),
+      players: buildPlayersPayload(room),
+      ...getRoomMeta(room),
     });
-    emitTrackItemsSnapshot();
-    emitAllInventoryStates();
-    scheduleRandomWeatherEvents();
-    scheduleRandomTrainEvents();
-    emitLobbyState();
+    emitTrackItemsSnapshot(room);
+    emitAllInventoryStates(room);
+    scheduleRandomWeatherEvents(room);
+    scheduleRandomTrainEvents(room);
+    emitLobbyState(room);
   });
 
   socket.on("updatePosition", (payload = {}) => {
-    if (!room.started || room.finished) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || !room.started || room.finished) return;
+
     const player = room.players.get(socket.id);
     if (!player) return;
 
@@ -1017,26 +1238,29 @@ io.on("connection", (socket) => {
     player.state = next;
     player.progress = nextProgress;
 
-    socket.broadcast.emit("playerMoved", {
+    socket.to(getRoomChannel(room.id)).emit("playerMoved", {
       id: socket.id,
       ...next,
     });
   });
 
   socket.on("finishMatch", (payload = {}) => {
-    if (!room.started || room.finished) return;
-    const report = storeFinishReport(socket.id, payload);
+    const room = getRoomBySocketId(socket.id);
+    if (!room || !room.started || room.finished) return;
+
+    const report = storeFinishReport(room, socket.id, payload);
     if (!report) return;
 
     if (!payload.finalizeNow && room.finishReports.size === 1) {
-      startFinishWindowIfNeeded(report);
+      startFinishWindowIfNeeded(room, report);
     }
 
-    maybeFinalizeMatch("all_finished");
+    maybeFinalizeMatch(room, "all_finished");
   });
 
   socket.on("debugSetFinishReport", (payload = {}) => {
-    if (socket.id !== room.hostId) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || socket.id !== room.hostId) return;
     if (!room.started || room.finished) return;
 
     const requestedPlayerId =
@@ -1046,9 +1270,10 @@ io.on("connection", (socket) => {
 
     const elapsedSeconds = sanitizeElapsedSeconds(
       payload.elapsedSeconds,
-      getElapsedSinceStartMs() / 1000
+      getElapsedSinceStartMs(room) / 1000
     );
     const report = storeFinishReport(
+      room,
       targetPlayerId,
       {
         elapsedMs: elapsedSeconds * 1000,
@@ -1060,105 +1285,123 @@ io.on("connection", (socket) => {
     if (!report) return;
 
     if (!payload.finalizeNow && room.finishReports.size === 1) {
-      startFinishWindowIfNeeded(report);
+      startFinishWindowIfNeeded(room, report);
     }
 
     if (payload.finalizeNow) {
-      scheduleDebugFinalize(true);
+      scheduleDebugFinalize(room, true);
       return;
     }
 
-    maybeFinalizeMatch("all_finished");
+    maybeFinalizeMatch(room, "all_finished");
   });
-
   socket.on("debugFinalizeMatch", () => {
-    if (socket.id !== room.hostId) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || socket.id !== room.hostId) return;
     if (!room.started || room.finished) return;
 
-    scheduleDebugFinalize(true);
+    scheduleDebugFinalize(room, true);
   });
 
   socket.on("restartLobby", () => {
-    if (socket.id !== room.hostId) return;
-    restartLobbyForEveryone("host");
+    const room = getRoomBySocketId(socket.id);
+    if (!room || socket.id !== room.hostId) return;
+    restartLobbyForEveryone(room, "host");
   });
 
   socket.on("requestLobbyReturn", () => {
-    if (!room.players.has(socket.id)) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || !room.players.has(socket.id)) return;
     if (!room.finished) return;
-    restartLobbyForEveryone("player");
+    restartLobbyForEveryone(room, "player");
   });
 
   socket.on("queueWeatherEvent", (payload = {}) => {
-    if (socket.id !== room.hostId) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || socket.id !== room.hostId) return;
     if (!room.started || room.finished) return;
+
     const type =
       typeof payload.type === "string" ? payload.type.trim().toLowerCase() : "";
-    queueRoomWeatherEvent(type, "host");
+    queueRoomWeatherEvent(room, type, "host");
   });
 
   socket.on("clearWeatherEvent", () => {
-    if (socket.id !== room.hostId) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || socket.id !== room.hostId) return;
     if (!room.started || room.finished) return;
-    clearCurrentWeatherEvent("host_clear");
+    clearCurrentWeatherEvent(room, "host_clear");
   });
 
   socket.on("startTrainEvent", (payload = {}) => {
-    if (socket.id !== room.hostId) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || socket.id !== room.hostId) return;
     if (!room.started || room.finished) return;
+
     const requestedId =
       typeof payload.id === "string" ? payload.id.trim() : "";
     const nextId = TRAIN_EVENT_CONFIG[requestedId]
       ? requestedId
       : pickRandomTrainEventId();
-    startTrainEvent(nextId, "host");
+    startTrainEvent(room, nextId, "host");
   });
 
   socket.on("grantItem", (payload = {}) => {
-    if (socket.id !== room.hostId) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || socket.id !== room.hostId) return;
     if (!room.started || room.finished) return;
 
     const type =
       typeof payload.type === "string" ? payload.type.trim().toLowerCase() : "";
-    grantInventoryItem(socket.id, type);
+    grantInventoryItem(room, socket.id, type);
   });
 
   socket.on("claimRouteReward", (payload = {}) => {
-    if (!room.started || room.finished) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || !room.started || room.finished) return;
+
     const rewardKey =
       typeof payload.rewardKey === "string" ? payload.rewardKey.trim() : "";
     if (!rewardKey) return;
-    claimRouteReward(socket.id, rewardKey);
+    claimRouteReward(room, socket.id, rewardKey);
   });
 
   socket.on("dropItem", () => {
-    if (!room.started || room.finished) return;
-    dropInventoryItem(socket.id);
+    const room = getRoomBySocketId(socket.id);
+    if (!room || !room.started || room.finished) return;
+    dropInventoryItem(room, socket.id);
   });
 
   socket.on("triggerTrackItem", (payload = {}) => {
-    if (!room.started || room.finished) return;
+    const room = getRoomBySocketId(socket.id);
+    if (!room || !room.started || room.finished) return;
 
     const id = typeof payload.id === "string" ? payload.id.trim() : "";
     const type =
       typeof payload.type === "string" ? payload.type.trim().toLowerCase() : "";
     if (!id) return;
-    triggerTrackItem(socket.id, id, type);
+    triggerTrackItem(room, socket.id, id, type);
   });
 
   socket.on("disconnect", () => {
-    const hadPlayer = room.players.delete(socket.id);
-    if (!hadPlayer) return;
-    room.finishReports.delete(socket.id);
+    const room = getRoomBySocketId(socket.id);
+    if (!room) return;
 
-    ensureHost();
-    socket.broadcast.emit("playerDisconnected", {
+    const hadPlayer = room.players.delete(socket.id);
+    if (!hadPlayer) {
+      playerRoomIds.delete(socket.id);
+      return;
+    }
+
+    playerRoomIds.delete(socket.id);
+    room.finishReports.delete(socket.id);
+    ensureHost(room);
+    socket.to(getRoomChannel(room.id)).emit("playerDisconnected", {
       id: socket.id,
     });
 
     if (room.players.size === 0) {
-      room.hostId = null;
-      resetMatchState();
+      destroyRoom(room);
       return;
     }
 
@@ -1175,11 +1418,12 @@ io.on("connection", (socket) => {
       room.trainActiveEvent = null;
       clearTimerSet(room.trainRuntimeTimers);
       clearTimerSet(room.trainScheduleTimers);
-      clearRoomItems();
+      clearRoomItems(room);
     } else {
-      maybeFinalizeMatch("all_finished");
+      maybeFinalizeMatch(room, "all_finished");
     }
-    emitLobbyState();
+
+    emitLobbyState(room);
   });
 });
 

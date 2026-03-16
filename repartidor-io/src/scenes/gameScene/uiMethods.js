@@ -35,6 +35,118 @@ function bindDomInputNode(scene, node, options = {}) {
 }
 
 export const gameSceneUiMethods = {
+  getNormalizedRoomCode() {
+    const rawValue = this.roomCodeInput?.value ?? this.roomCodeValue ?? "";
+    const normalizedValue = String(rawValue)
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8);
+    this.roomCodeValue = normalizedValue;
+    if (this.roomCodeInput) {
+      this.roomCodeInput.value = normalizedValue;
+    }
+    return normalizedValue;
+  },
+
+  setNameEntryBusy(roomMode = null) {
+    const isBusy = Boolean(roomMode);
+    const buttonConfigs = [
+      {
+        button: this.publicMatchButton,
+        mode: "public",
+        busyLabel: "Buscando...",
+      },
+      {
+        button: this.privateCreateButton,
+        mode: "private_create",
+        busyLabel: "Creando...",
+      },
+      {
+        button: this.privateJoinButton,
+        mode: "private_join",
+        busyLabel: "Uniendo...",
+      },
+    ];
+
+    if (this.nameInput) {
+      this.nameInput.disabled = isBusy;
+    }
+    if (this.roomCodeInput) {
+      this.roomCodeInput.disabled = isBusy;
+    }
+
+    buttonConfigs.forEach(({ button, mode, busyLabel }) => {
+      if (!button) return;
+      button.disabled = isBusy;
+      button.textContent =
+        isBusy && roomMode === mode
+          ? busyLabel
+          : button.dataset.defaultLabel || button.textContent;
+    });
+    this.syncKeyboardCaptureState();
+  },
+
+  setLobbyMessage(message, color = "#ffd27d") {
+    this.lobbyMessage?.setText(message || "");
+    this.lobbyMessage?.setColor(color);
+  },
+
+  async copyCurrentRoomCode() {
+    const roomCode = this.currentLobbyState?.roomCode || "";
+    if (!roomCode) return;
+
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      if (this.roomShareButton) {
+        this.roomShareButton.textContent = "Codigo copiado";
+      }
+      this.setLobbyMessage(`Codigo ${roomCode} copiado al portapapeles.`, "#95f5c8");
+      window.setTimeout(() => {
+        if (this.roomShareButton) {
+          this.roomShareButton.textContent = "Copiar codigo";
+        }
+      }, 1400);
+    } catch (_error) {
+      this.setLobbyMessage(
+        `No se pudo copiar. Comparte este codigo manualmente: ${roomCode}`,
+        "#ffcf88"
+      );
+    }
+  },
+
+  updateRoomShareUi() {
+    if (!this.roomShareRoot) return;
+
+    const roomCode = this.currentLobbyState?.roomCode || "";
+    const isPrivateRoom =
+      this.currentLobbyState?.roomType === "private" && Boolean(roomCode);
+    const isHost = this.currentLobbyState?.hostId === this.multiplayer?.selfId;
+    const showShareUi = Boolean(
+      isPrivateRoom && this.isRegistered && !this.matchRunning
+    );
+
+    this.roomShareRoot.style.display = showShareUi ? "flex" : "none";
+    if (!showShareUi) return;
+
+    if (this.roomShareCodeValue) {
+      this.roomShareCodeValue.textContent = roomCode;
+    }
+    if (this.roomShareLabel) {
+      this.roomShareLabel.textContent = isHost
+        ? "Comparte este codigo"
+        : "Codigo de sala";
+    }
+    if (this.roomShareHint) {
+      this.roomShareHint.textContent =
+        isHost
+          ? "Compartelo con tus amigos para que entren directo a tu sala privada."
+          : "Guardalo o copialo si quieres invitar a alguien mas despues.";
+    }
+    if (this.roomShareButton) {
+      this.roomShareButton.textContent = "Copiar codigo";
+    }
+  },
+
   isDomTextEntryActive() {
     if (typeof document === "undefined") return false;
     const activeElement = document.activeElement;
@@ -69,8 +181,51 @@ export const gameSceneUiMethods = {
     this.nameEntryRoot.style.top = "74%";
     this.nameEntryRoot.style.transform = "translate(-50%, -50%)";
     this.nameEntryRoot.style.display = "flex";
-    this.nameEntryRoot.style.gap = "10px";
+    this.nameEntryRoot.style.flexDirection = "column";
+    this.nameEntryRoot.style.alignItems = "center";
+    this.nameEntryRoot.style.gap = "12px";
+    this.nameEntryRoot.style.minWidth = "720px";
+    this.nameEntryRoot.style.maxWidth = "860px";
+    this.nameEntryRoot.style.padding = "18px 20px";
+    this.nameEntryRoot.style.border = "1px solid rgba(167, 201, 255, 0.22)";
+    this.nameEntryRoot.style.borderRadius = "18px";
+    this.nameEntryRoot.style.background =
+      "linear-gradient(180deg, rgba(12, 19, 30, 0.96) 0%, rgba(8, 14, 22, 0.96) 100%)";
+    this.nameEntryRoot.style.boxShadow =
+      "0 20px 48px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.05)";
     this.nameEntryRoot.style.zIndex = "3000";
+
+    const inputsRow = document.createElement("div");
+    inputsRow.style.display = "flex";
+    inputsRow.style.gap = "10px";
+    inputsRow.style.alignItems = "center";
+    inputsRow.style.justifyContent = "center";
+    inputsRow.style.flexWrap = "wrap";
+
+    const inputGroupStyle = (wrapper) => {
+      wrapper.style.display = "flex";
+      wrapper.style.flexDirection = "column";
+      wrapper.style.gap = "6px";
+      wrapper.style.minWidth = "0";
+    };
+
+    const createInputLabel = (text, color = "#b9c9da") => {
+      const label = document.createElement("div");
+      label.textContent = text;
+      label.style.fontFamily = "Consolas, monospace";
+      label.style.fontSize = "12px";
+      label.style.letterSpacing = "0.08em";
+      label.style.textTransform = "uppercase";
+      label.style.color = color;
+      return label;
+    };
+
+    const nameGroup = document.createElement("div");
+    inputGroupStyle(nameGroup);
+    const roomGroup = document.createElement("div");
+    inputGroupStyle(roomGroup);
+    const nameLabel = createInputLabel("Jugador", "#a7d8bd");
+    const roomLabel = createInputLabel("Codigo privado", "#a6c8f7");
 
     this.nameInput = document.createElement("input");
     this.nameInput.type = "text";
@@ -85,47 +240,155 @@ export const gameSceneUiMethods = {
     this.nameInput.style.color = "#eef4fb";
     this.nameInput.style.fontFamily = "Consolas, monospace";
     this.nameInput.style.fontSize = "18px";
+    this.nameInput.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.05)";
 
-    this.nameSubmitButton = document.createElement("button");
-    this.nameSubmitButton.textContent = "Entrar";
-    this.nameSubmitButton.style.height = "44px";
-    this.nameSubmitButton.style.padding = "0 16px";
-    this.nameSubmitButton.style.border = "2px solid #90c5a6";
-    this.nameSubmitButton.style.borderRadius = "8px";
-    this.nameSubmitButton.style.background = "#1f5f46";
-    this.nameSubmitButton.style.color = "#ffffff";
-    this.nameSubmitButton.style.fontFamily = "Consolas, monospace";
-    this.nameSubmitButton.style.fontSize = "18px";
-    this.nameSubmitButton.style.cursor = "pointer";
+    this.roomCodeInput = document.createElement("input");
+    this.roomCodeInput.type = "text";
+    this.roomCodeInput.maxLength = 8;
+    this.roomCodeInput.placeholder = "Codigo privado";
+    this.roomCodeInput.style.width = "220px";
+    this.roomCodeInput.style.height = "44px";
+    this.roomCodeInput.style.padding = "0 12px";
+    this.roomCodeInput.style.border = "2px solid #9cb7d9";
+    this.roomCodeInput.style.borderRadius = "8px";
+    this.roomCodeInput.style.background = "#10171f";
+    this.roomCodeInput.style.color = "#eef4fb";
+    this.roomCodeInput.style.fontFamily = "Consolas, monospace";
+    this.roomCodeInput.style.fontSize = "18px";
+    this.roomCodeInput.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.05)";
 
-    const submit = () => this.submitNameEntry();
-    this.nameSubmitButton.addEventListener("click", submit);
-    bindDomInputNode(this, this.nameInput, { onEnter: submit });
-    bindDomInputNode(this, this.nameSubmitButton);
+    const actionsRow = document.createElement("div");
+    actionsRow.style.display = "flex";
+    actionsRow.style.gap = "10px";
+    actionsRow.style.alignItems = "center";
+    actionsRow.style.justifyContent = "center";
+    actionsRow.style.flexWrap = "wrap";
 
-    this.nameEntryRoot.appendChild(this.nameInput);
-    this.nameEntryRoot.appendChild(this.nameSubmitButton);
+    const helperText = document.createElement("div");
+    helperText.textContent =
+      "Publica te empareja con randoms. En privada puedes crear con codigo opcional o unirte con uno.";
+    helperText.style.maxWidth = "760px";
+    helperText.style.fontFamily = "Consolas, monospace";
+    helperText.style.fontSize = "13px";
+    helperText.style.lineHeight = "1.45";
+    helperText.style.textAlign = "center";
+    helperText.style.color = "#c6d4e5";
+
+    const helperCaption = document.createElement("div");
+    helperCaption.textContent = "Entrar a una sala";
+    helperCaption.style.fontFamily = "Consolas, monospace";
+    helperCaption.style.fontSize = "13px";
+    helperCaption.style.fontWeight = "700";
+    helperCaption.style.letterSpacing = "0.08em";
+    helperCaption.style.textTransform = "uppercase";
+    helperCaption.style.color = "#ffcf88";
+
+    const makeActionButton = (label, background, borderColor) => {
+      const button = document.createElement("button");
+      button.textContent = label;
+      button.dataset.defaultLabel = label;
+      button.style.height = "46px";
+      button.style.padding = "0 18px";
+      button.style.border = `2px solid ${borderColor}`;
+      button.style.borderRadius = "10px";
+      button.style.background = background;
+      button.style.color = "#ffffff";
+      button.style.fontFamily = "Consolas, monospace";
+      button.style.fontSize = "16px";
+      button.style.fontWeight = "700";
+      button.style.cursor = "pointer";
+      button.style.boxShadow = "0 8px 18px rgba(0,0,0,0.22)";
+      button.style.transition = "transform 120ms ease, filter 120ms ease";
+      button.addEventListener("mouseenter", () => {
+        if (button.disabled) return;
+        button.style.transform = "translateY(-1px)";
+        button.style.filter = "brightness(1.06)";
+      });
+      button.addEventListener("mouseleave", () => {
+        button.style.transform = "translateY(0)";
+        button.style.filter = "none";
+      });
+      return button;
+    };
+
+    this.publicMatchButton = makeActionButton("Publica", "#1f5f46", "#90c5a6");
+    this.privateCreateButton = makeActionButton(
+      "Crear privada",
+      "#274a7a",
+      "#8ab8ff"
+    );
+    this.privateJoinButton = makeActionButton(
+      "Unirme con codigo",
+      "#7a4b12",
+      "#ffd27d"
+    );
+
+    const submitPublic = () => this.submitNameEntry("public");
+    const submitCreatePrivate = () => this.submitNameEntry("private_create");
+    const submitJoinPrivate = () => this.submitNameEntry("private_join");
+
+    this.publicMatchButton.addEventListener("click", submitPublic);
+    this.privateCreateButton.addEventListener("click", submitCreatePrivate);
+    this.privateJoinButton.addEventListener("click", submitJoinPrivate);
+
+    bindDomInputNode(this, this.nameInput, { onEnter: submitPublic });
+    bindDomInputNode(this, this.roomCodeInput, { onEnter: submitJoinPrivate });
+    bindDomInputNode(this, this.publicMatchButton);
+    bindDomInputNode(this, this.privateCreateButton);
+    bindDomInputNode(this, this.privateJoinButton);
+
+    this.roomCodeInput.addEventListener("input", () => this.getNormalizedRoomCode());
+
+    nameGroup.appendChild(nameLabel);
+    nameGroup.appendChild(this.nameInput);
+    roomGroup.appendChild(roomLabel);
+    roomGroup.appendChild(this.roomCodeInput);
+
+    inputsRow.appendChild(nameGroup);
+    inputsRow.appendChild(roomGroup);
+    actionsRow.appendChild(this.publicMatchButton);
+    actionsRow.appendChild(this.privateCreateButton);
+    actionsRow.appendChild(this.privateJoinButton);
+
+    this.nameEntryRoot.appendChild(helperCaption);
+    this.nameEntryRoot.appendChild(inputsRow);
+    this.nameEntryRoot.appendChild(actionsRow);
+    this.nameEntryRoot.appendChild(helperText);
     appRoot.appendChild(this.nameEntryRoot);
     this.nameInput.focus();
     this.syncKeyboardCaptureState();
   },
 
-  submitNameEntry() {
+  submitNameEntry(roomMode = "public") {
     if (!this.multiplayer || this.isRegistered) return;
     const raw = this.nameInput?.value?.trim() || "";
     const safeName = (raw || "Jugador").slice(0, USERNAME_MAX_LENGTH);
+    const roomCode = this.getNormalizedRoomCode();
+    if (roomMode === "private_join" && !roomCode) {
+      this.lobbyMessage.setText("Escribe un codigo para entrar a una sala privada.");
+      this.lobbyMessage.setColor("#ffcf88");
+      this.roomCodeInput?.focus();
+      return;
+    }
+
+    this.pendingRoomMode = roomMode;
     window.localStorage.setItem("repartidor_player_name", safeName);
 
     this.blurNameEntry();
     this.nameInput.value = safeName;
-    this.nameInput.disabled = true;
-    this.nameSubmitButton.disabled = true;
-    this.nameSubmitButton.textContent = "Conectando...";
-    this.lobbyMessage.setText("Conectando a sala...");
-    this.lobbyMessage.setColor("#ffd27d");
+    this.setNameEntryBusy(roomMode);
+    this.setLobbyMessage(
+      roomMode === "public"
+        ? "Buscando sala publica..."
+        : roomMode === "private_create"
+          ? "Creando sala privada..."
+          : "Uniendote a sala privada..."
+    );
 
     this.multiplayer.start({
       name: safeName,
+      roomMode,
+      roomCode,
       preferredSpawn: ACTIVE_MAP.getSpawnPoint(),
     });
   },
@@ -136,8 +399,11 @@ export const gameSceneUiMethods = {
     if (this.nameEntryRoot) {
       this.nameEntryRoot.style.display = "none";
     }
+    this.setNameEntryBusy(null);
+    this.setLeaveRoomUiVisible(true);
     this.syncKeyboardCaptureState();
     this.renderLobbyState();
+    this.updateRoomShareUi();
   },
 
   blurNameEntry() {
@@ -148,7 +414,159 @@ export const gameSceneUiMethods = {
       document.activeElement.blur?.();
     }
     this.nameInput?.blur?.();
-    this.nameSubmitButton?.blur?.();
+    this.roomCodeInput?.blur?.();
+    this.publicMatchButton?.blur?.();
+    this.privateCreateButton?.blur?.();
+    this.privateJoinButton?.blur?.();
+    this.syncKeyboardCaptureState();
+  },
+
+  createLeaveRoomUi() {
+    const appRoot = document.getElementById("app");
+    if (!appRoot) return;
+
+    this.leaveRoomRoot = document.createElement("div");
+    this.leaveRoomRoot.style.position = "absolute";
+    this.leaveRoomRoot.style.left = "24px";
+    this.leaveRoomRoot.style.top = "24px";
+    this.leaveRoomRoot.style.display = "none";
+    this.leaveRoomRoot.style.zIndex = "3000";
+
+    this.leaveRoomButton = document.createElement("button");
+    this.leaveRoomButton.textContent = "Salir de sala";
+    this.leaveRoomButton.style.height = "40px";
+    this.leaveRoomButton.style.padding = "0 16px";
+    this.leaveRoomButton.style.border = "1px solid #ffb08b";
+    this.leaveRoomButton.style.borderRadius = "8px";
+    this.leaveRoomButton.style.background = "#6b2f21";
+    this.leaveRoomButton.style.color = "#ffffff";
+    this.leaveRoomButton.style.fontFamily = "Consolas, monospace";
+    this.leaveRoomButton.style.fontSize = "14px";
+    this.leaveRoomButton.style.cursor = "pointer";
+    this.leaveRoomButton.addEventListener("click", () => this.leaveCurrentRoom());
+    bindDomInputNode(this, this.leaveRoomButton);
+
+    this.leaveRoomRoot.appendChild(this.leaveRoomButton);
+    appRoot.appendChild(this.leaveRoomRoot);
+  },
+
+  createRoomShareUi() {
+    const appRoot = document.getElementById("app");
+    if (!appRoot) return;
+
+    this.roomShareRoot = document.createElement("div");
+    this.roomShareRoot.style.position = "absolute";
+    this.roomShareRoot.style.left = "50%";
+    this.roomShareRoot.style.top = "188px";
+    this.roomShareRoot.style.transform = "translateX(-50%)";
+    this.roomShareRoot.style.display = "none";
+    this.roomShareRoot.style.flexDirection = "column";
+    this.roomShareRoot.style.alignItems = "center";
+    this.roomShareRoot.style.gap = "8px";
+    this.roomShareRoot.style.minWidth = "360px";
+    this.roomShareRoot.style.maxWidth = "calc(100vw - 32px)";
+    this.roomShareRoot.style.padding = "14px 18px";
+    this.roomShareRoot.style.border = "1px solid rgba(255, 214, 138, 0.26)";
+    this.roomShareRoot.style.borderRadius = "18px";
+    this.roomShareRoot.style.background =
+      "linear-gradient(180deg, rgba(18, 26, 38, 0.96) 0%, rgba(10, 16, 24, 0.96) 100%)";
+    this.roomShareRoot.style.boxShadow =
+      "0 20px 48px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.05)";
+    this.roomShareRoot.style.zIndex = "3010";
+
+    this.roomShareLabel = document.createElement("div");
+    this.roomShareLabel.textContent = "Codigo de sala";
+    this.roomShareLabel.style.fontFamily = "Consolas, monospace";
+    this.roomShareLabel.style.fontSize = "12px";
+    this.roomShareLabel.style.fontWeight = "700";
+    this.roomShareLabel.style.letterSpacing = "0.12em";
+    this.roomShareLabel.style.textTransform = "uppercase";
+    this.roomShareLabel.style.color = "#ffcf88";
+
+    this.roomShareCodeValue = document.createElement("div");
+    this.roomShareCodeValue.style.fontFamily = "Consolas, monospace";
+    this.roomShareCodeValue.style.fontSize = "42px";
+    this.roomShareCodeValue.style.fontWeight = "700";
+    this.roomShareCodeValue.style.letterSpacing = "0.18em";
+    this.roomShareCodeValue.style.color = "#ffffff";
+    this.roomShareCodeValue.style.textAlign = "center";
+    this.roomShareCodeValue.style.textShadow = "0 4px 18px rgba(0,0,0,0.3)";
+    this.roomShareCodeValue.style.padding = "2px 12px";
+    this.roomShareCodeValue.style.borderRadius = "12px";
+    this.roomShareCodeValue.style.background = "rgba(255, 255, 255, 0.04)";
+
+    this.roomShareHint = document.createElement("div");
+    this.roomShareHint.style.maxWidth = "520px";
+    this.roomShareHint.style.fontFamily = "Consolas, monospace";
+    this.roomShareHint.style.fontSize = "13px";
+    this.roomShareHint.style.lineHeight = "1.45";
+    this.roomShareHint.style.textAlign = "center";
+    this.roomShareHint.style.color = "#c9d5e4";
+
+    this.roomShareButton = document.createElement("button");
+    this.roomShareButton.textContent = "Copiar codigo";
+    this.roomShareButton.style.height = "40px";
+    this.roomShareButton.style.padding = "0 18px";
+    this.roomShareButton.style.border = "1px solid #ffd27d";
+    this.roomShareButton.style.borderRadius = "10px";
+    this.roomShareButton.style.background = "#6d4512";
+    this.roomShareButton.style.color = "#ffffff";
+    this.roomShareButton.style.fontFamily = "Consolas, monospace";
+    this.roomShareButton.style.fontSize = "14px";
+    this.roomShareButton.style.fontWeight = "700";
+    this.roomShareButton.style.cursor = "pointer";
+    this.roomShareButton.style.boxShadow = "0 8px 18px rgba(0,0,0,0.22)";
+    this.roomShareButton.addEventListener("click", () => this.copyCurrentRoomCode());
+    bindDomInputNode(this, this.roomShareButton);
+
+    this.roomShareRoot.appendChild(this.roomShareLabel);
+    this.roomShareRoot.appendChild(this.roomShareCodeValue);
+    this.roomShareRoot.appendChild(this.roomShareHint);
+    this.roomShareRoot.appendChild(this.roomShareButton);
+    appRoot.appendChild(this.roomShareRoot);
+  },
+
+  setLeaveRoomUiVisible(visible) {
+    if (!this.leaveRoomRoot) return;
+    const canShow = Boolean(visible && this.isRegistered && !this.matchRunning);
+    this.leaveRoomRoot.style.display = canShow ? "block" : "none";
+    this.syncKeyboardCaptureState();
+  },
+
+  leaveCurrentRoom() {
+    if (!this.isRegistered) return;
+    if (this.matchRunning && !this.matchEnded) return;
+
+    this.multiplayer?.destroy();
+    this.isRegistered = false;
+    this.currentLobbyState = null;
+    this.pendingRoomMode = "public";
+    this.setLobbyVisible(true);
+    this.setLeaveRoomUiVisible(false);
+    this.setNameEntryBusy(null);
+    this.updateRoomShareUi();
+
+    if (this.nameEntryRoot) {
+      this.nameEntryRoot.style.display = "flex";
+    }
+    if (this.nameInput) {
+      this.nameInput.disabled = false;
+      if (!this.nameInput.value) {
+        this.nameInput.value =
+          window.localStorage.getItem("repartidor_player_name") || "";
+      }
+    }
+    if (this.roomCodeInput) {
+      this.roomCodeInput.disabled = false;
+    }
+
+    this.lobbyTitle.setText("Sala Repartidor.io");
+    this.lobbySubtitle.setText("Publica o privada | Maximo 4 jugadores");
+    this.playersListText.setText(["Elige un modo para entrar a una sala"]);
+    this.setLobbyMessage("Busca publica, crea privada o entra con codigo.");
+    this.startButtonRect.setVisible(false);
+    this.startButtonLabel.setVisible(false);
+    this.nameInput?.focus();
     this.syncKeyboardCaptureState();
   },
 
@@ -157,7 +575,29 @@ export const gameSceneUiMethods = {
     this.nameEntryRoot.remove();
     this.nameEntryRoot = null;
     this.nameInput = null;
-    this.nameSubmitButton = null;
+    this.roomCodeInput = null;
+    this.publicMatchButton = null;
+    this.privateCreateButton = null;
+    this.privateJoinButton = null;
+    this.syncKeyboardCaptureState();
+  },
+
+  destroyLeaveRoomUi() {
+    if (!this.leaveRoomRoot) return;
+    this.leaveRoomRoot.remove();
+    this.leaveRoomRoot = null;
+    this.leaveRoomButton = null;
+    this.syncKeyboardCaptureState();
+  },
+
+  destroyRoomShareUi() {
+    if (!this.roomShareRoot) return;
+    this.roomShareRoot.remove();
+    this.roomShareRoot = null;
+    this.roomShareLabel = null;
+    this.roomShareCodeValue = null;
+    this.roomShareHint = null;
+    this.roomShareButton = null;
     this.syncKeyboardCaptureState();
   },
 
@@ -566,9 +1006,33 @@ export const gameSceneUiMethods = {
     this.lobbyBackdrop.setScrollFactor(0);
     this.lobbyBackdrop.setDepth(2000);
 
-    this.lobbyTitle = this.add.text(width / 2, 120, "Sala Repartidor.io", {
+    this.lobbyCard = this.add.rectangle(
+      width / 2,
+      height / 2,
+      Math.min(980, width - 80),
+      Math.min(760, height - 100),
+      0x111926,
+      0.92
+    );
+    this.lobbyCard.setScrollFactor(0);
+    this.lobbyCard.setDepth(2005);
+    this.lobbyCard.setStrokeStyle(2, 0x2d425a, 0.95);
+
+    this.lobbyPlayersPanel = this.add.rectangle(
+      width / 2,
+      height / 2 - 18,
+      Math.min(860, width - 140),
+      240,
+      0x0b121c,
+      0.9
+    );
+    this.lobbyPlayersPanel.setScrollFactor(0);
+    this.lobbyPlayersPanel.setDepth(2006);
+    this.lobbyPlayersPanel.setStrokeStyle(1, 0x223346, 0.9);
+
+    this.lobbyTitle = this.add.text(width / 2, 142, "Sala Repartidor.io", {
       fontFamily: "Consolas, monospace",
-      fontSize: "58px",
+      fontSize: "54px",
       color: "#ffffff",
       fontStyle: "bold",
     });
@@ -576,31 +1040,33 @@ export const gameSceneUiMethods = {
     this.lobbyTitle.setScrollFactor(0);
     this.lobbyTitle.setDepth(2010);
 
-    this.lobbySubtitle = this.add.text(width / 2, 185, "Esperando jugadores", {
+    this.lobbySubtitle = this.add.text(width / 2, 204, "Esperando jugadores", {
       fontFamily: "Consolas, monospace",
-      fontSize: "24px",
+      fontSize: "22px",
       color: "#b8c4d1",
     });
     this.lobbySubtitle.setOrigin(0.5);
     this.lobbySubtitle.setScrollFactor(0);
     this.lobbySubtitle.setDepth(2010);
 
-    this.playersListText = this.add.text(width / 2, 270, "Conectando...", {
+    this.playersListText = this.add.text(width / 2, height / 2 - 116, "Conectando...", {
       fontFamily: "Consolas, monospace",
       fontSize: "24px",
       color: "#e8edf3",
-      align: "left",
-      lineSpacing: 8,
+      align: "center",
+      lineSpacing: 10,
+      wordWrap: { width: Math.min(760, width - 200) },
     });
     this.playersListText.setOrigin(0.5, 0);
     this.playersListText.setScrollFactor(0);
     this.playersListText.setDepth(2010);
 
-    this.lobbyMessage = this.add.text(width / 2, height - 180, "", {
+    this.lobbyMessage = this.add.text(width / 2, height - 174, "", {
       fontFamily: "Consolas, monospace",
-      fontSize: "22px",
+      fontSize: "20px",
       color: "#ffd27d",
       align: "center",
+      wordWrap: { width: Math.min(820, width - 140) },
     });
     this.lobbyMessage.setOrigin(0.5);
     this.lobbyMessage.setScrollFactor(0);
@@ -608,7 +1074,7 @@ export const gameSceneUiMethods = {
 
     this.startButtonRect = this.add.rectangle(
       width / 2,
-      height - 95,
+      height - 104,
       320,
       74,
       0x2f7f5f,
@@ -622,7 +1088,7 @@ export const gameSceneUiMethods = {
       this.multiplayer?.emitStartGame(ACTIVE_MAP.getSpawnPoint());
     });
 
-    this.startButtonLabel = this.add.text(width / 2, height - 95, "PLAY", {
+    this.startButtonLabel = this.add.text(width / 2, height - 104, "PLAY", {
       fontFamily: "Consolas, monospace",
       fontSize: "36px",
       color: "#ffffff",

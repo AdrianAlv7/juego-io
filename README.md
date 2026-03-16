@@ -222,12 +222,30 @@ repartidor-io/
 
 ## Flujo online
 
-- Sala unica de hasta 4 jugadores.
-- Login rapido con username corto antes de entrar a sala.
-- El host ve boton `Play` para iniciar.
-- Todos cargan el mapa `tiledPreview` al iniciar.
-- La partida termina para todos cuando un jugador completa la ruta.
-- Host puede reiniciar sala con `R` al finalizar.
+- Ya no existe una sola sala global.
+- Cada jugador entra primero con username y luego elige uno de estos modos:
+- `Publica`: el server busca una sala publica abierta y te mete ahi; si no hay, crea una nueva.
+- `Crear privada`: crea una sala privada nueva. Si escribes codigo, intenta usarlo; si lo dejas vacio, genera uno automaticamente.
+- `Unirme con codigo`: entra a una sala privada existente usando su codigo.
+- Cada sala sigue teniendo maximo `4` jugadores.
+- Dentro de cada sala, el host ve boton `PLAY` para iniciar.
+- Al terminar la partida, los jugadores vuelven al lobby de su misma sala.
+- Si todos abandonan una sala, esa sala se elimina del server.
+
+### Tipos de sala
+
+#### Sala publica
+
+- Pensada para emparejar randoms.
+- El server reutiliza la primera publica disponible que no haya empezado y tenga espacio.
+- Si todas las publicas estan llenas o en partida, crea otra.
+
+#### Sala privada
+
+- Pensada para jugar con amigos.
+- Se identifica con un codigo alfanumerico.
+- El host puede crearla con codigo personalizado o dejar que el server lo genere.
+- Otro jugador puede entrar escribiendo ese codigo.
 
 ## Notas
 

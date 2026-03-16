@@ -52,55 +52,93 @@ export const gameSceneMatchMethods = {
   },
 
   onRoomError(payload = {}) {
-    this.lobbyMessage.setText(payload.message || "Error de sala.");
-    this.lobbyMessage.setColor("#ff9f9f");
+    this.isRegistered = false;
+    this.currentLobbyState = null;
+    this.setNameEntryBusy(null);
+    this.setLobbyMessage(payload.message || "Error de sala.", "#ff9f9f");
     this.playersListText.setText([
       "No se pudo entrar a la sala.",
       "Revisa el backend y vuelve a intentar.",
     ]);
-    if (this.nameInput && this.nameSubmitButton) {
+    if (this.nameInput && this.nameEntryRoot) {
       this.nameInput.disabled = false;
-      this.nameSubmitButton.disabled = false;
-      this.nameSubmitButton.textContent = "Entrar";
+      if (this.roomCodeInput) {
+        this.roomCodeInput.disabled = false;
+      }
       this.nameEntryRoot.style.display = "flex";
+      this.nameInput.focus();
     }
+    this.setLeaveRoomUiVisible(false);
+    this.updateRoomShareUi();
   },
 
   onConnectError(error) {
     console.error("[socket-connect-error]", error);
 
-    this.lobbyMessage.setText(
-      "No se pudo conectar al servidor. Revisa la URL del backend."
+    this.isRegistered = false;
+    this.currentLobbyState = null;
+    this.setNameEntryBusy(null);
+    this.setLobbyMessage(
+      "No se pudo conectar al servidor. Revisa la URL del backend.",
+      "#ff9f9f"
     );
-    this.lobbyMessage.setColor("#ff9f9f");
     this.playersListText.setText([
       "Fallo la conexion al socket.",
       "Revisa VITE_SOCKET_SERVER_URL o el tunel del puerto 3000.",
     ]);
 
-    if (this.nameInput && this.nameSubmitButton) {
+    if (this.nameInput && this.nameEntryRoot) {
       this.nameInput.disabled = false;
-      this.nameSubmitButton.disabled = false;
-      this.nameSubmitButton.textContent = "Entrar";
+      if (this.roomCodeInput) {
+        this.roomCodeInput.disabled = false;
+      }
       this.nameEntryRoot.style.display = "flex";
+      this.nameInput.focus();
     }
+    this.setLeaveRoomUiVisible(false);
+    this.updateRoomShareUi();
   },
 
   renderLobbyState() {
-    if (!this.currentLobbyState) return;
+    if (!this.currentLobbyState) {
+      this.lobbyTitle.setText("Sala Repartidor.io");
+      this.lobbySubtitle.setText("Publica o privada | Maximo 4 jugadores");
+      this.playersListText.setText(["Elige un modo para entrar a una sala"]);
+      this.setLobbyMessage("Busca publica, crea privada o entra con codigo.");
+      this.startButtonRect.setVisible(false);
+      this.startButtonLabel.setVisible(false);
+      this.setLeaveRoomUiVisible(false);
+      this.updateRoomShareUi();
+      return;
+    }
 
     const players = this.currentLobbyState.players || [];
     const maxPlayers = this.currentLobbyState.maxPlayers || 4;
     const hostId = this.currentLobbyState.hostId;
     const isHost = this.multiplayer?.selfId === hostId;
+    const roomType = this.currentLobbyState.roomType || "public";
+    const roomCode = this.currentLobbyState.roomCode || "";
+
+    this.lobbyTitle.setText(
+      roomType === "private"
+        ? `Sala privada ${roomCode || ""}`.trim()
+        : "Sala publica"
+    );
+    this.lobbySubtitle.setText(
+      roomType === "private"
+        ? `Codigo ${roomCode || "AUTO"} | Conectados: ${players.length}/${maxPlayers}`
+        : `Emparejamiento publico | Conectados: ${players.length}/${maxPlayers}`
+    );
+    this.setLeaveRoomUiVisible(this.isRegistered && !this.matchRunning);
+    this.updateRoomShareUi();
 
     if (!this.isRegistered) {
       this.playersListText.setText(["Ingresa username para entrar a sala"]);
-      this.lobbySubtitle.setText("Conectados: 0/4 | Maximo 4 jugadores");
       this.startButtonRect.setVisible(false);
       this.startButtonLabel.setVisible(false);
-      this.lobbyMessage.setText("Escribe un username corto y presiona Entrar.");
-      this.lobbyMessage.setColor("#ffd27d");
+      this.setLobbyMessage(
+        "Escribe username y elige publica, crear privada o unirte con codigo."
+      );
       return;
     }
 
@@ -112,24 +150,30 @@ export const gameSceneMatchMethods = {
       : ["Sin jugadores"];
     this.playersListText.setText(lines);
 
-    this.lobbySubtitle.setText(
-      `Conectados: ${players.length}/${maxPlayers} | Maximo 4 jugadores`
-    );
-
     const canStart = isHost && !this.currentLobbyState.started && players.length > 0;
     this.startButtonRect.setVisible(canStart);
     this.startButtonLabel.setVisible(canStart);
     this.startButtonRect.disableInteractive();
     if (canStart) {
       this.startButtonRect.setInteractive({ useHandCursor: true });
-      this.lobbyMessage.setText("Eres host. Presiona PLAY para iniciar.");
-      this.lobbyMessage.setColor("#95f5c8");
+      this.setLobbyMessage(
+        roomType === "private"
+          ? `Eres host. Comparte el codigo ${roomCode || "AUTO"} y presiona PLAY cuando esten listos.`
+          : "Eres host. Presiona PLAY para iniciar la sala publica.",
+        "#95f5c8"
+      );
     } else if (!isHost) {
-      this.lobbyMessage.setText("Esperando que el host inicie la partida...");
-      this.lobbyMessage.setColor("#ffd27d");
+      this.setLobbyMessage(
+        roomType === "private"
+          ? "Dentro de sala privada. Esperando que el host inicie la partida..."
+          : "Emparejado en sala publica. Esperando que el host inicie la partida..."
+      );
     } else {
-      this.lobbyMessage.setText("Conectando sala...");
-      this.lobbyMessage.setColor("#ffd27d");
+      this.setLobbyMessage(
+        roomType === "private"
+          ? "Sala privada creada. Esperando mas jugadores..."
+          : "Conectando sala publica..."
+      );
     }
 
     this.setWeatherControlsVisible(this.matchRunning && !this.matchEnded);
@@ -200,6 +244,8 @@ export const gameSceneMatchMethods = {
     this.applyHudCameraFilters();
 
     this.setLobbyVisible(false);
+    this.setLeaveRoomUiVisible(false);
+    this.updateRoomShareUi();
     this.statusBanner.setVisible(false);
     this.syncKeyboardCaptureState();
   },
@@ -258,8 +304,9 @@ export const gameSceneMatchMethods = {
     this.applyEmpHudSuppression(false);
     this.syncKeyboardCaptureState();
 
-    this.lobbyMessage.setText("Puedes volver al lobby o esperar el cierre automatico.");
-    this.lobbyMessage.setColor("#ffd27d");
+    this.setLobbyMessage(
+      "Puedes volver al lobby o esperar el cierre automatico."
+    );
   },
 
   onLobbyRestarted() {

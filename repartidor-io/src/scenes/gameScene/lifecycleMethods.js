@@ -124,6 +124,8 @@ function registerShutdown(scene) {
     }
     scene.multiplayer?.destroy();
     scene.destroyNameEntryUi();
+    scene.destroyLeaveRoomUi();
+    scene.destroyRoomShareUi();
     scene.destroyDebugFinishUi();
     scene.destroyLobbyReturnUi();
     scene.destroyWeatherUi();
@@ -154,6 +156,8 @@ export const gameSceneLifecycleMethods = {
     this.createItemUi();
     this.createDebugFinishUi();
     this.createLobbyReturnUi();
+    this.createLeaveRoomUi();
+    this.createRoomShareUi();
     this.createNameEntryUi();
     this.empPulseVisual = new EmpPulseVisual(this, { depth: 26 });
     this.positiveStockSystem = new PositiveStockSystem();
@@ -189,12 +193,24 @@ export const gameSceneLifecycleMethods = {
     if (this.lobbyBackdrop) {
       this.lobbyBackdrop.setPosition(gameSize.width / 2, gameSize.height / 2);
       this.lobbyBackdrop.setSize(gameSize.width, gameSize.height);
-      this.lobbyTitle.setPosition(gameSize.width / 2, 120);
-      this.lobbySubtitle.setPosition(gameSize.width / 2, 185);
-      this.playersListText.setPosition(gameSize.width / 2, 270);
-      this.lobbyMessage.setPosition(gameSize.width / 2, gameSize.height - 180);
-      this.startButtonRect.setPosition(gameSize.width / 2, gameSize.height - 95);
-      this.startButtonLabel.setPosition(gameSize.width / 2, gameSize.height - 95);
+      this.lobbyCard?.setPosition(gameSize.width / 2, gameSize.height / 2);
+      this.lobbyCard?.setSize(
+        Math.min(980, gameSize.width - 80),
+        Math.min(760, gameSize.height - 100)
+      );
+      this.lobbyPlayersPanel?.setPosition(gameSize.width / 2, gameSize.height / 2 - 18);
+      this.lobbyPlayersPanel?.setSize(
+        Math.min(860, gameSize.width - 140),
+        240
+      );
+      this.lobbyTitle.setPosition(gameSize.width / 2, 142);
+      this.lobbySubtitle.setPosition(gameSize.width / 2, 204);
+      this.playersListText.setPosition(gameSize.width / 2, gameSize.height / 2 - 116);
+      this.playersListText.setWordWrapWidth(Math.min(760, gameSize.width - 200));
+      this.lobbyMessage.setPosition(gameSize.width / 2, gameSize.height - 174);
+      this.lobbyMessage.setWordWrapWidth(Math.min(820, gameSize.width - 140));
+      this.startButtonRect.setPosition(gameSize.width / 2, gameSize.height - 104);
+      this.startButtonLabel.setPosition(gameSize.width / 2, gameSize.height - 104);
     }
 
     if (this.statusBanner) {
@@ -272,6 +288,8 @@ export const gameSceneLifecycleMethods = {
 
     this.multiplayer?.attachGroup(null);
     this.setLobbyVisible(true);
+    this.setLeaveRoomUiVisible(this.isRegistered && !this.matchRunning);
+    this.updateRoomShareUi();
     this.statusBanner.setVisible(false);
     this.syncKeyboardCaptureState();
     this.renderLobbyState();
@@ -279,6 +297,8 @@ export const gameSceneLifecycleMethods = {
 
   setLobbyVisible(visible) {
     this.lobbyBackdrop.setVisible(visible);
+    this.lobbyCard?.setVisible(visible);
+    this.lobbyPlayersPanel?.setVisible(visible);
     this.lobbyTitle.setVisible(visible);
     this.lobbySubtitle.setVisible(visible);
     this.playersListText.setVisible(visible);
@@ -296,6 +316,8 @@ export const gameSceneLifecycleMethods = {
         this.nameEntryRoot.style.display = "none";
       }
     }
+    this.setLeaveRoomUiVisible(visible && this.isRegistered && !this.matchRunning);
+    this.updateRoomShareUi();
     this.syncKeyboardCaptureState();
   },
 
