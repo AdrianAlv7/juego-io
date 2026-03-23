@@ -36,5 +36,5 @@ El HUD viejo se desactiva durante match en esta carpeta preview.
 ## Archivos clave del preview
 
 - `src/ui/GameplayHudKitOverlay.js`
-- `src/ui/gameplayHudKit.css`
+- `src/ui/hud.css`
 - `src/scenes/gameScene/matchMethods.js` (instancia del HUD nuevo)

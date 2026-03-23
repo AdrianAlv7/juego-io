@@ -58,6 +58,7 @@ export const gameSceneMatchMethods = {
   onRoomError(payload = {}) {
     this.isRegistered = false;
     this.currentLobbyState = null;
+    this.lobbyPlayersPanel?.setVisible(false);
     this.setNameEntryBusy(null);
     this.setLobbyMessage(payload.message || "Error de sala.", "#ff9f9f");
     this.playersListText.setText([
@@ -72,6 +73,12 @@ export const gameSceneMatchMethods = {
       this.nameEntryRoot.style.display = "flex";
       this.nameInput.focus();
     }
+    this.readyButtonRect?.setVisible(false);
+    this.readyButtonLabel?.setVisible(false);
+    this.readyButtonRect?.disableInteractive();
+    this.startButtonRect.setVisible(false);
+    this.startButtonLabel.setVisible(false);
+    this.startButtonRect.disableInteractive();
     this.setLeaveRoomUiVisible(false);
     this.updateRoomShareUi();
   },
@@ -81,6 +88,7 @@ export const gameSceneMatchMethods = {
 
     this.isRegistered = false;
     this.currentLobbyState = null;
+    this.lobbyPlayersPanel?.setVisible(false);
     this.setNameEntryBusy(null);
     this.setLobbyMessage(
       "No se pudo conectar al servidor. Revisa la URL del backend.",
@@ -99,30 +107,57 @@ export const gameSceneMatchMethods = {
       this.nameEntryRoot.style.display = "flex";
       this.nameInput.focus();
     }
+    this.readyButtonRect?.setVisible(false);
+    this.readyButtonLabel?.setVisible(false);
+    this.readyButtonRect?.disableInteractive();
+    this.startButtonRect.setVisible(false);
+    this.startButtonLabel.setVisible(false);
+    this.startButtonRect.disableInteractive();
     this.setLeaveRoomUiVisible(false);
     this.updateRoomShareUi();
   },
 
   renderLobbyState() {
     if (!this.currentLobbyState) {
+      this.lobbyPlayersPanel?.setVisible(false);
       this.lobbyTitle.setText("Sala Repartidor.io");
-      this.lobbySubtitle.setText("Publica o privada | Maximo 4 jugadores");
-      this.playersListText.setText(["Elige un modo para entrar a una sala"]);
-      this.setLobbyMessage("Busca publica, crea privada o entra con codigo.");
+      this.lobbySubtitle.setText("Publica o privada | Maximo 6 jugadores");
+      this.playersListText.setText([]);
+      this.setLobbyMessage("Escribe username y elige publica o privada.");
+      this.readyButtonRect?.setVisible(false);
+      this.readyButtonLabel?.setVisible(false);
+      this.readyButtonRect?.disableInteractive();
       this.startButtonRect.setVisible(false);
       this.startButtonLabel.setVisible(false);
+      this.startButtonRect.disableInteractive();
       this.setLeaveRoomUiVisible(false);
       this.updateRoomShareUi();
+      this.lobbyCountdownLastSecond = -1;
       return;
     }
 
     const players = this.currentLobbyState.players || [];
-    const maxPlayers = this.currentLobbyState.maxPlayers || 4;
+    const maxPlayers = this.currentLobbyState.maxPlayers || 6;
     const hostId = this.currentLobbyState.hostId;
     const isHost = this.multiplayer?.selfId === hostId;
     const roomType = this.currentLobbyState.roomType || "public";
     const roomCode = this.currentLobbyState.roomCode || "";
+    const readyCount = Number.isFinite(this.currentLobbyState.readyCount)
+      ? this.currentLobbyState.readyCount
+      : players.filter((player) => player.ready).length;
+    const allReady = players.length > 0 && readyCount >= players.length;
+    const localPlayer = players.find(
+      (player) => player.id === this.multiplayer?.selfId
+    );
+    const localReady = Boolean(localPlayer?.ready);
+    const countdownEndsAt = Number(this.currentLobbyState.lobbyCountdownEndsAt || 0);
+    const countdownActive = !this.currentLobbyState.started && countdownEndsAt > Date.now();
+    const countdownSeconds = countdownActive
+      ? Math.max(0, Math.ceil((countdownEndsAt - Date.now()) / 1000))
+      : 0;
+    this.lobbyCountdownLastSecond = countdownActive ? countdownSeconds : -1;
 
+    this.lobbyPlayersPanel?.setVisible(this.isRegistered);
     this.lobbyTitle.setText(
       roomType === "private"
         ? `Sala privada ${roomCode || ""}`.trim()
@@ -130,53 +165,96 @@ export const gameSceneMatchMethods = {
     );
     this.lobbySubtitle.setText(
       roomType === "private"
-        ? `Codigo ${roomCode || "AUTO"} | Conectados: ${players.length}/${maxPlayers}`
-        : `Emparejamiento publico | Conectados: ${players.length}/${maxPlayers}`
+        ? `Codigo ${roomCode || "AUTO"} | Conectados: ${players.length}/${maxPlayers} | Listos: ${readyCount}/${players.length || 0}`
+        : `Emparejamiento publico | Conectados: ${players.length}/${maxPlayers} | Listos: ${readyCount}/${players.length || 0}`
     );
     this.setLeaveRoomUiVisible(this.isRegistered && !this.matchRunning);
     this.updateRoomShareUi();
 
     if (!this.isRegistered) {
-      this.playersListText.setText(["Ingresa username para entrar a sala"]);
+      this.lobbyPlayersPanel?.setVisible(false);
+      this.playersListText.setText([]);
+      this.readyButtonRect?.setVisible(false);
+      this.readyButtonLabel?.setVisible(false);
+      this.readyButtonRect?.disableInteractive();
       this.startButtonRect.setVisible(false);
       this.startButtonLabel.setVisible(false);
+      this.startButtonRect.disableInteractive();
       this.setLobbyMessage(
-        "Escribe username y elige publica, crear privada o unirte con codigo."
+        "Escribe username y elige publica o privada."
       );
       return;
     }
 
     const lines = players.length
       ? players.map((player, index) => {
-          const hostTag = player.id === hostId ? " (Host)" : "";
-          return `${index + 1}. ${player.name}${hostTag}`;
+          const hostTag = player.id === hostId ? " (Creador)" : "";
+          const readyTag = player.ready ? " [Listo]" : " [Esperando]";
+          return `${index + 1}. ${player.name}${hostTag}${readyTag}`;
         })
       : ["Sin jugadores"];
+    this.lobbyPlayersPanel?.setVisible(true);
     this.playersListText.setText(lines);
 
-    const canStart = isHost && !this.currentLobbyState.started && players.length > 0;
+    const canToggleReady =
+      !this.currentLobbyState.started && !this.matchRunning && players.length > 0;
+    if (this.readyButtonNode) {
+      this.readyButtonNode.textContent = localReady ? "No listo" : "Listo";
+      this.readyButtonNode.classList.toggle("lhl-btn-ready--active", localReady);
+    }
+    this.readyButtonRect?.setVisible(canToggleReady);
+    this.readyButtonLabel?.setVisible(canToggleReady);
+    this.readyButtonRect?.disableInteractive();
+    if (canToggleReady) {
+      this.readyButtonRect?.setInteractive({ useHandCursor: true });
+    }
+
+    const canStart =
+      roomType === "private" &&
+      isHost &&
+      !this.currentLobbyState.started &&
+      players.length > 0;
     this.startButtonRect.setVisible(canStart);
     this.startButtonLabel.setVisible(canStart);
     this.startButtonRect.disableInteractive();
     if (canStart) {
       this.startButtonRect.setInteractive({ useHandCursor: true });
+    }
+
+    if (countdownActive) {
       this.setLobbyMessage(
         roomType === "private"
-          ? `Eres host. Comparte el codigo ${roomCode || "AUTO"} y presiona PLAY cuando esten listos.`
-          : "Eres host. Presiona PLAY para iniciar la sala publica.",
-        "#95f5c8"
+          ? `Cuenta regresiva activa: ${countdownSeconds}s para iniciar partida.`
+          : `Sala publica llena. Inicio automatico en ${countdownSeconds}s.`,
+        countdownSeconds <= 3 ? "#95f5c8" : "#ffd27d"
       );
-    } else if (!isHost) {
+    } else if (roomType === "public") {
+      const missingPlayers = Math.max(0, maxPlayers - players.length);
+      if (missingPlayers > 0) {
+        this.setLobbyMessage(
+          `Faltan ${missingPlayers} jugador(es) para llenar la sala. Al llenarse inicia cuenta de 10s.`,
+          "#8ad6ff"
+        );
+      } else if (!allReady) {
+        this.setLobbyMessage(
+          "Sala llena. Marca Listo para reducir la cuenta a 3 segundos.",
+          "#ffd27d"
+        );
+      } else {
+        this.setLobbyMessage(
+          "Todos listos. El inicio se redujo a 3 segundos.",
+          "#95f5c8"
+        );
+      }
+    } else if (canStart) {
       this.setLobbyMessage(
-        roomType === "private"
-          ? "Dentro de sala privada. Esperando que el host inicie la partida..."
-          : "Emparejado en sala publica. Esperando que el host inicie la partida..."
+        `Eres creador. Comparte codigo ${roomCode || "AUTO"} y presiona Empezar.`,
+        "#95f5c8"
       );
     } else {
       this.setLobbyMessage(
-        roomType === "private"
-          ? "Sala privada creada. Esperando mas jugadores..."
-          : "Conectando sala publica..."
+        "Sala privada: espera al creador o marquense Listo para acelerar la cuenta.",
+        "#8ad6ff"
       );
     }
 
@@ -313,8 +391,12 @@ export const gameSceneMatchMethods = {
     this.applyEmpHudSuppression(false);
     this.syncKeyboardCaptureState();
 
+    const roomType =
+      this.currentLobbyState?.roomType || this.multiplayer?.getRoomInfo?.()?.roomType;
     this.setLobbyMessage(
-      "Puedes volver al lobby o esperar el cierre automatico."
+      roomType === "public"
+        ? "Partida publica finalizada. Puedes regresar al lobby o jugar otra publica."
+        : "Puedes volver al lobby o esperar el cierre automatico."
     );
   },
 
@@ -322,11 +404,22 @@ export const gameSceneMatchMethods = {
     if (this.currentLobbyState) {
       this.currentLobbyState = {
         ...this.currentLobbyState,
+        players: Array.isArray(this.currentLobbyState.players)
+          ? this.currentLobbyState.players.map((player) => ({
+              ...player,
+              ready: false,
+            }))
+          : [],
         started: false,
         finished: false,
+        readyCount: 0,
+        allReady: false,
+        lobbyCountdownEndsAt: 0,
+        lobbyCountdownDurationMs: 0,
         lobbyResetAt: 0,
       };
     }
+    this.lobbyCountdownLastSecond = -1;
     this.resetToLobby();
   },
 

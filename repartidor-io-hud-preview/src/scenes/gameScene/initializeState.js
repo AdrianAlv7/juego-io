@@ -36,12 +36,20 @@ export function initializeGameSceneState(scene) {
   scene.lobbyBackdrop = null;
   scene.lobbyCard = null;
   scene.lobbyPlayersPanel = null;
+  scene.lobbyRoot = null;
+  scene.lobbyShareMount = null;
+  scene.lobbyEntryMount = null;
+  scene.lobbyActionsMount = null;
   scene.lobbyTitle = null;
   scene.lobbySubtitle = null;
   scene.playersListText = null;
   scene.lobbyMessage = null;
   scene.startButtonRect = null;
   scene.startButtonLabel = null;
+  scene.startButtonNode = null;
+  scene.readyButtonRect = null;
+  scene.readyButtonLabel = null;
+  scene.readyButtonNode = null;
   scene.statusBanner = null;
 
   scene.nameEntryRoot = null;
@@ -49,8 +57,15 @@ export function initializeGameSceneState(scene) {
   scene.roomCodeInput = null;
   scene.nameSubmitButton = null;
   scene.publicMatchButton = null;
+  scene.privateModeButton = null;
   scene.privateCreateButton = null;
   scene.privateJoinButton = null;
+  scene.privateBackButton = null;
+  scene.extraActionButton = null;
+  scene.futureActionButton = null;
+  scene.mainActionsRoot = null;
+  scene.privateActionsRoot = null;
+  scene.nameEntryMode = "main";
   scene.debugFinishRoot = null;
   scene.debugFinishPlayerSelect = null;
   scene.debugFinishQualityInput = null;
@@ -93,6 +108,7 @@ export function initializeGameSceneState(scene) {
   scene.lobbyReturnRoot = null;
   scene.lobbyReturnText = null;
   scene.lobbyReturnButton = null;
+  scene.lobbyReplayButton = null;
   scene.leaveRoomRoot = null;
   scene.leaveRoomButton = null;
   scene.roomShareRoot = null;
@@ -101,6 +117,7 @@ export function initializeGameSceneState(scene) {
   scene.roomShareHint = null;
   scene.roomShareButton = null;
   scene.autoReconnectLobby = false;
+  scene.lobbyCountdownLastSecond = -1;
 
   scene.onVisibilityChange = scene.onVisibilityChange.bind(scene);
   scene.matchResultText = "";

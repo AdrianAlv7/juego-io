@@ -1,0 +1,3 @@
+/* Alias legacy: usa src/ui/lobby.css como fuente principal. */
+@import './lobby.css';
+

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lobby Preview - Repartidor.io</title>
+  <link rel="stylesheet" href="./LOBBY.css" />
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+      background: radial-gradient(circle at top, #0f172a, #020617);
+      font-family: "Segoe UI", sans-serif;
+      color: #e2e8f0;
+    }
+
+    .preview-wrap {
+      width: min(1440px, calc(100vw - 28px));
+      margin: 18px auto 28px;
+    }
+
+    .preview-head h1 {
+      margin: 0;
+      font-size: clamp(24px, 2.4vw, 40px);
+      color: #f8fafc;
+      letter-spacing: 0.02em;
+    }
+
+    .preview-head p {
+      margin: 8px 0 0;
+      color: #93c5fd;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .showcase-grid {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+
+    .lobby-stage {
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(2, 6, 23, 0.72);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+    }
+
+    .lobby-stage-title {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+      background: rgba(15, 23, 42, 0.9);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #bae6fd;
+      font-size: 12px;
+    }
+
+    .lhl-root.lhl-static-root {
+      position: relative;
+      inset: auto;
+      width: 100%;
+      min-height: 760px;
+      pointer-events: auto;
+      z-index: 1;
+      overflow: hidden;
+    }
+
+    .lhl-static-root .lhl-wrap {
+      position: relative;
+      inset: auto;
+      min-height: 760px;
+      justify-content: flex-start;
+      gap: 10px;
+      padding: 16px 12px 18px;
+    }
+
+    .lhl-static-root .lhl-logo {
+      position: static;
+      text-align: center;
+      line-height: 1;
+      margin-bottom: 4px;
+      font-size: clamp(34px, 3.2vw, 56px);
+    }
+
+    .lhl-static-root .lhl-card {
+      width: min(760px, 100%);
+      max-height: none;
+      padding: 6px 6px 14px;
+    }
+
+    .lhl-static-root .lhl-main-grid,
+    .lhl-static-root .lhl-private-view,
+    .lhl-static-root .lhl-input-group--full {
+      width: min(580px, calc(100vw - 84px));
+    }
+
+    .lhl-static-root .lhl-actions-mount {
+      min-height: 76px;
+      margin-top: 12px;
+    }
+
+    .lhl-static-root .lhl-share {
+      margin-top: 6px;
+    }
+
+    .lhl-static-root .lhl-message {
+      margin-top: 12px;
+    }
+
+    .lhl-static-root .lhl-player-row {
+      margin: 0;
+    }
+
+    .lhl-note {
+      margin: 8px 12px 12px;
+      border: 1px solid rgba(125, 211, 252, 0.3);
+      border-radius: 10px;
+      background: rgba(14, 116, 144, 0.12);
+      color: #bae6fd;
+      font-size: 12px;
+      line-height: 1.35;
+      padding: 8px 10px;
+    }
+
+    @media (max-width: 900px) {
+      .lhl-static-root .lhl-wrap {
+        min-height: 740px;
+      }
+
+      .lhl-static-root .lhl-main-grid,
+      .lhl-static-root .lhl-private-view,
+      .lhl-static-root .lhl-input-group--full {
+        width: min(520px, calc(100vw - 84px));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-wrap">
+    <div class="preview-head">
+      <h1>Lobby Preview</h1>
+      <p>
+        Maqueta visual estatica del lobby con el estilo nuevo de botones.
+        No hay logica de red ni funciones de juego.
+      </p>
+    </div>
+
+    <div class="showcase-grid">
+      <section class="lobby-stage">
+        <div class="lobby-stage-title">Vista principal</div>
+        <section class="lhl-root lhl-static-root">
+          <div class="lhl-bg"></div>
+          <div class="lhl-texture"></div>
+          <div class="lhl-glow"></div>
+          <div class="lhl-wrap">
+            <div class="lhl-logo">Deliver<span>.io</span></div>
+            <div class="lhl-card">
+              <div class="lhl-header">
+                <div class="lhl-title">Sala Repartidor.io</div>
+                <div class="lhl-subtitle">Publica o privada | Maximo 6 jugadores</div>
+              </div>
+
+              <div class="lhl-message">Escribe username y elige publica o privada.</div>
+
+              <div class="lhl-entry">
+                <div class="lhl-entry-caption">Lobby</div>
+                <div class="lhl-inputs-row">
+                  <div class="lhl-input-group lhl-input-group--full">
+                    <label class="lhl-input-label">Username</label>
+                    <input class="lhl-input lhl-input-player" type="text" value="Player_One" />
+                  </div>
+                </div>
+
+                <div class="lhl-main-grid">
+                  <button class="lhl-btn lhl-btn-entry lhl-btn-tile lhl-btn-public">
+                    <span class="lhl-btn-label">Publica</span>
+                  </button>
+                  <button class="lhl-btn lhl-btn-entry lhl-btn-tile lhl-btn-private">
+                    <span class="lhl-btn-label">Privada</span>
+                  </button>
+                  <button class="lhl-btn lhl-btn-entry lhl-btn-tile lhl-btn-settings">
+                    <span class="lhl-btn-label">Ajustes</span>
+                  </button>
+                  <button class="lhl-btn lhl-btn-entry lhl-btn-tile lhl-btn-alt">
+                    <span class="lhl-btn-label">Proximamente</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div class="lhl-note">
+          Esta vista muestra la pantalla inicial del lobby con los 4 botones principales.
+        </div>
+      </section>
+
+      <section class="lobby-stage">
+        <div class="lobby-stage-title">Vista privada</div>
+        <section class="lhl-root lhl-static-root">
+          <div class="lhl-bg"></div>
+          <div class="lhl-texture"></div>
+          <div class="lhl-glow"></div>
+          <div class="lhl-wrap">
+            <div class="lhl-logo">Deliver<span>.io</span></div>
+            <div class="lhl-card">
+              <div class="lhl-header">
+                <div class="lhl-title">Sala Repartidor.io</div>
+                <div class="lhl-subtitle">Modo privado</div>
+              </div>
+
+              <div class="lhl-message" style="color:#8ad6ff;">
+                Modo privada: crea sala o unete con codigo.
+              </div>
+
+              <div class="lhl-entry">
+                <div class="lhl-entry-caption">Lobby</div>
+                <div class="lhl-inputs-row">
+                  <div class="lhl-input-group lhl-input-group--full">
+                    <label class="lhl-input-label">Username</label>
+                    <input class="lhl-input lhl-input-player" type="text" value="Player_One" />
+                  </div>
+                </div>
+
+                <div class="lhl-private-view">
+                  <button class="lhl-btn lhl-btn-entry lhl-btn-tile lhl-btn-private">
+                    <span class="lhl-btn-label">Crear sala</span>
+                  </button>
+
+                  <div class="lhl-input-group lhl-input-group--full">
+                    <label class="lhl-input-label">Codigo de sala</label>
+                    <input class="lhl-input lhl-input-room" type="text" value="A1B2C3" />
+                  </div>
+
+                  <button class="lhl-btn lhl-btn-entry lhl-btn-tile lhl-btn-warn">
+                    <span class="lhl-btn-label">Unirse a sala</span>
+                  </button>
+
+                  <button class="lhl-btn lhl-btn-entry lhl-btn-tile lhl-btn-minimal">
+                    <span class="lhl-btn-label">Regresar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div class="lhl-note">
+          Esta vista muestra los botones de flujo privado (crear, unirse, regresar).
+        </div>
+      </section>
+
+      <section class="lobby-stage">
+        <div class="lobby-stage-title">Vista sala activa</div>
+        <section class="lhl-root lhl-static-root">
+          <div class="lhl-bg"></div>
+          <div class="lhl-texture"></div>
+          <div class="lhl-glow"></div>
+          <div class="lhl-wrap">
+            <div class="lhl-logo">Deliver<span>.io</span></div>
+            <div class="lhl-card">
+              <div class="lhl-header">
+                <div class="lhl-title">Sala Repartidor.io</div>
+                <div class="lhl-subtitle">Esperando jugadores | 3/6</div>
+              </div>
+
+              <div class="lhl-share">
+                <div class="lhl-share-label">Comparte este codigo</div>
+                <div class="lhl-share-code">Q9X7K2</div>
+                <div class="lhl-share-hint">Compartelo con tus amigos para entrar directo.</div>
+                <button class="lhl-btn lhl-btn-copy">
+                  <span class="lhl-btn-label">Copiar codigo</span>
+                </button>
+              </div>
+
+              <div class="lhl-players-panel">
+                <div class="lhl-player-row lhl-player-row--self">
+                  <span class="lhl-player-index">1</span>
+                  <span class="lhl-player-name">Player_One</span>
+                  <span class="lhl-player-badge lhl-player-badge--offset">Creador</span>
+                  <span class="lhl-player-badge lhl-player-badge--ready">Listo</span>
+                </div>
+                <div class="lhl-player-row">
+                  <span class="lhl-player-index">2</span>
+                  <span class="lhl-player-name">Rider_Ana</span>
+                  <span class="lhl-player-badge lhl-player-badge--offset lhl-player-badge--pending">Esperando</span>
+                </div>
+                <div class="lhl-player-row">
+                  <span class="lhl-player-index">3</span>
+                  <span class="lhl-player-name">TurboLuis</span>
+                  <span class="lhl-player-badge lhl-player-badge--offset lhl-player-badge--ready">Listo</span>
+                </div>
+              </div>
+
+              <div class="lhl-message">Esperando que todos esten listos para comenzar.</div>
+
+              <div class="lhl-actions-mount">
+                <div class="lhl-leave-wrap">
+                  <button class="lhl-btn lhl-btn-leave">
+                    <span class="lhl-btn-label">Salir</span>
+                  </button>
+                </div>
+                <button class="lhl-btn lhl-btn-ready lhl-btn-ready--active">
+                  <span class="lhl-btn-label">Listo</span>
+                </button>
+                <button class="lhl-btn lhl-btn-start">
+                  <span class="lhl-btn-label">Empezar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div class="lhl-note">
+          Esta vista mezcla jugadores, codigo de sala y botones de accion de la sala.
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

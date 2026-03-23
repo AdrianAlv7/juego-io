@@ -106,7 +106,7 @@ export default class MultiplayerSystem {
         roomType: payload.roomType || "",
         roomCode: payload.roomCode || "",
         roomLabel: payload.roomLabel || "",
-        maxPlayers: payload.maxPlayers || 4,
+        maxPlayers: payload.maxPlayers || 6,
       };
     }
     this.callbacks.onLobbyState?.(payload);
@@ -127,7 +127,7 @@ export default class MultiplayerSystem {
         roomType: payload.roomType || "",
         roomCode: payload.roomCode || "",
         roomLabel: payload.roomLabel || "",
-        maxPlayers: payload.maxPlayers || 4,
+        maxPlayers: payload.maxPlayers || 6,
       };
     }
     this.gameStarted = true;
@@ -253,6 +253,11 @@ export default class MultiplayerSystem {
   emitStartGame(preferredSpawn) {
     if (!this.socket?.connected) return;
     this.socket.emit("startGame", { preferredSpawn });
+  }
+
+  emitSetLobbyReady(ready) {
+    if (!this.socket?.connected) return;
+    this.socket.emit("setLobbyReady", { ready });
   }
 
   emitFinishMatch(payload = {}) {

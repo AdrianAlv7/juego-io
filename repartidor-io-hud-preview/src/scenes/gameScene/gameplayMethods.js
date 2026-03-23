@@ -494,7 +494,23 @@ export const gameSceneGameplayMethods = {
     this.multiplayer?.update(delta);
     this.empPulseVisual?.update();
 
-    if (!this.matchRunning) return;
+    if (!this.matchRunning) {
+      const countdownEndsAt = Number(this.currentLobbyState?.lobbyCountdownEndsAt || 0);
+      if (countdownEndsAt > Date.now()) {
+        const remainingSeconds = Math.max(
+          0,
+          Math.ceil((countdownEndsAt - Date.now()) / 1000)
+        );
+        if (remainingSeconds !== this.lobbyCountdownLastSecond) {
+          this.lobbyCountdownLastSecond = remainingSeconds;
+          this.renderLobbyState?.();
+        }
+      } else if (this.lobbyCountdownLastSecond !== -1) {
+        this.lobbyCountdownLastSecond = -1;
+        this.renderLobbyState?.();
+      }
+      return;
+    }
     const keyboardActive = this.input?.keyboard?.enabled !== false;
 
     if (

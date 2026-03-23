@@ -1,10 +1,23 @@
-import "./gameplayHudKit.css";
+import "./hud.css";
 import { WEATHER_EVENT_TYPES } from "../events/weather/catalog.js";
 import { getItemLabel } from "../items/catalog.js";
 import { speedPxPerSecToKmh } from "../world/race/utils/telemetry.js";
 import { formatRaceTime } from "./hud/formatters.js";
 
 const FINISH_CALL_SECONDS = new Set([20, 15, 10, 5, 3, 2, 1]);
+const DASHBOARD_MODE_SEQUENCE = ["dual", "hybrid", "digital"];
+const DASHBOARD_MODE_LABEL = Object.freeze({
+  dual: "Dual Analog",
+  hybrid: "Hybrid",
+  digital: "Full Digital",
+});
+
+function numberColorToCss(colorValue, fallback = "#ffd56a") {
+  const numeric = Number(colorValue);
+  if (!Number.isFinite(numeric)) return fallback;
+  const clamped = Math.max(0, Math.min(0xffffff, Math.round(numeric)));
+  return `#${clamped.toString(16).padStart(6, "0")}`;
+}
 
 function clamp01(value) {
   const number = Number(value || 0);
@@ -77,6 +90,9 @@ export default class GameplayHudKitOverlay {
       remotePlayers: [],
       objective: null,
     };
+    this.minimapTextureKey = "";
+    this.minimapTextureImage = null;
+    this.dashboardMode = "dual";
 
     this.createDom();
     this.attachHandlers();
@@ -100,7 +116,6 @@ export default class GameplayHudKitOverlay {
       <div class="ghuk-vignette"></div>
       <div class="ghuk-top-bars"></div>
       <div class="ghuk-bottom-bars"></div>
-      <div class="ghuk-logo">Repartidor.io</div>
 
       <section class="ghuk-card ghuk-race">
         <div class="title" data-ref="orderText">Order 0/0</div>
@@ -118,7 +133,7 @@ export default class GameplayHudKitOverlay {
         </div>
       </section>
 
-      <section class="ghuk-card ghuk-heat">
+      <section class="ghuk-card ghuk-heat" data-ref="heatCard">
         <div class="ghuk-heat-title">Engine Heat</div>
         <div class="ghuk-heat-track"><div class="ghuk-heat-fill" data-ref="heatFill"></div></div>
         <div class="ghuk-heat-value" data-ref="heatValue">0%</div>
@@ -133,13 +148,55 @@ export default class GameplayHudKitOverlay {
       </section>
 
       <section class="ghuk-card ghuk-dashboard">
-        <div class="header">Motorcycle Dashboard</div>
-        <div class="ghuk-speed-row">
-          <div class="ghuk-speed" data-ref="speedValue">0</div>
-          <div class="ghuk-speed-unit">km/h</div>
+        <div class="ghuk-dashboard-top">
+          <div class="header">Motorcycle Dashboard</div>
+          <button class="ghuk-dash-mode-btn" data-ref="dashModeBtn">Mode: Dual Analog</button>
         </div>
+
+        <div class="ghuk-dash-mode ghuk-dash-mode-dual" data-ref="modeDual">
+          <div class="ghuk-gauge-block">
+            <div class="ghuk-gauge">
+              <div class="ghuk-gauge-needle" data-ref="speedNeedle"></div>
+              <div class="ghuk-gauge-center"></div>
+            </div>
+            <div class="ghuk-gauge-caption">Speed</div>
+            <div class="ghuk-gauge-number" data-ref="speedGaugeValue">0 km/h</div>
+          </div>
+          <div class="ghuk-gauge-block">
+            <div class="ghuk-gauge">
+              <div class="ghuk-gauge-needle ghuk-gauge-needle-rpm" data-ref="rpmNeedle"></div>
+              <div class="ghuk-gauge-center"></div>
+            </div>
+            <div class="ghuk-gauge-caption">RPM</div>
+            <div class="ghuk-gauge-number" data-ref="rpmGaugeValue">1000</div>
+          </div>
+        </div>
+
+        <div class="ghuk-dash-mode ghuk-dash-mode-hybrid ghuk-hidden" data-ref="modeHybrid">
+          <div class="ghuk-hybrid-speed">
+            <div class="ghuk-speed" data-ref="speedHybridValue">0</div>
+            <div class="ghuk-speed-unit">km/h</div>
+          </div>
+          <div class="ghuk-gauge-block ghuk-gauge-block-hybrid">
+            <div class="ghuk-gauge">
+              <div class="ghuk-gauge-needle ghuk-gauge-needle-rpm" data-ref="rpmHybridNeedle"></div>
+              <div class="ghuk-gauge-center"></div>
+            </div>
+            <div class="ghuk-gauge-caption">RPM</div>
+            <div class="ghuk-gauge-number" data-ref="rpmHybridValue">1000</div>
+          </div>
+        </div>
+
+        <div class="ghuk-dash-mode ghuk-dash-mode-digital ghuk-hidden" data-ref="modeDigital">
+          <div class="ghuk-digital-speed" data-ref="speedDigitalValue">0</div>
+          <div class="ghuk-digital-unit">km/h</div>
+          <div class="ghuk-rpm-bar-track">
+            <div class="ghuk-rpm-bar-fill" data-ref="rpmBarFill"></div>
+          </div>
+          <div class="ghuk-rpm-text" data-ref="rpmDigitalValue">1000 RPM</div>
+        </div>
+
         <div class="ghuk-dash-meta">
-          <div class="label">RPM</div><div class="value" data-ref="rpmValue">1000</div>
           <div class="label">Health</div><div class="value" data-ref="motoHealthValue">100%</div>
           <div class="label">Repair</div><div class="value" data-ref="repairValue">Ready</div>
         </div>
@@ -185,8 +242,11 @@ export default class GameplayHudKitOverlay {
       </div>
 
       <section class="ghuk-card ghuk-return ghuk-hidden" data-ref="returnRoot">
-        <div class="text" data-ref="returnText">Back to lobby in 0s</div>
-        <button class="btn" data-ref="returnButton">Return To Lobby</button>
+        <div class="text" data-ref="returnText">Regreso al lobby en 0s</div>
+        <div class="ghuk-return-actions">
+          <button class="btn" data-ref="returnButton">Regresar</button>
+          <button class="btn ghuk-return-btn-replay ghuk-hidden" data-ref="replayButton">Jugar de nuevo</button>
+        </div>
       </section>
     `;
 
@@ -201,13 +261,26 @@ export default class GameplayHudKitOverlay {
       banner: query("banner"),
       weatherEventText: query("weatherEventText"),
       minimapCanvas: query("minimapCanvas"),
+      heatCard: query("heatCard"),
       heatFill: query("heatFill"),
       heatValue: query("heatValue"),
       weatherIndicator: query("weatherIndicator"),
       integrityValue: query("integrityValue"),
       qualityValue: query("qualityValue"),
-      speedValue: query("speedValue"),
-      rpmValue: query("rpmValue"),
+      dashModeBtn: query("dashModeBtn"),
+      modeDual: query("modeDual"),
+      modeHybrid: query("modeHybrid"),
+      modeDigital: query("modeDigital"),
+      speedNeedle: query("speedNeedle"),
+      rpmNeedle: query("rpmNeedle"),
+      speedGaugeValue: query("speedGaugeValue"),
+      rpmGaugeValue: query("rpmGaugeValue"),
+      speedHybridValue: query("speedHybridValue"),
+      rpmHybridNeedle: query("rpmHybridNeedle"),
+      rpmHybridValue: query("rpmHybridValue"),
+      speedDigitalValue: query("speedDigitalValue"),
+      rpmBarFill: query("rpmBarFill"),
+      rpmDigitalValue: query("rpmDigitalValue"),
       motoHealthValue: query("motoHealthValue"),
       repairValue: query("repairValue"),
       slot1: query("slot1"),
@@ -223,6 +296,7 @@ export default class GameplayHudKitOverlay {
       returnRoot: query("returnRoot"),
       returnText: query("returnText"),
       returnButton: query("returnButton"),
+      replayButton: query("replayButton"),
     };
 
     this.minimapContext = this.refs.minimapCanvas.getContext("2d");
@@ -239,10 +313,66 @@ export default class GameplayHudKitOverlay {
     });
 
     this.returnButtonHandler = () => {
-      this.scene.requestLobbyReturn?.();
-      this.refs.returnText.textContent = "Returning to lobby...";
+      const roomType = this.getCurrentRoomType();
+      if (roomType !== "public" && this.refs?.returnText) {
+        this.refs.returnText.textContent = "Regresando al lobby...";
+      }
+
+      if (typeof this.scene.handlePostMatchBackAction === "function") {
+        this.scene.handlePostMatchBackAction();
+      } else {
+        this.scene.requestLobbyReturn?.();
+        if (this.refs?.returnText) {
+          this.refs.returnText.textContent = "Regresando al lobby...";
+        }
+      }
     };
     this.refs.returnButton.addEventListener("click", this.returnButtonHandler);
+    this.replayButtonHandler = () => {
+      if (this.refs?.returnText) {
+        this.refs.returnText.textContent = "Buscando sala publica...";
+      }
+      if (typeof this.scene.playAnotherPublicMatch === "function") {
+        this.scene.playAnotherPublicMatch();
+      }
+    };
+    this.refs.replayButton.addEventListener("click", this.replayButtonHandler);
+
+    const savedMode = window.localStorage.getItem("repartidor_hud_dashboard_mode");
+    if (DASHBOARD_MODE_SEQUENCE.includes(savedMode)) {
+      this.dashboardMode = savedMode;
+    }
+    this.dashboardModeButtonHandler = () => this.cycleDashboardMode();
+    this.refs.dashModeBtn.addEventListener("click", this.dashboardModeButtonHandler);
+    this.applyDashboardMode();
+  }
+
+  getCurrentRoomType() {
+    const sceneRoomType = this.scene?.currentLobbyState?.roomType;
+    if (sceneRoomType) return sceneRoomType;
+    return this.scene?.multiplayer?.getRoomInfo?.()?.roomType || "public";
+  }
+
+  cycleDashboardMode() {
+    const currentIndex = DASHBOARD_MODE_SEQUENCE.indexOf(this.dashboardMode);
+    const nextIndex = (Math.max(0, currentIndex) + 1) % DASHBOARD_MODE_SEQUENCE.length;
+    this.dashboardMode = DASHBOARD_MODE_SEQUENCE[nextIndex];
+    this.applyDashboardMode();
+    window.localStorage.setItem("repartidor_hud_dashboard_mode", this.dashboardMode);
+  }
+
+  applyDashboardMode() {
+    this.refs.modeDual.classList.toggle("ghuk-hidden", this.dashboardMode !== "dual");
+    this.refs.modeHybrid.classList.toggle("ghuk-hidden", this.dashboardMode !== "hybrid");
+    this.refs.modeDigital.classList.toggle("ghuk-hidden", this.dashboardMode !== "digital");
+    this.refs.dashModeBtn.textContent = `Mode: ${DASHBOARD_MODE_LABEL[this.dashboardMode] || "Dual Analog"}`;
+  }
+
+  updateGaugeNeedle(node, ratio) {
+    if (!node) return;
+    const clamped = clamp01(ratio);
+    const angle = -130 + clamped * 260;
+    node.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
   }
 
   onWeatherControl(action) {
@@ -291,7 +421,26 @@ export default class GameplayHudKitOverlay {
 
   setMinimapData(minimapData) {
     this.minimapData = minimapData || null;
+    this.minimapTextureKey = "";
+    this.minimapTextureImage = null;
     this.redrawMinimap(this.lastMinimapState);
+  }
+
+  getMinimapImage() {
+    if (this.minimapData?.type !== "image") return null;
+    const textureKey = String(this.minimapData?.textureKey || "");
+    if (!textureKey) return null;
+    if (this.minimapTextureKey === textureKey && this.minimapTextureImage) {
+      return this.minimapTextureImage;
+    }
+
+    const texture = this.scene?.textures?.get?.(textureKey);
+    const sourceImage = texture?.getSourceImage?.();
+    if (!sourceImage) return null;
+
+    this.minimapTextureKey = textureKey;
+    this.minimapTextureImage = sourceImage;
+    return sourceImage;
   }
 
   worldToMinimap(worldX, worldY, width, height) {
@@ -321,11 +470,14 @@ export default class GameplayHudKitOverlay {
     context.fillStyle = "#0b1320";
     context.fillRect(0, 0, width, height);
 
-    if (this.minimapData?.type === "paths" && Array.isArray(this.minimapData.paths)) {
-      context.strokeStyle = "rgba(228, 238, 255, 0.72)";
-      context.lineWidth = Math.max(1, Math.round(width * 0.006));
+    const drawPaths = (strokeStyle, lineWidth, lineDash = [], alpha = 1) => {
+      const previousAlpha = context.globalAlpha;
+      context.globalAlpha = clamp01(alpha);
+      context.strokeStyle = strokeStyle;
+      context.lineWidth = lineWidth;
       context.lineCap = "round";
       context.lineJoin = "round";
+      context.setLineDash(lineDash);
       this.minimapData.paths.forEach((path) => {
         if (!Array.isArray(path) || path.length < 2) return;
         context.beginPath();
@@ -336,18 +488,56 @@ export default class GameplayHudKitOverlay {
         });
         context.stroke();
       });
+      context.setLineDash([]);
+      context.globalAlpha = previousAlpha;
+    };
+
+    const minimapImage = this.getMinimapImage();
+    if (minimapImage && minimapImage.width > 0 && minimapImage.height > 0) {
+      context.imageSmoothingEnabled = true;
+      context.drawImage(minimapImage, 0, 0, width, height);
+      context.fillStyle = "rgba(7, 14, 24, 0.2)";
+      context.fillRect(0, 0, width, height);
+    } else if (
+      this.minimapData?.type === "paths" &&
+      Array.isArray(this.minimapData.paths)
+    ) {
+      drawPaths("rgba(38, 46, 61, 0.95)", Math.max(3, Math.round(width * 0.03)));
+      drawPaths(
+        numberColorToCss(this.minimapData.pathColor, "#eff4fb"),
+        Math.max(1, Math.round(width * 0.009)),
+        [],
+        toNumber(this.minimapData.pathAlpha, 0.92)
+      );
+      drawPaths(
+        "rgba(255, 208, 94, 0.74)",
+        Math.max(1, Math.round(width * 0.0035)),
+        [Math.max(3, width * 0.018), Math.max(3, width * 0.014)]
+      );
     } else {
       context.strokeStyle = "rgba(205, 225, 255, 0.22)";
       context.lineWidth = 2;
       context.strokeRect(14, 14, width - 28, height - 28);
     }
 
+    context.strokeStyle = "rgba(205, 225, 255, 0.28)";
+    context.lineWidth = Math.max(1, Math.round(width * 0.003));
+    context.strokeRect(0.5, 0.5, width - 1, height - 1);
+
     const objective = minimapState?.objective || null;
     if (objective) {
       const point = this.worldToMinimap(objective.x, objective.y, width, height);
-      context.fillStyle = "#ffd56a";
+      const objectiveColor = numberColorToCss(objective.color, "#ffd56a");
+      const pulse = 0.9 + Math.sin(this.scene.time.now * 0.012) * 0.2;
+      const objectiveRadius = Math.max(4, width * 0.014);
+      context.fillStyle = "rgba(0, 0, 0, 0.35)";
       context.beginPath();
-      context.arc(point.x, point.y, Math.max(4, width * 0.014), 0, Math.PI * 2);
+      context.arc(point.x, point.y, objectiveRadius * 1.65, 0, Math.PI * 2);
+      context.fill();
+
+      context.fillStyle = objectiveColor;
+      context.beginPath();
+      context.arc(point.x, point.y, objectiveRadius * pulse, 0, Math.PI * 2);
       context.fill();
     }
 
@@ -366,20 +556,17 @@ export default class GameplayHudKitOverlay {
     if (localPlayer) {
       const point = this.worldToMinimap(localPlayer.x, localPlayer.y, width, height);
       const marker = Math.max(5, width * 0.016);
+      context.save();
+      context.translate(point.x, point.y);
+      context.rotate(localPlayer.angle || 0);
       context.fillStyle = "#ffffff";
       context.beginPath();
-      context.arc(point.x, point.y, marker, 0, Math.PI * 2);
+      context.moveTo(marker * 1.5, 0);
+      context.lineTo(-marker * 0.82, marker * 0.88);
+      context.lineTo(-marker * 0.82, -marker * 0.88);
+      context.closePath();
       context.fill();
-
-      context.strokeStyle = "rgba(255, 152, 94, 0.95)";
-      context.lineWidth = Math.max(1, marker * 0.45);
-      context.beginPath();
-      context.moveTo(point.x, point.y);
-      context.lineTo(
-        point.x + Math.cos(localPlayer.angle || 0) * marker * 2.2,
-        point.y + Math.sin(localPlayer.angle || 0) * marker * 2.2
-      );
-      context.stroke();
+      context.restore();
     }
   }
 
@@ -468,7 +655,13 @@ export default class GameplayHudKitOverlay {
     this.refs.weatherEventText.classList.remove("ghuk-hidden");
   }
 
-  updateHeat(heatInfo = {}) {
+  updateHeat(heatInfo = {}, weatherType = WEATHER_EVENT_TYPES.NONE) {
+    const isSunnyMode =
+      String(weatherType || WEATHER_EVENT_TYPES.NONE) === WEATHER_EVENT_TYPES.SUNNY &&
+      Boolean(heatInfo.active);
+    this.refs.heatCard.classList.toggle("ghuk-hidden", !isSunnyMode);
+    if (!isSunnyMode) return;
+
     const heatPercent = clamp01(heatInfo.percent);
     this.refs.heatFill.style.height = `${Math.max(2, heatPercent * 100)}%`;
     this.refs.heatValue.textContent = `${Math.round(heatPercent * 100)}%`;
@@ -530,8 +723,18 @@ export default class GameplayHudKitOverlay {
     const rpm = Math.max(1000, Math.round(rpmBase + rpmPulse));
     const healthPercent = toNumber(motoInfo.healthPercent, 100);
 
-    this.refs.speedValue.textContent = String(speedKmh);
-    this.refs.rpmValue.textContent = String(rpm);
+    this.updateGaugeNeedle(this.refs.speedNeedle, speedKmh / 220);
+    this.updateGaugeNeedle(this.refs.rpmNeedle, (rpm - 1000) / 9000);
+    this.updateGaugeNeedle(this.refs.rpmHybridNeedle, (rpm - 1000) / 9000);
+
+    this.refs.speedGaugeValue.textContent = `${speedKmh} km/h`;
+    this.refs.rpmGaugeValue.textContent = `${rpm}`;
+    this.refs.speedHybridValue.textContent = `${speedKmh}`;
+    this.refs.rpmHybridValue.textContent = `${rpm}`;
+    this.refs.speedDigitalValue.textContent = `${speedKmh}`;
+    this.refs.rpmDigitalValue.textContent = `${rpm} RPM`;
+    this.refs.rpmBarFill.style.width = `${Math.max(4, clamp01((rpm - 1000) / 9000) * 100)}%`;
+
     this.refs.motoHealthValue.textContent = `${Math.max(0, Math.round(healthPercent))}%`;
     this.refs.motoHealthValue.style.color =
       healthPercent <= 25
@@ -607,14 +810,25 @@ export default class GameplayHudKitOverlay {
     this.refs.returnRoot.classList.toggle("ghuk-hidden", !shouldShow);
     if (!shouldShow) return;
 
+    const isPublicMatch = this.getCurrentRoomType() === "public";
+    this.refs.returnButton.textContent = isPublicMatch
+      ? "Regresar"
+      : "Regresar al lobby";
+    this.refs.replayButton.classList.toggle("ghuk-hidden", !isPublicMatch);
+
+    if (isPublicMatch) {
+      this.refs.returnText.textContent = "Partida publica finalizada.";
+      return;
+    }
+
     const remainingMs = matchInfo.lobbyReturnAtMs
       ? Math.max(0, matchInfo.lobbyReturnAtMs - Date.now())
       : 0;
     const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
     this.refs.returnText.textContent =
       remainingSeconds > 0
-        ? `Back to lobby in ${remainingSeconds}s`
-        : "Back to lobby in progress...";
+        ? `Regreso al lobby en ${remainingSeconds}s`
+        : "Regreso al lobby en curso...";
   }
 
   update(moto, _delta, info = {}) {
@@ -632,7 +846,7 @@ export default class GameplayHudKitOverlay {
     this.updateRaceStatus(deliveryData, timing);
     this.updatePackage(deliveryData);
     this.updateDashboard(moto, motoInfo);
-    this.updateHeat(motoInfo.heat || {});
+    this.updateHeat(motoInfo.heat || {}, motoInfo.weatherEventType);
     this.updateInventory(inventoryState);
     this.updateTurbo(stockState);
     this.updateCountdown(timing);
@@ -716,6 +930,10 @@ export default class GameplayHudKitOverlay {
 
     this.refs.returnButton.removeEventListener("click", this.returnButtonHandler);
     this.returnButtonHandler = null;
+    this.refs.replayButton.removeEventListener("click", this.replayButtonHandler);
+    this.replayButtonHandler = null;
+    this.refs.dashModeBtn.removeEventListener("click", this.dashboardModeButtonHandler);
+    this.dashboardModeButtonHandler = null;
 
     this.root.remove();
     this.root = null;

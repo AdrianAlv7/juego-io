@@ -128,6 +128,7 @@ function registerShutdown(scene) {
     scene.destroyNameEntryUi();
     scene.destroyLeaveRoomUi();
     scene.destroyRoomShareUi();
+    scene.destroyLobbyUi?.();
     scene.destroyDebugFinishUi();
     scene.destroyLobbyReturnUi();
     scene.destroyWeatherUi();
@@ -313,6 +314,8 @@ export const gameSceneLifecycleMethods = {
       this.renderLobbyState();
     } else {
       this.blurNameEntry();
+      this.readyButtonRect?.setVisible(false);
+      this.readyButtonLabel?.setVisible(false);
       this.startButtonRect.setVisible(false);
       this.startButtonLabel.setVisible(false);
       if (this.nameEntryRoot) {

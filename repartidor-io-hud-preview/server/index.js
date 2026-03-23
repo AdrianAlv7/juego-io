@@ -12,12 +12,14 @@ import { ROUTE_REWARD_ITEM_POOL } from "../src/items/groups.js";
 import { ROUTE_REWARD_KEYS } from "../src/items/RouteRewardSystem.js";
 
 const PORT = Number(process.env.PORT || 3000);
-const MAX_PLAYERS = 4;
+const MAX_PLAYERS = 6;
 const SPAWN_GAP = 90;
 const SPAWN_COLUMNS = 1;
 const MATCH_PRESTART_MS = 3000;
 const FINISH_WINDOW_MS = 20000;
 const LOBBY_RETURN_DELAY_MS = 20000;
+const LOBBY_COUNTDOWN_DEFAULT_MS = 10000;
+const LOBBY_COUNTDOWN_READY_MS = 3000;
 const DEBUG_FINALIZE_GRACE_MS = 120;
 const WEATHER_EVENT_WARNING_MS = 5000;
 const ROOM_CODE_LENGTH = 6;
@@ -267,8 +269,14 @@ function createRoomState({ type = ROOM_TYPE_PUBLIC, code = "" } = {}) {
     code: normalizedCode,
     players: new Map(),
     hostId: null,
+    preferredSpawn: null,
     started: false,
     finished: false,
+    lobbyCountdownEndsAtMs: 0,
+    lobbyCountdownDurationMs: 0,
+    lobbyCountdownReason: "",
+    lobbyCountdownRequestedById: null,
+    lobbyCountdownTimer: null,
     baseSpawn: null,
     matchStartedAtMs: 0,
     finishReports: new Map(),
@@ -355,14 +363,33 @@ function getRoomMeta(room) {
 function emitToRoom(room, eventName, payload) {
   io.to(getRoomChannel(room.id)).emit(eventName, payload);
 }
+
+function getLobbyReadyCount(room) {
+  let readyCount = 0;
+  for (const player of room.players.values()) {
+    if (player.ready) {
+      readyCount += 1;
+    }
+  }
+  return readyCount;
+}
+
+function isLobbyEveryoneReady(room) {
+  if (room.players.size <= 0) return false;
+  return getLobbyReadyCount(room) >= room.players.size;
+}
+
 function getLobbyPlayers(room) {
   return Array.from(room.players.entries()).map(([id, player]) => ({
     id,
     name: player.name,
+    ready: Boolean(player.ready),
   }));
 }
 
 function emitLobbyState(room) {
+  const readyCount = getLobbyReadyCount(room);
+  const allReady = room.players.size > 0 && readyCount >= room.players.size;
   emitToRoom(room, "lobbyState", {
     roomId: room.id,
     roomType: room.type,
@@ -375,6 +402,12 @@ function emitLobbyState(room) {
     hostId: room.hostId,
     started: room.started,
     finished: room.finished,
+    readyCount,
+    allReady,
+    lobbyCountdownEndsAt: room.lobbyCountdownEndsAtMs,
+    lobbyCountdownDurationMs: room.lobbyCountdownDurationMs,
+    lobbyCountdownReason: room.lobbyCountdownReason,
+    lobbyCountdownRequestedById: room.lobbyCountdownRequestedById,
     lobbyResetAt: room.lobbyResetAtMs,
     maxPlayers: MAX_PLAYERS,
   });
@@ -383,6 +416,198 @@ function emitLobbyState(room) {
 function ensureHost(room) {
   if (room.hostId && room.players.has(room.hostId)) return;
   room.hostId = room.players.size > 0 ? room.players.keys().next().value : null;
+}
+
+function clearLobbyCountdown(room) {
+  let changed = false;
+  if (room.lobbyCountdownTimer) {
+    clearTimeout(room.lobbyCountdownTimer);
+    room.lobbyCountdownTimer = null;
+    changed = true;
+  }
+  if (
+    room.lobbyCountdownEndsAtMs > 0 ||
+    room.lobbyCountdownDurationMs > 0 ||
+    room.lobbyCountdownReason ||
+    room.lobbyCountdownRequestedById
+  ) {
+    room.lobbyCountdownEndsAtMs = 0;
+    room.lobbyCountdownDurationMs = 0;
+    room.lobbyCountdownReason = "";
+    room.lobbyCountdownRequestedById = null;
+    changed = true;
+  }
+  return changed;
+}
+
+function launchGame(room, preferredSpawn = null) {
+  if (!room || room.started || room.players.size === 0) return false;
+
+  clearLobbyCountdown(room);
+  const fallbackSpawn = { x: 600, y: 5200, angle: 0 };
+  const spawnSource = preferredSpawn || room.preferredSpawn || fallbackSpawn;
+  const safeSpawn = sanitizeState(spawnSource, fallbackSpawn);
+  room.preferredSpawn = safeSpawn;
+  room.baseSpawn = safeSpawn;
+
+  let index = 0;
+  for (const player of room.players.values()) {
+    player.state = buildSpawnState(room, index);
+    player.ready = false;
+    index += 1;
+  }
+
+  room.started = true;
+  room.finished = false;
+  room.matchStartedAtMs = Date.now();
+  room.finishReports.clear();
+  room.finishWindowEndsAtMs = 0;
+  if (room.finishWindowTimer) {
+    clearTimeout(room.finishWindowTimer);
+    room.finishWindowTimer = null;
+  }
+  room.weatherQueuedEvent = null;
+  room.weatherActiveEvent = null;
+  clearTimerSet(room.weatherRuntimeTimers);
+  clearTimerSet(room.weatherScheduleTimers);
+  room.trainActiveEvent = null;
+  clearTimerSet(room.trainRuntimeTimers);
+  clearTimerSet(room.trainScheduleTimers);
+  clearRoomItems(room);
+  for (const player of room.players.values()) {
+    player.inventory = [];
+    player.progress = createEmptyProgressState();
+    player.claimedRouteRewards = new Set();
+  }
+
+  emitToRoom(room, "gameStarted", {
+    startedAt: Date.now(),
+    players: buildPlayersPayload(room),
+    ...getRoomMeta(room),
+  });
+  emitTrackItemsSnapshot(room);
+  emitAllInventoryStates(room);
+  scheduleRandomWeatherEvents(room);
+  scheduleRandomTrainEvents(room);
+  emitLobbyState(room);
+  return true;
+}
+
+function scheduleLobbyCountdown(
+  room,
+  {
+    durationMs = LOBBY_COUNTDOWN_DEFAULT_MS,
+    reason = "",
+    preferredSpawn = null,
+    requestedById = null,
+  } = {}
+) {
+  if (!room || room.started || room.players.size === 0) return false;
+
+  const safeDurationMs = Math.max(1000, sanitizeElapsedMs(durationMs, 10000));
+  clearLobbyCountdown(room);
+  room.lobbyCountdownEndsAtMs = Date.now() + safeDurationMs;
+  room.lobbyCountdownDurationMs = safeDurationMs;
+  room.lobbyCountdownReason = String(reason || "").slice(0, 32);
+  room.lobbyCountdownRequestedById =
+    typeof requestedById === "string" ? requestedById : null;
+  if (preferredSpawn) {
+    room.preferredSpawn = sanitizeState(preferredSpawn, {
+      x: 600,
+      y: 5200,
+      angle: 0,
+    });
+  }
+
+  room.lobbyCountdownTimer = setTimeout(() => {
+    room.lobbyCountdownTimer = null;
+    if (!rooms.has(room.id)) return;
+    if (room.started || room.players.size === 0) {
+      clearLobbyCountdown(room);
+      emitLobbyState(room);
+      return;
+    }
+    if (room.type === ROOM_TYPE_PUBLIC && room.players.size < MAX_PLAYERS) {
+      clearLobbyCountdown(room);
+      emitLobbyState(room);
+      return;
+    }
+    launchGame(room, room.preferredSpawn);
+  }, safeDurationMs + 25);
+
+  emitLobbyState(room);
+  return true;
+}
+
+function refreshLobbyStartFlow(room) {
+  if (!room || room.started || room.finished) return;
+
+  if (room.players.size <= 0) {
+    clearLobbyCountdown(room);
+    return;
+  }
+
+  const everyoneReady = isLobbyEveryoneReady(room);
+  const now = Date.now();
+  const countdownActive =
+    room.lobbyCountdownEndsAtMs > now && Boolean(room.lobbyCountdownTimer);
+
+  if (room.type === ROOM_TYPE_PUBLIC) {
+    if (room.players.size < MAX_PLAYERS) {
+      if (clearLobbyCountdown(room)) {
+        emitLobbyState(room);
+      }
+      return;
+    }
+
+    const targetDuration = everyoneReady
+      ? LOBBY_COUNTDOWN_READY_MS
+      : LOBBY_COUNTDOWN_DEFAULT_MS;
+    if (!countdownActive) {
+      scheduleLobbyCountdown(room, {
+        durationMs: targetDuration,
+        reason: everyoneReady ? "all_ready" : "public_full",
+        requestedById: null,
+      });
+      return;
+    }
+
+    if (targetDuration !== room.lobbyCountdownDurationMs) {
+      scheduleLobbyCountdown(room, {
+        durationMs: targetDuration,
+        reason: everyoneReady ? "all_ready" : "public_full",
+        preferredSpawn: room.preferredSpawn,
+        requestedById: room.lobbyCountdownRequestedById,
+      });
+    }
+    return;
+  }
+
+  if (!countdownActive) {
+    return;
+  }
+
+  if (
+    room.lobbyCountdownRequestedById &&
+    !room.players.has(room.lobbyCountdownRequestedById)
+  ) {
+    if (clearLobbyCountdown(room)) {
+      emitLobbyState(room);
+    }
+    return;
+  }
+
+  const targetDuration = everyoneReady
+    ? LOBBY_COUNTDOWN_READY_MS
+    : LOBBY_COUNTDOWN_DEFAULT_MS;
+  if (targetDuration !== room.lobbyCountdownDurationMs) {
+    scheduleLobbyCountdown(room, {
+      durationMs: targetDuration,
+      reason: everyoneReady ? "all_ready" : "private_start",
+      preferredSpawn: room.preferredSpawn,
+      requestedById: room.lobbyCountdownRequestedById,
+    });
+  }
 }
 
 function buildSpawnState(room, index) {
@@ -667,9 +892,11 @@ function resetMatchState(room) {
     clearTimeout(room.lobbyResetTimer);
     room.lobbyResetTimer = null;
   }
+  clearLobbyCountdown(room);
   room.started = false;
   room.finished = false;
   room.baseSpawn = null;
+  room.preferredSpawn = null;
   room.matchStartedAtMs = 0;
   room.finishReports.clear();
   room.finishWindowEndsAtMs = 0;
@@ -684,6 +911,7 @@ function resetMatchState(room) {
   clearRoomItems(room);
   for (const player of room.players.values()) {
     player.state = { x: 0, y: 0, angle: 0 };
+    player.ready = false;
     player.progress = createEmptyProgressState();
     player.inventory = [];
     player.claimedRouteRewards = new Set();
@@ -697,6 +925,7 @@ function destroyRoom(room) {
 
 function restartLobbyForEveryone(room, reason = "manual") {
   resetMatchState(room);
+  refreshLobbyStartFlow(room);
   emitToRoom(room, "lobbyRestarted", {
     reason,
     restartedAt: Date.now(),
@@ -1044,6 +1273,7 @@ function sanitizeRoomJoinPayload(payload = {}) {
 function buildPlayerRecord(name) {
   return {
     name,
+    ready: false,
     state: { x: 0, y: 0, angle: 0 },
     progress: createEmptyProgressState(),
     inventory: [],
@@ -1068,6 +1298,7 @@ function assignPlayerToRoom(room, socket, payload = {}) {
     players: buildPlayersPayload(room),
     room: getRoomMeta(room),
   });
+  refreshLobbyStartFlow(room);
   emitLobbyState(room);
 }
 
@@ -1155,7 +1386,7 @@ io.on("connection", (socket) => {
     if (room.players.size >= MAX_PLAYERS) {
       emitRoomError(socket, {
         code: "ROOM_FULL",
-        message: "Sala llena (maximo 4 jugadores).",
+        message: "Sala llena (maximo 6 jugadores).",
       });
       return;
     }
@@ -1171,59 +1402,41 @@ io.on("connection", (socket) => {
     assignPlayerToRoom(room, socket, joinPayload);
   });
 
+  socket.on("setLobbyReady", (payload = {}) => {
+    const room = getRoomBySocketId(socket.id);
+    if (!room || room.started) return;
+
+    const player = room.players.get(socket.id);
+    if (!player) return;
+
+    const nextReady =
+      typeof payload.ready === "boolean" ? payload.ready : !Boolean(player.ready);
+    if (Boolean(player.ready) === nextReady) return;
+    player.ready = nextReady;
+    refreshLobbyStartFlow(room);
+    emitLobbyState(room);
+  });
+
   socket.on("startGame", (payload = {}) => {
     const room = getRoomBySocketId(socket.id);
-    if (!room) return;
+    if (!room || room.started || room.players.size === 0) return;
+    if (room.type !== ROOM_TYPE_PRIVATE) return;
     if (socket.id !== room.hostId) return;
-    if (room.started) return;
-    if (room.players.size === 0) return;
 
     const preferredSpawn = sanitizeState(payload.preferredSpawn, {
       x: 600,
       y: 5200,
       angle: 0,
     });
-    room.baseSpawn = preferredSpawn;
-
-    let index = 0;
-    for (const player of room.players.values()) {
-      player.state = buildSpawnState(room, index);
-      index += 1;
-    }
-
-    room.started = true;
-    room.finished = false;
-    room.matchStartedAtMs = Date.now();
-    room.finishReports.clear();
-    room.finishWindowEndsAtMs = 0;
-    if (room.finishWindowTimer) {
-      clearTimeout(room.finishWindowTimer);
-      room.finishWindowTimer = null;
-    }
-    room.weatherQueuedEvent = null;
-    room.weatherActiveEvent = null;
-    clearTimerSet(room.weatherRuntimeTimers);
-    clearTimerSet(room.weatherScheduleTimers);
-    room.trainActiveEvent = null;
-    clearTimerSet(room.trainRuntimeTimers);
-    clearTimerSet(room.trainScheduleTimers);
-    clearRoomItems(room);
-    for (const player of room.players.values()) {
-      player.inventory = [];
-      player.progress = createEmptyProgressState();
-      player.claimedRouteRewards = new Set();
-    }
-
-    emitToRoom(room, "gameStarted", {
-      startedAt: Date.now(),
-      players: buildPlayersPayload(room),
-      ...getRoomMeta(room),
+    const everyoneReady = isLobbyEveryoneReady(room);
+    scheduleLobbyCountdown(room, {
+      durationMs: everyoneReady
+        ? LOBBY_COUNTDOWN_READY_MS
+        : LOBBY_COUNTDOWN_DEFAULT_MS,
+      reason: everyoneReady ? "all_ready" : "private_start",
+      preferredSpawn,
+      requestedById: socket.id,
     });
-    emitTrackItemsSnapshot(room);
-    emitAllInventoryStates(room);
-    scheduleRandomWeatherEvents(room);
-    scheduleRandomTrainEvents(room);
-    emitLobbyState(room);
   });
 
   socket.on("updatePosition", (payload = {}) => {
@@ -1423,6 +1636,7 @@ io.on("connection", (socket) => {
       maybeFinalizeMatch(room, "all_finished");
     }
 
+    refreshLobbyStartFlow(room);
     emitLobbyState(room);
   });
 });

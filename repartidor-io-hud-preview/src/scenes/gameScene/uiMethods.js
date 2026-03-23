@@ -34,6 +34,160 @@ function bindDomInputNode(scene, node, options = {}) {
   });
 }
 
+function normalizeTextValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry ?? "")).join("\n");
+  }
+  return String(value ?? "");
+}
+
+function setLobbyButtonLabel(buttonNode, value) {
+  if (!buttonNode) return;
+  const normalized = normalizeTextValue(value);
+  let labelNode = buttonNode.querySelector(".lhl-btn-label");
+  if (!labelNode) {
+    labelNode = document.createElement("span");
+    labelNode.className = "lhl-btn-label";
+    buttonNode.textContent = "";
+    buttonNode.appendChild(labelNode);
+  }
+  labelNode.textContent = normalized;
+}
+
+function createDomTextProxy(node, options = {}) {
+  const { setContent = null } = options;
+  const targetNode = node || null;
+  const proxy = {
+    setText(value) {
+      if (!targetNode) return proxy;
+      if (typeof setContent === "function") {
+        setContent(value);
+      } else if (targetNode.classList?.contains("lhl-btn")) {
+        setLobbyButtonLabel(targetNode, value);
+      } else {
+        targetNode.textContent = normalizeTextValue(value);
+      }
+      return proxy;
+    },
+    setColor(value) {
+      if (targetNode) {
+        targetNode.style.color = String(value || "");
+      }
+      return proxy;
+    },
+    setVisible(visible) {
+      if (targetNode) {
+        targetNode.style.display = visible ? "" : "none";
+      }
+      return proxy;
+    },
+    setPosition() {
+      return proxy;
+    },
+    setWordWrapWidth() {
+      return proxy;
+    },
+    setOrigin() {
+      return proxy;
+    },
+    setScrollFactor() {
+      return proxy;
+    },
+    setDepth() {
+      return proxy;
+    },
+  };
+
+  return proxy;
+}
+
+function createDomPanelProxy(node, visibleDisplay = "block") {
+  const targetNode = node || null;
+  const proxy = {
+    setVisible(visible) {
+      if (targetNode) {
+        targetNode.style.display = visible ? visibleDisplay : "none";
+      }
+      return proxy;
+    },
+    setPosition() {
+      return proxy;
+    },
+    setSize() {
+      return proxy;
+    },
+    setScrollFactor() {
+      return proxy;
+    },
+    setDepth() {
+      return proxy;
+    },
+    setStrokeStyle() {
+      return proxy;
+    },
+  };
+
+  return proxy;
+}
+
+function createDomButtonProxy(buttonNode) {
+  const targetNode = buttonNode || null;
+  let clickHandler = null;
+  let interactive = false;
+  const proxy = {
+    setVisible(visible) {
+      if (targetNode) {
+        targetNode.style.display = visible ? "inline-flex" : "none";
+      }
+      return proxy;
+    },
+    setInteractive() {
+      interactive = true;
+      if (targetNode) {
+        targetNode.disabled = false;
+      }
+      return proxy;
+    },
+    disableInteractive() {
+      interactive = false;
+      if (targetNode) {
+        targetNode.disabled = true;
+      }
+      return proxy;
+    },
+    on(eventName, handler) {
+      if (eventName === "pointerdown") {
+        clickHandler = handler;
+      }
+      return proxy;
+    },
+    setPosition() {
+      return proxy;
+    },
+    setSize() {
+      return proxy;
+    },
+    setScrollFactor() {
+      return proxy;
+    },
+    setDepth() {
+      return proxy;
+    },
+    setStrokeStyle() {
+      return proxy;
+    },
+  };
+
+  if (targetNode) {
+    targetNode.addEventListener("click", () => {
+      if (!interactive) return;
+      clickHandler?.();
+    });
+  }
+
+  return proxy;
+}
+
 export const gameSceneUiMethods = {
   getNormalizedRoomCode() {
     const rawValue = this.roomCodeInput?.value ?? this.roomCodeValue ?? "";
@@ -53,18 +207,38 @@ export const gameSceneUiMethods = {
     const buttonConfigs = [
       {
         button: this.publicMatchButton,
-        mode: "public",
+        modes: ["public"],
         busyLabel: "Buscando...",
       },
       {
+        button: this.privateModeButton,
+        modes: [],
+        busyLabel: "",
+      },
+      {
         button: this.privateCreateButton,
-        mode: "private_create",
+        modes: ["private_create"],
         busyLabel: "Creando...",
       },
       {
         button: this.privateJoinButton,
-        mode: "private_join",
+        modes: ["private_join"],
         busyLabel: "Uniendo...",
+      },
+      {
+        button: this.extraActionButton,
+        modes: [],
+        busyLabel: "",
+      },
+      {
+        button: this.futureActionButton,
+        modes: [],
+        busyLabel: "",
+      },
+      {
+        button: this.privateBackButton,
+        modes: [],
+        busyLabel: "",
       },
     ];
 
@@ -75,14 +249,39 @@ export const gameSceneUiMethods = {
       this.roomCodeInput.disabled = isBusy;
     }
 
-    buttonConfigs.forEach(({ button, mode, busyLabel }) => {
+    buttonConfigs.forEach(({ button, modes, busyLabel }) => {
       if (!button) return;
       button.disabled = isBusy;
-      button.textContent =
-        isBusy && roomMode === mode
+      const nextLabel =
+        isBusy && modes.includes(roomMode)
           ? busyLabel
-          : button.dataset.defaultLabel || button.textContent;
+          : button.dataset.defaultLabel || "";
+      setLobbyButtonLabel(button, nextLabel);
     });
+    this.updatePrivateJoinButtonState();
+    this.syncKeyboardCaptureState();
+  },
+
+  updatePrivateJoinButtonState() {
+    if (!this.privateJoinButton) return;
+    const hasCode = Boolean((this.roomCodeInput?.value || "").trim());
+    const lockedByBusy = Boolean(this.roomCodeInput?.disabled);
+    this.privateJoinButton.disabled = lockedByBusy || !hasCode;
+  },
+
+  setNameEntryMode(mode = "main") {
+    this.nameEntryMode = mode === "private" ? "private" : "main";
+    if (this.mainActionsRoot) {
+      this.mainActionsRoot.style.display =
+        this.nameEntryMode === "main" ? "grid" : "none";
+    }
+    if (this.privateActionsRoot) {
+      this.privateActionsRoot.style.display =
+        this.nameEntryMode === "private" ? "flex" : "none";
+    }
+    if (this.nameEntryMode === "private") {
+      this.updatePrivateJoinButtonState();
+    }
     this.syncKeyboardCaptureState();
   },
 
@@ -98,12 +297,12 @@ export const gameSceneUiMethods = {
     try {
       await navigator.clipboard.writeText(roomCode);
       if (this.roomShareButton) {
-        this.roomShareButton.textContent = "Codigo copiado";
+        setLobbyButtonLabel(this.roomShareButton, "Codigo copiado");
       }
       this.setLobbyMessage(`Codigo ${roomCode} copiado al portapapeles.`, "#95f5c8");
       window.setTimeout(() => {
         if (this.roomShareButton) {
-          this.roomShareButton.textContent = "Copiar codigo";
+          setLobbyButtonLabel(this.roomShareButton, "Copiar codigo");
         }
       }, 1400);
     } catch (_error) {
@@ -143,7 +342,7 @@ export const gameSceneUiMethods = {
           : "Guardalo o copialo si quieres invitar a alguien mas despues.";
     }
     if (this.roomShareButton) {
-      this.roomShareButton.textContent = "Copiar codigo";
+      setLobbyButtonLabel(this.roomShareButton, "Copiar codigo");
     }
   },
 
@@ -176,185 +375,132 @@ export const gameSceneUiMethods = {
     appRoot.style.position = "relative";
 
     this.nameEntryRoot = document.createElement("div");
-    this.nameEntryRoot.style.position = "absolute";
-    this.nameEntryRoot.style.left = "50%";
-    this.nameEntryRoot.style.top = "74%";
-    this.nameEntryRoot.style.transform = "translate(-50%, -50%)";
-    this.nameEntryRoot.style.display = "flex";
-    this.nameEntryRoot.style.flexDirection = "column";
-    this.nameEntryRoot.style.alignItems = "center";
-    this.nameEntryRoot.style.gap = "12px";
-    this.nameEntryRoot.style.minWidth = "720px";
-    this.nameEntryRoot.style.maxWidth = "860px";
-    this.nameEntryRoot.style.padding = "18px 20px";
-    this.nameEntryRoot.style.border = "1px solid rgba(167, 201, 255, 0.22)";
-    this.nameEntryRoot.style.borderRadius = "18px";
-    this.nameEntryRoot.style.background =
-      "linear-gradient(180deg, rgba(12, 19, 30, 0.96) 0%, rgba(8, 14, 22, 0.96) 100%)";
-    this.nameEntryRoot.style.boxShadow =
-      "0 20px 48px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.05)";
-    this.nameEntryRoot.style.zIndex = "3000";
+    this.nameEntryRoot.className = "lhl-entry";
 
-    const inputsRow = document.createElement("div");
-    inputsRow.style.display = "flex";
-    inputsRow.style.gap = "10px";
-    inputsRow.style.alignItems = "center";
-    inputsRow.style.justifyContent = "center";
-    inputsRow.style.flexWrap = "wrap";
+    const helperCaption = document.createElement("div");
+    helperCaption.className = "lhl-entry-caption";
+    helperCaption.textContent = "Lobby";
 
-    const inputGroupStyle = (wrapper) => {
-      wrapper.style.display = "flex";
-      wrapper.style.flexDirection = "column";
-      wrapper.style.gap = "6px";
-      wrapper.style.minWidth = "0";
-    };
-
-    const createInputLabel = (text, color = "#b9c9da") => {
-      const label = document.createElement("div");
-      label.textContent = text;
-      label.style.fontFamily = "Consolas, monospace";
-      label.style.fontSize = "12px";
-      label.style.letterSpacing = "0.08em";
-      label.style.textTransform = "uppercase";
-      label.style.color = color;
-      return label;
-    };
+    const usernameRow = document.createElement("div");
+    usernameRow.className = "lhl-inputs-row";
 
     const nameGroup = document.createElement("div");
-    inputGroupStyle(nameGroup);
-    const roomGroup = document.createElement("div");
-    inputGroupStyle(roomGroup);
-    const nameLabel = createInputLabel("Jugador", "#a7d8bd");
-    const roomLabel = createInputLabel("Codigo privado", "#a6c8f7");
+    nameGroup.className = "lhl-input-group lhl-input-group--full";
+    const nameLabel = document.createElement("label");
+    nameLabel.className = "lhl-input-label";
+    nameLabel.textContent = "Username";
 
     this.nameInput = document.createElement("input");
     this.nameInput.type = "text";
     this.nameInput.maxLength = USERNAME_MAX_LENGTH;
-    this.nameInput.placeholder = "Username corto";
-    this.nameInput.style.width = "260px";
-    this.nameInput.style.height = "44px";
-    this.nameInput.style.padding = "0 12px";
-    this.nameInput.style.border = "2px solid #90c5a6";
-    this.nameInput.style.borderRadius = "8px";
-    this.nameInput.style.background = "#10171f";
-    this.nameInput.style.color = "#eef4fb";
-    this.nameInput.style.fontFamily = "Consolas, monospace";
-    this.nameInput.style.fontSize = "18px";
-    this.nameInput.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.05)";
+    this.nameInput.placeholder = "Username";
+    this.nameInput.className = "lhl-input lhl-input-player";
+
+    nameGroup.appendChild(nameLabel);
+    nameGroup.appendChild(this.nameInput);
+    usernameRow.appendChild(nameGroup);
+
+    const makeActionButton = (label, classes = "") => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.defaultLabel = label;
+      button.className = `lhl-btn lhl-btn-entry lhl-btn-tile ${classes}`.trim();
+      setLobbyButtonLabel(button, label);
+      return button;
+    };
+
+    this.mainActionsRoot = document.createElement("div");
+    this.mainActionsRoot.className = "lhl-main-grid";
+    this.privateActionsRoot = document.createElement("div");
+    this.privateActionsRoot.className = "lhl-private-view";
+
+    this.publicMatchButton = makeActionButton("Publica", "lhl-btn-public");
+    this.privateModeButton = makeActionButton("Privada", "lhl-btn-private");
+    this.extraActionButton = makeActionButton("Ajustes", "lhl-btn-settings");
+    this.futureActionButton = makeActionButton("Proximamente", "lhl-btn-alt");
+
+    const roomGroup = document.createElement("div");
+    roomGroup.className = "lhl-input-group lhl-input-group--full";
+    const roomLabel = document.createElement("label");
+    roomLabel.className = "lhl-input-label";
+    roomLabel.textContent = "Codigo de sala";
 
     this.roomCodeInput = document.createElement("input");
     this.roomCodeInput.type = "text";
     this.roomCodeInput.maxLength = 8;
-    this.roomCodeInput.placeholder = "Codigo privado";
-    this.roomCodeInput.style.width = "220px";
-    this.roomCodeInput.style.height = "44px";
-    this.roomCodeInput.style.padding = "0 12px";
-    this.roomCodeInput.style.border = "2px solid #9cb7d9";
-    this.roomCodeInput.style.borderRadius = "8px";
-    this.roomCodeInput.style.background = "#10171f";
-    this.roomCodeInput.style.color = "#eef4fb";
-    this.roomCodeInput.style.fontFamily = "Consolas, monospace";
-    this.roomCodeInput.style.fontSize = "18px";
-    this.roomCodeInput.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.05)";
+    this.roomCodeInput.placeholder = "Codigo";
+    this.roomCodeInput.className = "lhl-input lhl-input-room";
+    roomGroup.appendChild(roomLabel);
+    roomGroup.appendChild(this.roomCodeInput);
 
-    const actionsRow = document.createElement("div");
-    actionsRow.style.display = "flex";
-    actionsRow.style.gap = "10px";
-    actionsRow.style.alignItems = "center";
-    actionsRow.style.justifyContent = "center";
-    actionsRow.style.flexWrap = "wrap";
-
-    const helperText = document.createElement("div");
-    helperText.textContent =
-      "Publica te empareja con randoms. En privada puedes crear con codigo opcional o unirte con uno.";
-    helperText.style.maxWidth = "760px";
-    helperText.style.fontFamily = "Consolas, monospace";
-    helperText.style.fontSize = "13px";
-    helperText.style.lineHeight = "1.45";
-    helperText.style.textAlign = "center";
-    helperText.style.color = "#c6d4e5";
-
-    const helperCaption = document.createElement("div");
-    helperCaption.textContent = "Entrar a una sala";
-    helperCaption.style.fontFamily = "Consolas, monospace";
-    helperCaption.style.fontSize = "13px";
-    helperCaption.style.fontWeight = "700";
-    helperCaption.style.letterSpacing = "0.08em";
-    helperCaption.style.textTransform = "uppercase";
-    helperCaption.style.color = "#ffcf88";
-
-    const makeActionButton = (label, background, borderColor) => {
-      const button = document.createElement("button");
-      button.textContent = label;
-      button.dataset.defaultLabel = label;
-      button.style.height = "46px";
-      button.style.padding = "0 18px";
-      button.style.border = `2px solid ${borderColor}`;
-      button.style.borderRadius = "10px";
-      button.style.background = background;
-      button.style.color = "#ffffff";
-      button.style.fontFamily = "Consolas, monospace";
-      button.style.fontSize = "16px";
-      button.style.fontWeight = "700";
-      button.style.cursor = "pointer";
-      button.style.boxShadow = "0 8px 18px rgba(0,0,0,0.22)";
-      button.style.transition = "transform 120ms ease, filter 120ms ease";
-      button.addEventListener("mouseenter", () => {
-        if (button.disabled) return;
-        button.style.transform = "translateY(-1px)";
-        button.style.filter = "brightness(1.06)";
-      });
-      button.addEventListener("mouseleave", () => {
-        button.style.transform = "translateY(0)";
-        button.style.filter = "none";
-      });
-      return button;
-    };
-
-    this.publicMatchButton = makeActionButton("Publica", "#1f5f46", "#90c5a6");
-    this.privateCreateButton = makeActionButton(
-      "Crear privada",
-      "#274a7a",
-      "#8ab8ff"
-    );
-    this.privateJoinButton = makeActionButton(
-      "Unirme con codigo",
-      "#7a4b12",
-      "#ffd27d"
-    );
+    this.privateCreateButton = makeActionButton("Crear sala", "lhl-btn-private");
+    this.privateJoinButton = makeActionButton("Unirse a sala", "lhl-btn-warn");
+    this.privateBackButton = makeActionButton("Regresar", "lhl-btn-minimal");
 
     const submitPublic = () => this.submitNameEntry("public");
     const submitCreatePrivate = () => this.submitNameEntry("private_create");
     const submitJoinPrivate = () => this.submitNameEntry("private_join");
 
     this.publicMatchButton.addEventListener("click", submitPublic);
+    this.privateModeButton.addEventListener("click", () => {
+      this.setNameEntryMode("private");
+      this.setLobbyMessage("Modo privada: crea sala o unete con codigo.", "#8ad6ff");
+      this.roomCodeInput?.focus();
+    });
+    this.privateBackButton.addEventListener("click", () => {
+      this.setNameEntryMode("main");
+      this.setLobbyMessage("Escribe username y elige publica o privada.");
+      this.nameInput?.focus();
+    });
     this.privateCreateButton.addEventListener("click", submitCreatePrivate);
     this.privateJoinButton.addEventListener("click", submitJoinPrivate);
+    this.extraActionButton.addEventListener("click", () => {
+      this.setLobbyMessage(
+        "Ajustes del lobby: pronto moveremos aqui selector de tablero, audio y HUD.",
+        "#8ad6ff"
+      );
+    });
+    this.futureActionButton.addEventListener("click", () => {
+      this.setLobbyMessage(
+        "Boton reservado para nueva funcion del lobby.",
+        "#ffd27d"
+      );
+    });
 
     bindDomInputNode(this, this.nameInput, { onEnter: submitPublic });
     bindDomInputNode(this, this.roomCodeInput, { onEnter: submitJoinPrivate });
     bindDomInputNode(this, this.publicMatchButton);
+    bindDomInputNode(this, this.privateModeButton);
     bindDomInputNode(this, this.privateCreateButton);
     bindDomInputNode(this, this.privateJoinButton);
+    bindDomInputNode(this, this.privateBackButton);
+    bindDomInputNode(this, this.extraActionButton);
+    bindDomInputNode(this, this.futureActionButton);
 
-    this.roomCodeInput.addEventListener("input", () => this.getNormalizedRoomCode());
+    this.roomCodeInput.addEventListener("input", () => {
+      this.getNormalizedRoomCode();
+      this.updatePrivateJoinButtonState();
+    });
 
-    nameGroup.appendChild(nameLabel);
-    nameGroup.appendChild(this.nameInput);
-    roomGroup.appendChild(roomLabel);
-    roomGroup.appendChild(this.roomCodeInput);
+    this.mainActionsRoot.appendChild(this.publicMatchButton);
+    this.mainActionsRoot.appendChild(this.privateModeButton);
+    this.mainActionsRoot.appendChild(this.extraActionButton);
+    this.mainActionsRoot.appendChild(this.futureActionButton);
 
-    inputsRow.appendChild(nameGroup);
-    inputsRow.appendChild(roomGroup);
-    actionsRow.appendChild(this.publicMatchButton);
-    actionsRow.appendChild(this.privateCreateButton);
-    actionsRow.appendChild(this.privateJoinButton);
+    this.privateActionsRoot.appendChild(this.privateCreateButton);
+    this.privateActionsRoot.appendChild(roomGroup);
+    this.privateActionsRoot.appendChild(this.privateJoinButton);
+    this.privateActionsRoot.appendChild(this.privateBackButton);
 
     this.nameEntryRoot.appendChild(helperCaption);
-    this.nameEntryRoot.appendChild(inputsRow);
-    this.nameEntryRoot.appendChild(actionsRow);
-    this.nameEntryRoot.appendChild(helperText);
-    appRoot.appendChild(this.nameEntryRoot);
+    this.nameEntryRoot.appendChild(usernameRow);
+    this.nameEntryRoot.appendChild(this.mainActionsRoot);
+    this.nameEntryRoot.appendChild(this.privateActionsRoot);
+
+    const mountPoint = this.lobbyEntryMount || appRoot;
+    mountPoint.appendChild(this.nameEntryRoot);
+    this.setNameEntryMode("main");
+    this.updatePrivateJoinButtonState();
     this.nameInput.focus();
     this.syncKeyboardCaptureState();
   },
@@ -364,7 +510,8 @@ export const gameSceneUiMethods = {
     const raw = this.nameInput?.value?.trim() || "";
     const safeName = (raw || "Jugador").slice(0, USERNAME_MAX_LENGTH);
     const roomCode = this.getNormalizedRoomCode();
-    if (roomMode === "private_join" && !roomCode) {
+    const resolvedRoomCode = roomMode === "private_create" ? "" : roomCode;
+    if (roomMode === "private_join" && !resolvedRoomCode) {
       this.lobbyMessage.setText("Escribe un codigo para entrar a una sala privada.");
       this.lobbyMessage.setColor("#ffcf88");
       this.roomCodeInput?.focus();
@@ -388,7 +535,7 @@ export const gameSceneUiMethods = {
     this.multiplayer.start({
       name: safeName,
       roomMode,
-      roomCode,
+      roomCode: resolvedRoomCode,
       preferredSpawn: ACTIVE_MAP.getSpawnPoint(),
     });
   },
@@ -416,106 +563,52 @@ export const gameSceneUiMethods = {
     this.nameInput?.blur?.();
     this.roomCodeInput?.blur?.();
     this.publicMatchButton?.blur?.();
+    this.privateModeButton?.blur?.();
     this.privateCreateButton?.blur?.();
     this.privateJoinButton?.blur?.();
+    this.privateBackButton?.blur?.();
+    this.extraActionButton?.blur?.();
+    this.futureActionButton?.blur?.();
     this.syncKeyboardCaptureState();
   },
 
   createLeaveRoomUi() {
-    const appRoot = document.getElementById("app");
-    if (!appRoot) return;
-
     this.leaveRoomRoot = document.createElement("div");
-    this.leaveRoomRoot.style.position = "absolute";
-    this.leaveRoomRoot.style.left = "24px";
-    this.leaveRoomRoot.style.top = "24px";
+    this.leaveRoomRoot.className = "lhl-leave-wrap";
     this.leaveRoomRoot.style.display = "none";
-    this.leaveRoomRoot.style.zIndex = "3000";
 
     this.leaveRoomButton = document.createElement("button");
-    this.leaveRoomButton.textContent = "Salir de sala";
-    this.leaveRoomButton.style.height = "40px";
-    this.leaveRoomButton.style.padding = "0 16px";
-    this.leaveRoomButton.style.border = "1px solid #ffb08b";
-    this.leaveRoomButton.style.borderRadius = "8px";
-    this.leaveRoomButton.style.background = "#6b2f21";
-    this.leaveRoomButton.style.color = "#ffffff";
-    this.leaveRoomButton.style.fontFamily = "Consolas, monospace";
-    this.leaveRoomButton.style.fontSize = "14px";
-    this.leaveRoomButton.style.cursor = "pointer";
+    this.leaveRoomButton.type = "button";
+    this.leaveRoomButton.className = "lhl-btn lhl-btn-leave";
+    setLobbyButtonLabel(this.leaveRoomButton, "Salir");
     this.leaveRoomButton.addEventListener("click", () => this.leaveCurrentRoom());
     bindDomInputNode(this, this.leaveRoomButton);
 
     this.leaveRoomRoot.appendChild(this.leaveRoomButton);
-    appRoot.appendChild(this.leaveRoomRoot);
+    if (this.lobbyActionsMount) {
+      this.lobbyActionsMount.prepend(this.leaveRoomRoot);
+    }
   },
 
   createRoomShareUi() {
-    const appRoot = document.getElementById("app");
-    if (!appRoot) return;
-
     this.roomShareRoot = document.createElement("div");
-    this.roomShareRoot.style.position = "absolute";
-    this.roomShareRoot.style.left = "50%";
-    this.roomShareRoot.style.top = "188px";
-    this.roomShareRoot.style.transform = "translateX(-50%)";
+    this.roomShareRoot.className = "lhl-share";
     this.roomShareRoot.style.display = "none";
-    this.roomShareRoot.style.flexDirection = "column";
-    this.roomShareRoot.style.alignItems = "center";
-    this.roomShareRoot.style.gap = "8px";
-    this.roomShareRoot.style.minWidth = "360px";
-    this.roomShareRoot.style.maxWidth = "calc(100vw - 32px)";
-    this.roomShareRoot.style.padding = "14px 18px";
-    this.roomShareRoot.style.border = "1px solid rgba(255, 214, 138, 0.26)";
-    this.roomShareRoot.style.borderRadius = "18px";
-    this.roomShareRoot.style.background =
-      "linear-gradient(180deg, rgba(18, 26, 38, 0.96) 0%, rgba(10, 16, 24, 0.96) 100%)";
-    this.roomShareRoot.style.boxShadow =
-      "0 20px 48px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.05)";
-    this.roomShareRoot.style.zIndex = "3010";
 
     this.roomShareLabel = document.createElement("div");
     this.roomShareLabel.textContent = "Codigo de sala";
-    this.roomShareLabel.style.fontFamily = "Consolas, monospace";
-    this.roomShareLabel.style.fontSize = "12px";
-    this.roomShareLabel.style.fontWeight = "700";
-    this.roomShareLabel.style.letterSpacing = "0.12em";
-    this.roomShareLabel.style.textTransform = "uppercase";
-    this.roomShareLabel.style.color = "#ffcf88";
+    this.roomShareLabel.className = "lhl-share-label";
 
     this.roomShareCodeValue = document.createElement("div");
-    this.roomShareCodeValue.style.fontFamily = "Consolas, monospace";
-    this.roomShareCodeValue.style.fontSize = "42px";
-    this.roomShareCodeValue.style.fontWeight = "700";
-    this.roomShareCodeValue.style.letterSpacing = "0.18em";
-    this.roomShareCodeValue.style.color = "#ffffff";
-    this.roomShareCodeValue.style.textAlign = "center";
-    this.roomShareCodeValue.style.textShadow = "0 4px 18px rgba(0,0,0,0.3)";
-    this.roomShareCodeValue.style.padding = "2px 12px";
-    this.roomShareCodeValue.style.borderRadius = "12px";
-    this.roomShareCodeValue.style.background = "rgba(255, 255, 255, 0.04)";
+    this.roomShareCodeValue.className = "lhl-share-code";
 
     this.roomShareHint = document.createElement("div");
-    this.roomShareHint.style.maxWidth = "520px";
-    this.roomShareHint.style.fontFamily = "Consolas, monospace";
-    this.roomShareHint.style.fontSize = "13px";
-    this.roomShareHint.style.lineHeight = "1.45";
-    this.roomShareHint.style.textAlign = "center";
-    this.roomShareHint.style.color = "#c9d5e4";
+    this.roomShareHint.className = "lhl-share-hint";
 
     this.roomShareButton = document.createElement("button");
-    this.roomShareButton.textContent = "Copiar codigo";
-    this.roomShareButton.style.height = "40px";
-    this.roomShareButton.style.padding = "0 18px";
-    this.roomShareButton.style.border = "1px solid #ffd27d";
-    this.roomShareButton.style.borderRadius = "10px";
-    this.roomShareButton.style.background = "#6d4512";
-    this.roomShareButton.style.color = "#ffffff";
-    this.roomShareButton.style.fontFamily = "Consolas, monospace";
-    this.roomShareButton.style.fontSize = "14px";
-    this.roomShareButton.style.fontWeight = "700";
-    this.roomShareButton.style.cursor = "pointer";
-    this.roomShareButton.style.boxShadow = "0 8px 18px rgba(0,0,0,0.22)";
+    this.roomShareButton.type = "button";
+    this.roomShareButton.className = "lhl-btn lhl-btn-copy";
+    setLobbyButtonLabel(this.roomShareButton, "Copiar codigo");
     this.roomShareButton.addEventListener("click", () => this.copyCurrentRoomCode());
     bindDomInputNode(this, this.roomShareButton);
 
@@ -523,13 +616,15 @@ export const gameSceneUiMethods = {
     this.roomShareRoot.appendChild(this.roomShareCodeValue);
     this.roomShareRoot.appendChild(this.roomShareHint);
     this.roomShareRoot.appendChild(this.roomShareButton);
-    appRoot.appendChild(this.roomShareRoot);
+    if (this.lobbyShareMount) {
+      this.lobbyShareMount.appendChild(this.roomShareRoot);
+    }
   },
 
   setLeaveRoomUiVisible(visible) {
     if (!this.leaveRoomRoot) return;
     const canShow = Boolean(visible && this.isRegistered && !this.matchRunning);
-    this.leaveRoomRoot.style.display = canShow ? "block" : "none";
+    this.leaveRoomRoot.style.display = canShow ? "flex" : "none";
     this.syncKeyboardCaptureState();
   },
 
@@ -549,6 +644,7 @@ export const gameSceneUiMethods = {
     if (this.nameEntryRoot) {
       this.nameEntryRoot.style.display = "flex";
     }
+    this.setNameEntryMode("main");
     if (this.nameInput) {
       this.nameInput.disabled = false;
       if (!this.nameInput.value) {
@@ -559,13 +655,19 @@ export const gameSceneUiMethods = {
     if (this.roomCodeInput) {
       this.roomCodeInput.disabled = false;
     }
+    this.updatePrivateJoinButtonState();
 
     this.lobbyTitle.setText("Sala Repartidor.io");
-    this.lobbySubtitle.setText("Publica o privada | Maximo 4 jugadores");
-    this.playersListText.setText(["Elige un modo para entrar a una sala"]);
-    this.setLobbyMessage("Busca publica, crea privada o entra con codigo.");
+    this.lobbySubtitle.setText("Publica o privada | Maximo 6 jugadores");
+    this.lobbyPlayersPanel?.setVisible(false);
+    this.playersListText.setText([]);
+    this.setLobbyMessage("Escribe username y elige publica o privada.");
+    this.readyButtonRect?.setVisible(false);
+    this.readyButtonLabel?.setVisible(false);
+    this.readyButtonRect?.disableInteractive();
     this.startButtonRect.setVisible(false);
     this.startButtonLabel.setVisible(false);
+    this.startButtonRect.disableInteractive();
     this.nameInput?.focus();
     this.syncKeyboardCaptureState();
   },
@@ -574,11 +676,18 @@ export const gameSceneUiMethods = {
     if (!this.nameEntryRoot) return;
     this.nameEntryRoot.remove();
     this.nameEntryRoot = null;
+    this.mainActionsRoot = null;
+    this.privateActionsRoot = null;
+    this.nameEntryMode = "main";
     this.nameInput = null;
     this.roomCodeInput = null;
     this.publicMatchButton = null;
+    this.privateModeButton = null;
     this.privateCreateButton = null;
     this.privateJoinButton = null;
+    this.privateBackButton = null;
+    this.extraActionButton = null;
+    this.futureActionButton = null;
     this.syncKeyboardCaptureState();
   },
 
@@ -939,7 +1048,7 @@ export const gameSceneUiMethods = {
     this.lobbyReturnText.style.textAlign = "center";
 
     this.lobbyReturnButton = document.createElement("button");
-    this.lobbyReturnButton.textContent = "Regresar al lobby";
+    this.lobbyReturnButton.textContent = "Regresar";
     this.lobbyReturnButton.style.height = "40px";
     this.lobbyReturnButton.style.padding = "0 18px";
     this.lobbyReturnButton.style.border = "1px solid #ffd27d";
@@ -950,19 +1059,54 @@ export const gameSceneUiMethods = {
     this.lobbyReturnButton.style.fontSize = "14px";
     this.lobbyReturnButton.style.cursor = "pointer";
 
+    this.lobbyReplayButton = document.createElement("button");
+    this.lobbyReplayButton.textContent = "Jugar de nuevo";
+    this.lobbyReplayButton.style.height = "40px";
+    this.lobbyReplayButton.style.padding = "0 18px";
+    this.lobbyReplayButton.style.border = "1px solid #9cf5b8";
+    this.lobbyReplayButton.style.borderRadius = "8px";
+    this.lobbyReplayButton.style.background = "#1b6a47";
+    this.lobbyReplayButton.style.color = "#ffffff";
+    this.lobbyReplayButton.style.fontFamily = "Consolas, monospace";
+    this.lobbyReplayButton.style.fontSize = "14px";
+    this.lobbyReplayButton.style.cursor = "pointer";
+    this.lobbyReplayButton.style.display = "none";
+
     this.lobbyReturnButton.addEventListener("click", () =>
-      this.requestLobbyReturn()
+      this.handlePostMatchBackAction()
+    );
+    this.lobbyReplayButton.addEventListener("click", () =>
+      this.playAnotherPublicMatch()
     );
     bindDomInputNode(this, this.lobbyReturnButton);
+    bindDomInputNode(this, this.lobbyReplayButton);
 
     this.lobbyReturnRoot.appendChild(this.lobbyReturnText);
     this.lobbyReturnRoot.appendChild(this.lobbyReturnButton);
+    this.lobbyReturnRoot.appendChild(this.lobbyReplayButton);
     appRoot.appendChild(this.lobbyReturnRoot);
   },
 
   updateLobbyReturnUi() {
     if (!this.lobbyReturnRoot || this.lobbyReturnRoot.style.display === "none") return;
     if (this.usingGameplayHudKit) return;
+
+    const roomType =
+      this.currentLobbyState?.roomType || this.multiplayer?.getRoomInfo?.()?.roomType;
+    const isPublicRoom = roomType === "public";
+    if (isPublicRoom) {
+      this.lobbyReturnText.textContent = "Partida publica finalizada.";
+      this.lobbyReturnButton.textContent = "Regresar";
+      if (this.lobbyReplayButton) {
+        this.lobbyReplayButton.style.display = "inline-flex";
+      }
+      return;
+    }
+
+    this.lobbyReturnButton.textContent = "Regresar al lobby";
+    if (this.lobbyReplayButton) {
+      this.lobbyReplayButton.style.display = "none";
+    }
 
     const remainingMs = this.lobbyReturnAtMs
       ? Math.max(0, this.lobbyReturnAtMs - Date.now())
@@ -984,8 +1128,63 @@ export const gameSceneUiMethods = {
     this.lobbyReturnRoot.style.display = visible ? "flex" : "none";
     if (visible) {
       this.updateLobbyReturnUi();
+    } else if (this.lobbyReplayButton) {
+      this.lobbyReplayButton.style.display = "none";
     }
     this.syncKeyboardCaptureState();
+  },
+
+  handlePostMatchBackAction() {
+    if (!this.matchEnded) return;
+    const roomType =
+      this.currentLobbyState?.roomType || this.multiplayer?.getRoomInfo?.()?.roomType;
+    if (roomType === "public") {
+      this.exitMatchToMainLobby(false);
+      return;
+    }
+    this.requestLobbyReturn();
+  },
+
+  playAnotherPublicMatch() {
+    if (!this.matchEnded) return;
+    this.exitMatchToMainLobby(true);
+  },
+
+  exitMatchToMainLobby(autoQueuePublic = false) {
+    const cachedName = (
+      this.nameInput?.value?.trim() ||
+      window.localStorage.getItem("repartidor_player_name") ||
+      "Jugador"
+    ).slice(0, USERNAME_MAX_LENGTH);
+
+    this.multiplayer?.destroy();
+    this.isRegistered = false;
+    this.currentLobbyState = null;
+    this.pendingRoomMode = "public";
+    this.roomCodeValue = "";
+    this.lobbyReturnAtMs = 0;
+    this.setNameEntryBusy(null);
+    this.resetToLobby?.();
+
+    if (this.nameEntryRoot) {
+      this.nameEntryRoot.style.display = "flex";
+    }
+    if (this.nameInput) {
+      this.nameInput.disabled = false;
+      this.nameInput.value = cachedName;
+    }
+    if (this.roomCodeInput) {
+      this.roomCodeInput.disabled = false;
+      this.roomCodeInput.value = "";
+    }
+    this.setNameEntryMode("main");
+    this.updatePrivateJoinButtonState();
+    if (!autoQueuePublic) {
+      this.setLobbyMessage("Escribe username y elige publica o privada.");
+      this.nameInput?.focus();
+      return;
+    }
+    this.submitNameEntry("public");
   },
 
   requestLobbyReturn() {
@@ -1000,114 +1199,190 @@ export const gameSceneUiMethods = {
     this.lobbyReturnRoot = null;
     this.lobbyReturnText = null;
     this.lobbyReturnButton = null;
+    this.lobbyReplayButton = null;
     this.syncKeyboardCaptureState();
   },
 
   createLobbyUi() {
-    const { width, height } = this.scale.gameSize;
+    const appRoot = document.getElementById("app");
+    if (!appRoot) return;
 
-    this.lobbyBackdrop = this.add.rectangle(
-      width / 2,
-      height / 2,
-      width,
-      height,
-      0x0f141a,
-      0.9
-    );
-    this.lobbyBackdrop.setScrollFactor(0);
-    this.lobbyBackdrop.setDepth(2000);
+    appRoot.style.position = "relative";
 
-    this.lobbyCard = this.add.rectangle(
-      width / 2,
-      height / 2,
-      Math.min(980, width - 80),
-      Math.min(760, height - 100),
-      0x111926,
-      0.92
-    );
-    this.lobbyCard.setScrollFactor(0);
-    this.lobbyCard.setDepth(2005);
-    this.lobbyCard.setStrokeStyle(2, 0x2d425a, 0.95);
+    this.lobbyRoot = document.createElement("section");
+    this.lobbyRoot.className = "lhl-root";
+    this.lobbyRoot.innerHTML = `
+      <div class="lhl-bg"></div>
+      <div class="lhl-texture"></div>
+      <div class="lhl-glow"></div>
+      <div class="lhl-wrap">
+        <div class="lhl-logo">Deliver<span>.io</span></div>
+        <div class="lhl-card" data-ref="lobbyCard">
+          <div class="lhl-header">
+            <div class="lhl-title" data-ref="lobbyTitle">Sala Repartidor.io</div>
+            <div class="lhl-subtitle" data-ref="lobbySubtitle">Publica o privada | Maximo 6 jugadores</div>
+          </div>
+          <div class="lhl-share-mount" data-ref="shareMount"></div>
+          <div class="lhl-players-panel" data-ref="playersPanel"></div>
+          <div class="lhl-message" data-ref="lobbyMessage"></div>
+          <div class="lhl-entry-mount" data-ref="entryMount"></div>
+          <div class="lhl-actions-mount" data-ref="actionsMount"></div>
+        </div>
+      </div>
+    `;
+    appRoot.appendChild(this.lobbyRoot);
 
-    this.lobbyPlayersPanel = this.add.rectangle(
-      width / 2,
-      height / 2 - 18,
-      Math.min(860, width - 140),
-      240,
-      0x0b121c,
-      0.9
-    );
-    this.lobbyPlayersPanel.setScrollFactor(0);
-    this.lobbyPlayersPanel.setDepth(2006);
-    this.lobbyPlayersPanel.setStrokeStyle(1, 0x223346, 0.9);
+    const query = (ref) => this.lobbyRoot.querySelector(`[data-ref="${ref}"]`);
+    const lobbyCardNode = query("lobbyCard");
+    const titleNode = query("lobbyTitle");
+    const subtitleNode = query("lobbySubtitle");
+    const playersPanelNode = query("playersPanel");
+    const messageNode = query("lobbyMessage");
+    this.lobbyShareMount = query("shareMount");
+    this.lobbyEntryMount = query("entryMount");
+    this.lobbyActionsMount = query("actionsMount");
 
-    this.lobbyTitle = this.add.text(width / 2, 142, "Sala Repartidor.io", {
-      fontFamily: "Consolas, monospace",
-      fontSize: "54px",
-      color: "#ffffff",
-      fontStyle: "bold",
+    const renderPlayersPanel = (rawValue) => {
+      if (!playersPanelNode) return;
+      playersPanelNode.innerHTML = "";
+
+      const players = Array.isArray(this.currentLobbyState?.players)
+        ? this.currentLobbyState.players
+        : [];
+      const hostId = this.currentLobbyState?.hostId || "";
+
+      if (players.length > 0) {
+        players.forEach((player, index) => {
+          const row = document.createElement("div");
+          row.className = "lhl-player-row";
+          let badgeCount = 0;
+          const appendBadge = (badge) => {
+            if (badgeCount === 0) {
+              badge.classList.add("lhl-player-badge--offset");
+            }
+            badgeCount += 1;
+            row.appendChild(badge);
+          };
+
+          const number = document.createElement("span");
+          number.className = "lhl-player-index";
+          number.textContent = `${index + 1}`;
+
+          const name = document.createElement("span");
+          name.className = "lhl-player-name";
+          name.textContent = player?.name || "Jugador";
+
+          row.appendChild(number);
+          row.appendChild(name);
+
+          if (player?.id === hostId) {
+            const hostBadge = document.createElement("span");
+            hostBadge.className = "lhl-player-badge";
+            hostBadge.textContent = "Creador";
+            appendBadge(hostBadge);
+          }
+
+          const readyBadge = document.createElement("span");
+          readyBadge.className = player?.ready
+            ? "lhl-player-badge lhl-player-badge--ready"
+            : "lhl-player-badge lhl-player-badge--pending";
+          readyBadge.textContent = player?.ready ? "Listo" : "Esperando";
+          appendBadge(readyBadge);
+
+          if (player?.id === this.multiplayer?.selfId) {
+            row.classList.add("lhl-player-row--self");
+          }
+
+          playersPanelNode.appendChild(row);
+        });
+        return;
+      }
+
+      const fallbackLines = normalizeTextValue(rawValue)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (!fallbackLines.length) {
+        fallbackLines.push("Sin jugadores");
+      }
+      fallbackLines.forEach((line) => {
+        const row = document.createElement("div");
+        row.className = "lhl-player-row lhl-player-row--muted";
+        row.textContent = line;
+        playersPanelNode.appendChild(row);
+      });
+    };
+
+    this.lobbyBackdrop = createDomPanelProxy(this.lobbyRoot, "block");
+    this.lobbyCard = createDomPanelProxy(lobbyCardNode, "block");
+    this.lobbyPlayersPanel = createDomPanelProxy(playersPanelNode, "block");
+    this.lobbyTitle = createDomTextProxy(titleNode);
+    this.lobbySubtitle = createDomTextProxy(subtitleNode);
+    this.playersListText = createDomTextProxy(playersPanelNode, {
+      setContent: (value) => renderPlayersPanel(value),
     });
-    this.lobbyTitle.setOrigin(0.5);
-    this.lobbyTitle.setScrollFactor(0);
-    this.lobbyTitle.setDepth(2010);
+    this.lobbyMessage = createDomTextProxy(messageNode);
 
-    this.lobbySubtitle = this.add.text(width / 2, 204, "Esperando jugadores", {
-      fontFamily: "Consolas, monospace",
-      fontSize: "22px",
-      color: "#b8c4d1",
+    this.readyButtonNode = document.createElement("button");
+    this.readyButtonNode.type = "button";
+    this.readyButtonNode.className = "lhl-btn lhl-btn-ready";
+    setLobbyButtonLabel(this.readyButtonNode, "Listo");
+    this.lobbyActionsMount?.appendChild(this.readyButtonNode);
+
+    this.startButtonNode = document.createElement("button");
+    this.startButtonNode.type = "button";
+    this.startButtonNode.className = "lhl-btn lhl-btn-start";
+    setLobbyButtonLabel(this.startButtonNode, "Empezar");
+    this.lobbyActionsMount?.appendChild(this.startButtonNode);
+
+    this.readyButtonRect = createDomButtonProxy(this.readyButtonNode);
+    this.readyButtonLabel = createDomTextProxy(this.readyButtonNode);
+    this.readyButtonRect.on("pointerdown", () => {
+      const players = Array.isArray(this.currentLobbyState?.players)
+        ? this.currentLobbyState.players
+        : [];
+      const localPlayer = players.find((player) => player.id === this.multiplayer?.selfId);
+      const nextReady = !Boolean(localPlayer?.ready);
+      this.multiplayer?.emitSetLobbyReady(nextReady);
     });
-    this.lobbySubtitle.setOrigin(0.5);
-    this.lobbySubtitle.setScrollFactor(0);
-    this.lobbySubtitle.setDepth(2010);
 
-    this.playersListText = this.add.text(width / 2, height / 2 - 116, "Conectando...", {
-      fontFamily: "Consolas, monospace",
-      fontSize: "24px",
-      color: "#e8edf3",
-      align: "center",
-      lineSpacing: 10,
-      wordWrap: { width: Math.min(760, width - 200) },
-    });
-    this.playersListText.setOrigin(0.5, 0);
-    this.playersListText.setScrollFactor(0);
-    this.playersListText.setDepth(2010);
-
-    this.lobbyMessage = this.add.text(width / 2, height - 174, "", {
-      fontFamily: "Consolas, monospace",
-      fontSize: "20px",
-      color: "#ffd27d",
-      align: "center",
-      wordWrap: { width: Math.min(820, width - 140) },
-    });
-    this.lobbyMessage.setOrigin(0.5);
-    this.lobbyMessage.setScrollFactor(0);
-    this.lobbyMessage.setDepth(2010);
-
-    this.startButtonRect = this.add.rectangle(
-      width / 2,
-      height - 104,
-      320,
-      74,
-      0x2f7f5f,
-      1
-    );
-    this.startButtonRect.setStrokeStyle(3, 0xa9ffd8, 0.9);
-    this.startButtonRect.setInteractive({ useHandCursor: true });
-    this.startButtonRect.setScrollFactor(0);
-    this.startButtonRect.setDepth(2010);
+    this.startButtonRect = createDomButtonProxy(this.startButtonNode);
+    this.startButtonLabel = createDomTextProxy(this.startButtonNode);
     this.startButtonRect.on("pointerdown", () => {
       this.multiplayer?.emitStartGame(ACTIVE_MAP.getSpawnPoint());
     });
 
-    this.startButtonLabel = this.add.text(width / 2, height - 104, "PLAY", {
-      fontFamily: "Consolas, monospace",
-      fontSize: "36px",
-      color: "#ffffff",
-      fontStyle: "bold",
-    });
-    this.startButtonLabel.setOrigin(0.5);
-    this.startButtonLabel.setScrollFactor(0);
-    this.startButtonLabel.setDepth(2011);
+    this.playersListText.setText("");
+    this.lobbyPlayersPanel?.setVisible(false);
+    this.lobbyMessage.setText("");
+    this.readyButtonRect.disableInteractive();
+    this.readyButtonRect.setVisible(false);
+    this.readyButtonLabel.setVisible(false);
+    this.startButtonRect.disableInteractive();
+    this.startButtonRect.setVisible(false);
+    this.startButtonLabel.setVisible(false);
+  },
+
+  destroyLobbyUi() {
+    if (!this.lobbyRoot) return;
+    this.lobbyRoot.remove();
+    this.lobbyRoot = null;
+    this.lobbyShareMount = null;
+    this.lobbyEntryMount = null;
+    this.lobbyActionsMount = null;
+    this.readyButtonNode = null;
+    this.startButtonNode = null;
+    this.lobbyBackdrop = null;
+    this.lobbyCard = null;
+    this.lobbyPlayersPanel = null;
+    this.lobbyTitle = null;
+    this.lobbySubtitle = null;
+    this.playersListText = null;
+    this.lobbyMessage = null;
+    this.readyButtonRect = null;
+    this.readyButtonLabel = null;
+    this.startButtonRect = null;
+    this.startButtonLabel = null;
   },
 
   createStatusBanner() {
