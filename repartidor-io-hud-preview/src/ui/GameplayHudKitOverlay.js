@@ -113,6 +113,7 @@ export default class GameplayHudKitOverlay {
     this.root.className = "ghuk-root";
     this.root.innerHTML = `
       <div class="ghuk-overlay" data-weather="none"></div>
+      <div class="ghuk-rain-glass"></div>
       <div class="ghuk-vignette"></div>
       <div class="ghuk-top-bars"></div>
       <div class="ghuk-bottom-bars"></div>
@@ -255,6 +256,7 @@ export default class GameplayHudKitOverlay {
     const query = (ref) => this.root.querySelector(`[data-ref="${ref}"]`);
     this.refs = {
       overlay: this.root.querySelector(".ghuk-overlay"),
+      rainGlass: this.root.querySelector(".ghuk-rain-glass"),
       orderText: query("orderText"),
       destinationText: query("destinationText"),
       timerText: query("timerText"),
@@ -633,6 +635,10 @@ export default class GameplayHudKitOverlay {
   updateWeatherPresentation(motoInfo, weatherEvent) {
     const weatherType = String(motoInfo.weatherEventType || WEATHER_EVENT_TYPES.NONE);
     this.refs.overlay.dataset.weather = weatherType;
+    this.refs.rainGlass?.classList.toggle(
+      "is-active",
+      weatherType === WEATHER_EVENT_TYPES.RAIN
+    );
     this.refs.weatherIndicator.textContent = weatherChip(weatherType);
 
     const hasWeatherEvent = weatherEvent?.type && weatherEvent.type !== WEATHER_EVENT_TYPES.NONE;

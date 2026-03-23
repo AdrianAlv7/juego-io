@@ -199,7 +199,7 @@ export const gameSceneMatchMethods = {
     const canToggleReady =
       !this.currentLobbyState.started && !this.matchRunning && players.length > 0;
     if (this.readyButtonNode) {
-      this.readyButtonNode.textContent = localReady ? "No listo" : "Listo";
+      this.readyButtonLabel?.setText(localReady ? "No listo" : "Listo");
       this.readyButtonNode.classList.toggle("lhl-btn-ready--active", localReady);
     }
     this.readyButtonRect?.setVisible(canToggleReady);

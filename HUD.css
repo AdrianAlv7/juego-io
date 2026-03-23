@@ -48,7 +48,6 @@
   opacity: 0;
   transition: opacity 380ms ease;
   pointer-events: none;
-  mix-blend-mode: screen;
 }
 
 .ghuk-overlay::before {
@@ -58,20 +57,146 @@
 }
 
 .ghuk-overlay[data-weather="rain"] {
-  opacity: 0.24;
-  background: radial-gradient(circle at 72% 22%, rgba(90, 155, 255, 0.3), transparent 45%);
+  opacity: 0.88;
+  background:
+    linear-gradient(180deg, rgba(18, 42, 68, 0.16) 0%, rgba(6, 16, 28, 0.24) 100%),
+    radial-gradient(circle at 80% 18%, rgba(120, 185, 255, 0.12), transparent 26%);
+  backdrop-filter: blur(0.4px) brightness(0.96);
+}
+.ghuk-overlay[data-weather="rain"]::before,
+.ghuk-overlay[data-weather="rain"]::after {
+  content: "";
+  position: absolute;
+  inset: -42%;
+  pointer-events: none;
+  will-change: transform, background-position;
 }
 
 .ghuk-overlay[data-weather="rain"]::before {
-  background-image: repeating-linear-gradient(
-    112deg,
-    rgba(180, 218, 255, 0.24) 0px,
-    rgba(180, 218, 255, 0.24) 1px,
-    transparent 1px,
-    transparent 20px
-  );
-  animation: ghuk-rain 1.4s linear infinite;
+background-image: repeating-linear-gradient(
+  112deg,
+  transparent 0px,
+  transparent 104px,
+  rgba(160, 215, 255, 0.22) 104px,
+  rgba(160, 215, 255, 0.22) 106px,
+  transparent 106px,
+  transparent 118px
+);
+  opacity: 0.60;
+  animation: ghuk-rain-flow-a 0.55s linear infinite;
 }
+
+.ghuk-overlay[data-weather="rain"]::after {
+background-image: repeating-linear-gradient(
+  112deg,
+  transparent 0px,
+  transparent 146px,
+  rgba(105, 180, 255, 0.12) 146px,
+  rgba(105, 180, 255, 0.12) 148px,
+  transparent 148px,
+  transparent 160px
+);
+  opacity: 0.34;
+  animation: ghuk-rain-flow-b 0.9s linear infinite;
+}
+@keyframes ghuk-rain-flow-a {
+  from {
+    transform: translate3d(34px, -180px, 0);
+  }
+  to {
+    transform: translate3d(-26px, 180px, 0);
+  }
+}
+
+@keyframes ghuk-rain-flow-b {
+  from {
+    transform: translate3d(22px, -140px, 0);
+  }
+  to {
+    transform: translate3d(-18px, 140px, 0);
+  }
+}
+@keyframes ghuk-glass-drift-a {
+  from {
+    transform: translate3d(0, -18px, 0);
+  }
+  to {
+    transform: translate3d(-4px, 34px, 0);
+  }
+}
+
+@keyframes ghuk-glass-drift-b {
+  from {
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    transform: translate3d(-3px, 28px, 0);
+  }
+}
+
+.ghuk-rain-glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease;
+  z-index: 1;
+}
+
+.ghuk-rain-glass::before,
+.ghuk-rain-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ghuk-rain-glass::before {
+background:
+  radial-gradient(ellipse 10px 20px at 8% 14%, rgba(185, 230, 255, 0.26), rgba(120, 190, 255, 0.10) 55%, transparent 72%),
+  radial-gradient(ellipse 8px 18px at 18% 30%, rgba(170, 220, 255, 0.20), rgba(110, 180, 255, 0.08) 55%, transparent 74%),
+  radial-gradient(ellipse 11px 22px at 82% 18%, rgba(180, 228, 255, 0.22), rgba(120, 190, 255, 0.08) 58%, transparent 74%),
+  radial-gradient(ellipse 9px 16px at 90% 36%, rgba(160, 215, 255, 0.18), rgba(110, 180, 255, 0.07) 56%, transparent 72%),
+  radial-gradient(ellipse 10px 19px at 12% 78%, rgba(155, 210, 255, 0.18), rgba(110, 175, 255, 0.06) 58%, transparent 72%),
+  radial-gradient(ellipse 9px 18px at 86% 82%, rgba(150, 205, 255, 0.16), rgba(100, 170, 255, 0.06) 56%, transparent 72%);
+  filter: blur(1px);
+  animation: ghuk-glass-drift-a 2.9s linear infinite;
+}
+
+.ghuk-rain-glass::after {
+  background:
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(255,255,255,0.08) 18%,
+      transparent 36%) 8% 10% / 2px 90px no-repeat,
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(255,255,255,0.06) 18%,
+      transparent 36%) 18% 28% / 2px 72px no-repeat,
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(255,255,255,0.08) 18%,
+      transparent 36%) 82% 16% / 2px 84px no-repeat,
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(255,255,255,0.05) 18%,
+      transparent 36%) 90% 34% / 2px 68px no-repeat,
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(120,190,255,0.08) 20%,
+      transparent 40%) 12% 76% / 2px 60px no-repeat,
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(120,190,255,0.06) 20%,
+      transparent 40%) 86% 80% / 2px 56px no-repeat;
+  filter: blur(0.6px);
+  opacity: 0.7;
+  animation: ghuk-glass-drift-b 2.4s linear infinite;
+}
+.ghuk-rain-glass.is-active {
+  opacity: 1;
+}
+
 
 .ghuk-overlay[data-weather="sunny"] {
   opacity: 0.19;
@@ -211,6 +336,26 @@
   animation: ghuk-slide-down 260ms ease;
 }
 
+.ghuk-weather-event[data-tone="rain"] {
+  border-color: rgba(130, 190, 255, 0.48);
+  color: #d9ebff;
+}
+
+.ghuk-weather-event[data-tone="sunny"] {
+  border-color: rgba(255, 200, 106, 0.54);
+  color: #ffe0a8;
+}
+
+.ghuk-weather-event[data-tone="night"] {
+  border-color: rgba(171, 156, 255, 0.52);
+  color: #e3dcff;
+}
+
+.ghuk-weather-event[data-tone="clear"] {
+  border-color: rgba(156, 198, 255, 0.34);
+  color: #d7eaff;
+}
+
 .ghuk-minimap {
   position: absolute;
   top: clamp(56px, 10vh, 90px);
@@ -303,6 +448,30 @@
   font-size: clamp(11px, 0.95vw, 16px);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.ghuk-weather-indicator[data-tone="rain"] {
+  color: #dff0ff;
+  border-color: rgba(132, 189, 255, 0.48);
+  background: linear-gradient(160deg, rgba(21, 48, 82, 0.92), rgba(8, 17, 29, 0.94));
+}
+
+.ghuk-weather-indicator[data-tone="sunny"] {
+  color: #ffe6ba;
+  border-color: rgba(255, 196, 110, 0.5);
+  background: linear-gradient(160deg, rgba(78, 43, 16, 0.92), rgba(19, 13, 8, 0.94));
+}
+
+.ghuk-weather-indicator[data-tone="night"] {
+  color: #ece7ff;
+  border-color: rgba(171, 156, 255, 0.48);
+  background: linear-gradient(160deg, rgba(28, 21, 60, 0.92), rgba(9, 10, 24, 0.94));
+}
+
+.ghuk-weather-indicator[data-tone="clear"] {
+  color: #dff1ff;
+  border-color: rgba(154, 193, 235, 0.36);
+  background: linear-gradient(160deg, rgba(16, 31, 48, 0.92), rgba(8, 14, 22, 0.94));
 }
 
 .ghuk-package {
@@ -678,6 +847,39 @@
   transform: translateY(-1px);
   filter: brightness(1.08);
   border-color: rgba(239, 247, 255, 0.5);
+}
+
+.ghuk-btn.is-active {
+  transform: translateY(-1px);
+  filter: brightness(1.12);
+  color: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 18px rgba(125, 194, 255, 0.26);
+}
+
+.ghuk-btn[data-tone="rain"].is-active {
+  background: linear-gradient(180deg, rgba(48, 104, 170, 0.92), rgba(28, 56, 98, 0.96));
+}
+
+.ghuk-btn[data-tone="sunny"].is-active {
+  background: linear-gradient(180deg, rgba(215, 137, 48, 0.94), rgba(124, 66, 17, 0.96));
+}
+
+.ghuk-btn[data-tone="night"].is-active {
+  background: linear-gradient(180deg, rgba(92, 82, 179, 0.94), rgba(39, 28, 85, 0.96));
+}
+
+.ghuk-btn[data-tone="clear"].is-active {
+  background: linear-gradient(180deg, rgba(71, 111, 156, 0.92), rgba(27, 47, 73, 0.96));
+}
+
+.ghuk-btn:disabled,
+.ghuk-btn.ghuk-btn--disabled {
+  opacity: 0.48;
+  cursor: default;
+  filter: grayscale(0.18);
+  box-shadow: none;
 }
 
 .ghuk-btn[data-tone="rain"] { border-color: rgba(102, 170, 255, 0.6); }
