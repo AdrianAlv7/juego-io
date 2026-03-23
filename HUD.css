@@ -57,11 +57,16 @@
 }
 
 .ghuk-overlay[data-weather="rain"] {
-  opacity: 0.88;
+  opacity: 0.92;
   background:
-    linear-gradient(180deg, rgba(18, 42, 68, 0.16) 0%, rgba(6, 16, 28, 0.24) 100%),
-    radial-gradient(circle at 80% 18%, rgba(120, 185, 255, 0.12), transparent 26%);
-  backdrop-filter: blur(0.4px) brightness(0.96);
+    radial-gradient(circle at 80% 18%, rgba(120, 185, 255, 0.14), transparent 26%),
+    radial-gradient(circle at 18% 24%, rgba(60, 145, 255, 0.10), transparent 34%),
+    linear-gradient(180deg, rgba(28, 62, 105, 0.18) 0%, rgba(9, 22, 38, 0.30) 100%),
+    linear-gradient(0deg, rgba(40, 140, 255, 0.09) 0%, rgba(0, 0, 0, 0) 24%);
+  backdrop-filter: blur(0.6px) brightness(0.94);
+  box-shadow:
+    inset 0 0 140px rgba(80, 155, 255, 0.08),
+    inset 0 -120px 180px rgba(40, 130, 255, 0.12);
 }
 .ghuk-overlay[data-weather="rain"]::before,
 .ghuk-overlay[data-weather="rain"]::after {
@@ -197,19 +202,214 @@ background:
   opacity: 1;
 }
 
-
 .ghuk-overlay[data-weather="sunny"] {
-  opacity: 0.19;
+  opacity: 0.92;
   background:
-    radial-gradient(circle at 82% 8%, rgba(255, 197, 92, 0.54), transparent 40%),
-    radial-gradient(circle at 16% 90%, rgba(255, 161, 70, 0.2), transparent 48%);
+    radial-gradient(circle at 84% 10%, rgba(255, 178, 74, 0.30), transparent 20%),
+    radial-gradient(circle at 74% 16%, rgba(255, 125, 40, 0.16), transparent 30%),
+    radial-gradient(circle at 20% 24%, rgba(255, 170, 70, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255, 165, 60, 0.08) 0%, rgba(255, 120, 40, 0.05) 34%, transparent 68%),
+    linear-gradient(0deg, rgba(255, 145, 50, 0.06) 0%, transparent 24%);
+  backdrop-filter: brightness(1.02) saturate(1.05);
+  box-shadow:
+    inset 0 0 140px rgba(255, 160, 70, 0.05),
+    inset 0 -90px 140px rgba(255, 145, 50, 0.06);
+}
+.ghuk-overlay[data-weather="sunny"]::before,
+.ghuk-overlay[data-weather="sunny"]::after {
+  content: "";
+  position: absolute;
+  inset: -6%;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.ghuk-overlay[data-weather="sunny"]::before {
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(255, 185, 90, 0.020) 0px,
+      rgba(255, 185, 90, 0.020) 10px,
+      transparent 20px,
+      transparent 42px
+    );
+  opacity: 0.42;
+  filter: blur(3px);
+  animation: ghuk-heat-haze-a 3.2s ease-in-out infinite;
+}
+.ghuk-overlay[data-weather="sunny"]::after {
+  background:
+    radial-gradient(circle at 82% 12%, rgba(255, 210, 120, 0.10), transparent 16%),
+    linear-gradient(90deg, transparent 0%, rgba(255, 170, 80, 0.05) 45%, transparent 100%);
+  opacity: 0.46;
+  filter: blur(6px);
+  animation: ghuk-heat-haze-b 4.1s ease-in-out infinite;
+}
+@keyframes ghuk-heat-haze-a {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.28;
+  }
+  25% {
+    transform: translate3d(2px, -2px, 0) scale(1.01);
+    opacity: 0.38;
+  }
+  50% {
+    transform: translate3d(-2px, 2px, 0) scale(1.02);
+    opacity: 0.46;
+  }
+  75% {
+    transform: translate3d(1px, -1px, 0) scale(1.01);
+    opacity: 0.34;
+  }
+}
+
+@keyframes ghuk-heat-haze-b {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.30;
+  }
+  50% {
+    transform: translate3d(-4px, 1px, 0);
+    opacity: 0.48;
+  }
+}
+.ghuk-sun-flare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease;
+  z-index: 1;
+}
+
+.ghuk-sun-flare.is-active {
+  opacity: 1;
+}
+
+.ghuk-sun-flare::before {
+  content: "";
+  position: absolute;
+  top: 3%;
+  right: 6%;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 205, 110, 0.22) 0%,
+    rgba(255, 155, 60, 0.16) 28%,
+    rgba(255, 110, 40, 0.08) 48%,
+    transparent 72%
+  );
+  filter: blur(10px);
+}
+
+.ghuk-sun-flare::after {
+  content: "";
+  position: absolute;
+  top: 7%;
+  right: 10%;
+  width: 420px;
+  height: 140px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 210, 120, 0.08),
+    rgba(255, 145, 50, 0.04),
+    transparent 70%
+  );
+  filter: blur(12px);
+  transform: rotate(-8deg);
 }
 
 .ghuk-overlay[data-weather="night"] {
-  opacity: 0.3;
+  opacity: 0.96;
   background:
-    linear-gradient(0deg, rgba(0, 0, 0, 0.52), rgba(10, 13, 35, 0.44)),
-    radial-gradient(circle at 14% 18%, rgba(153, 168, 255, 0.22), transparent 40%);
+    radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.00) 0%,
+      rgba(6, 10, 22, 0.10) 24%,
+      rgba(4, 7, 16, 0.34) 46%,
+      rgba(2, 4, 10, 0.68) 72%,
+      rgba(0, 0, 0, 0.84) 100%
+    ),
+    radial-gradient(circle at 50% 50%, rgba(120, 150, 255, 0.05), transparent 26%),
+    linear-gradient(180deg, rgba(8, 12, 28, 0.18), rgba(0, 0, 0, 0.28));
+  backdrop-filter: brightness(0.72) saturate(0.88);
+}
+.ghuk-overlay[data-weather="night"]::before,
+.ghuk-overlay[data-weather="night"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ghuk-overlay[data-weather="night"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  background:
+    radial-gradient(circle at 6% 14%, rgba(180, 200, 255, 0.9) 0%, rgba(180, 200, 255, 0.4) 10%, transparent 30%),
+    radial-gradient(circle at 92% 18%, rgba(160, 190, 255, 0.8) 0%, rgba(160, 190, 255, 0.35) 10%, transparent 28%),
+    radial-gradient(circle at 10% 86%, rgba(170, 200, 255, 0.7) 0%, rgba(170, 200, 255, 0.3) 10%, transparent 28%),
+    radial-gradient(circle at 88% 82%, rgba(150, 180, 255, 0.7) 0%, rgba(150, 180, 255, 0.3) 10%, transparent 28%),
+    radial-gradient(circle at 22% 10%, rgba(200, 220, 255, 0.6) 0%, transparent 20%),
+    radial-gradient(circle at 78% 92%, rgba(200, 220, 255, 0.6) 0%, transparent 20%);
+
+  filter: blur(6px);
+  opacity: 0.40;
+
+  animation: ghuk-night-stars 6s ease-in-out infinite;
+}
+.ghuk-overlay[data-weather="night"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(180, 200, 255, 0.012) 0px,
+      rgba(180, 200, 255, 0.012) 2px,
+      transparent 4px,
+      transparent 10px
+    );
+
+  opacity: 0.14;
+  filter: blur(1px);
+}
+@keyframes ghuk-night-breath {
+  0%, 100% {
+    opacity: 0.54;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes ghuk-night-noise {
+  0%, 100% {
+    opacity: 0.12;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.18;
+    transform: translateY(2px);
+  }
+}
+@keyframes ghuk-night-stars {
+  0%, 100% {
+    opacity: 0.48;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.04);
+  }
 }
 
 .ghuk-vignette {

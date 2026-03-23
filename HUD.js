@@ -51,7 +51,11 @@ function setupHudWeatherPreview() {
     heatCard: root.querySelector(".ghuk-heat"),
     heatFill: root.querySelector(".ghuk-heat-fill"),
     heatValue: root.querySelector(".ghuk-heat-value"),
+        rainGlass: root.querySelector(".ghuk-rain-glass"),
+sunFlare: root.querySelector(".ghuk-sun-flare"),
+nightGlow: root.querySelector(".ghuk-night-glow"),
     buttons: Array.from(root.querySelectorAll(".ghuk-btn[data-tone]")),
+
   };
 
   let weatherTimerId = 0;

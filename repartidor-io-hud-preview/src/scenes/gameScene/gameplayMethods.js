@@ -246,14 +246,9 @@ export const gameSceneGameplayMethods = {
       source: payload.source || "",
     };
 
-    if (config.type === WEATHER_EVENT_TYPES.NIGHT) {
-      this.weatherOverlay?.setVisible(false);
-      this.weatherOverlay?.setAlpha(0);
-      this.weatherOverlayAlpha = 0;
-    } else {
-      this.weatherOverlay?.setFillStyle(config.overlayColor, 1);
-      this.weatherOverlay?.setVisible(true);
-    }
+    this.weatherOverlay?.setVisible(false);
+    this.weatherOverlay?.setAlpha(0);
+    this.weatherOverlayAlpha = 0;
 
     if (phase === "active") {
       this.moto.setWeatherEvent({
@@ -283,15 +278,9 @@ export const gameSceneGameplayMethods = {
       this.clearLocalWeatherEventState();
     }
 
-    const overlayTargetAlpha =
-      this.matchRunning &&
-      this.weatherEvent.phase === "active" &&
-      this.weatherEvent.type !== WEATHER_EVENT_TYPES.NIGHT
-        ? this.weatherEvent.overlayAlpha
-        : 0;
     this.weatherOverlayAlpha = damp(
       this.weatherOverlayAlpha,
-      overlayTargetAlpha,
+      0,
       WEATHER_OVERLAY_DAMPING,
       deltaMs
     );
