@@ -113,9 +113,7 @@ export default class GameplayHudKitOverlay {
     this.root.className = "ghuk-root";
     this.root.innerHTML = `
       <div class="ghuk-overlay" data-weather="none"></div>
-      <div class="ghuk-sunny-overlay"></div>
       <div class="ghuk-rain-glass"></div>
-      <div class="ghuk-sun-flare"></div>
       <div class="ghuk-vignette"></div>
       <div class="ghuk-top-bars"></div>
       <div class="ghuk-bottom-bars"></div>
@@ -258,9 +256,7 @@ export default class GameplayHudKitOverlay {
     const query = (ref) => this.root.querySelector(`[data-ref="${ref}"]`);
     this.refs = {
       overlay: this.root.querySelector(".ghuk-overlay"),
-      sunnyOverlay: this.root.querySelector(".ghuk-sunny-overlay"),
       rainGlass: this.root.querySelector(".ghuk-rain-glass"),
-      sunFlare: this.root.querySelector(".ghuk-sun-flare"),
       orderText: query("orderText"),
       destinationText: query("destinationText"),
       timerText: query("timerText"),
@@ -638,26 +634,10 @@ export default class GameplayHudKitOverlay {
 
   updateWeatherPresentation(motoInfo, weatherEvent) {
     const weatherType = String(motoInfo.weatherEventType || WEATHER_EVENT_TYPES.NONE);
-    const baseOverlayWeather =
-      weatherType === WEATHER_EVENT_TYPES.SUNNY
-        ? WEATHER_EVENT_TYPES.NONE
-        : weatherType;
-    this.refs.overlay.dataset.weather = baseOverlayWeather;
-    this.refs.sunnyOverlay?.classList.toggle(
-      "is-active",
-      weatherType === WEATHER_EVENT_TYPES.SUNNY
-    );
+    this.refs.overlay.dataset.weather = weatherType;
     this.refs.rainGlass?.classList.toggle(
       "is-active",
       weatherType === WEATHER_EVENT_TYPES.RAIN
-    );
-    this.refs.sunFlare?.classList.toggle(
-      "is-active",
-      weatherType === WEATHER_EVENT_TYPES.SUNNY
-    );
-    this.root?.classList.toggle(
-      "is-weather-sunny",
-      weatherType === WEATHER_EVENT_TYPES.SUNNY
     );
     this.refs.weatherIndicator.textContent = weatherChip(weatherType);
 
