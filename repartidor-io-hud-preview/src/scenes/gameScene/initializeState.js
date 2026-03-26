@@ -75,6 +75,8 @@ export function initializeGameSceneState(scene) {
   scene.debugFinishFinalizeButton = null;
   scene.debugFinishStatusText = null;
   scene.weatherOverlay = null;
+  scene.rainEmitter = null;
+  scene.rainEmitterActive = false;
   scene.weatherEventText = null;
   scene.weatherHintText = null;
   scene.weatherButtons = [];

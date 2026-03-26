@@ -146,6 +146,7 @@ export const gameSceneLifecycleMethods = {
 
   preload() {
     this.load.image("moto", "assets/moto.png");
+    this.load.image("weather-raindrop", "assets/gota.png");
     preloadActiveMapAssets(this);
   },
 

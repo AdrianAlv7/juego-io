@@ -11,6 +11,8 @@ import {
 import { ACTIVE_MAP } from "../../world/activeMap.js";
 import { USERNAME_MAX_LENGTH, WEATHER_UI_MARGIN } from "./constants.js";
 
+const RAIN_PARTICLE_TEXTURE_KEY = "weather-raindrop";
+
 function bindDomInputNode(scene, node, options = {}) {
   if (!node) return;
 
@@ -1418,6 +1420,35 @@ export const gameSceneUiMethods = {
     this.weatherOverlay.setDepth(2110);
     this.weatherOverlay.setAlpha(0);
     this.weatherOverlay.setVisible(false);
+
+    if (this.textures.exists(RAIN_PARTICLE_TEXTURE_KEY)) {
+      this.rainEmitter = this.add.particles(0, 0, RAIN_PARTICLE_TEXTURE_KEY, {
+        emitting: false,
+        frequency: 22,
+        quantity: 2,
+        lifespan: { min: 700, max: 1100 },
+        speedY: { min: 760, max: 1220 },
+        speedX: { min: -180, max: -90 },
+        scale: { start: 0.22, end: 0.18 },
+        alpha: { start: 0.8, end: 0.35 },
+        blendMode: "NORMAL",
+        x: {
+          onEmit: () =>
+            Math.random() * ((this.scale.gameSize?.width || width) + 120) - 60,
+        },
+        y: {
+          onEmit: () => -Math.random() * 120 - 12,
+        },
+      });
+      this.rainEmitter.setScrollFactor(0);
+      this.rainEmitter.setDepth(2115);
+      this.rainEmitter.setVisible(false);
+      this.rainEmitter.__isHudObject = true;
+    } else {
+      this.rainEmitter = null;
+    }
+    this.rainEmitterActive = false;
+
     this.nightVisionOverlay = new NightVisionOverlay(this, {
       depth: 2120,
       blockedRatio:
@@ -1533,6 +1564,7 @@ export const gameSceneUiMethods = {
     });
 
     this.layoutWeatherUi(this.scale.gameSize);
+    this.setRainEmitterActive(false);
     this.setWeatherControlsVisible(false);
   },
 
@@ -1644,7 +1676,28 @@ export const gameSceneUiMethods = {
     this.weatherEventText.setVisible(true);
   },
 
+  setRainEmitterActive(active) {
+    const shouldEmit = Boolean(active) && Boolean(this.rainEmitter);
+    if (!this.rainEmitter) {
+      this.rainEmitterActive = false;
+      return;
+    }
+    if (this.rainEmitterActive === shouldEmit) return;
+
+    this.rainEmitterActive = shouldEmit;
+    this.rainEmitter.setVisible(shouldEmit);
+    if (shouldEmit) {
+      this.rainEmitter.start();
+    } else {
+      this.rainEmitter.stop(true);
+    }
+  },
+
   destroyWeatherUi() {
+    this.setRainEmitterActive(false);
+    this.rainEmitter?.destroy();
+    this.rainEmitter = null;
+    this.rainEmitterActive = false;
     this.weatherOverlay?.destroy();
     this.weatherOverlay = null;
     this.nightVisionOverlay?.destroy();

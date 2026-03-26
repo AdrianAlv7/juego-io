@@ -264,6 +264,9 @@ export const gameSceneGameplayMethods = {
     } else {
       this.moto.setWeatherEvent(null);
     }
+    this.setRainEmitterActive(
+      phase === "active" && config.type === WEATHER_EVENT_TYPES.RAIN
+    );
     this.refreshWeatherUi();
   },
 
@@ -271,6 +274,7 @@ export const gameSceneGameplayMethods = {
     this.weatherEvent = this.createEmptyWeatherEventState();
     this.moto?.setWeatherEvent(null);
     this.nightVisionOverlay?.setActive(false);
+    this.setRainEmitterActive(false);
     this.refreshWeatherUi();
   },
 
@@ -311,6 +315,11 @@ export const gameSceneGameplayMethods = {
       color: nightConfig.color ?? 0x000000,
       alpha: nightConfig.alpha ?? 1,
     });
+    this.setRainEmitterActive(
+      this.matchRunning &&
+        this.weatherEvent.phase === "active" &&
+        this.weatherEvent.type === WEATHER_EVENT_TYPES.RAIN
+    );
 
     this.refreshWeatherUi();
   },
