@@ -18,7 +18,6 @@ import {
 import { preloadActiveMapAssets } from "../../world/activeMap.js";
 import InputSystem from "../../systems/InputSystem.js";
 import MultiplayerSystem from "../../network/MultiplayerSystem.js";
-import appAudioManager from "../../ui/AppAudioManager.js";
 import {
   RESUME_STABILIZE_FRAMES,
   STARTUP_STABILIZE_FRAMES,
@@ -136,7 +135,6 @@ function registerShutdown(scene) {
     }
     scene.multiplayer?.destroy();
     scene.destroyGarageUi?.();
-    scene.destroySettingsUi?.();
     scene.destroyNameEntryUi();
     scene.destroyLeaveRoomUi();
     scene.destroyRoomShareUi();
@@ -182,7 +180,6 @@ export const gameSceneLifecycleMethods = {
     this.createLobbyReturnUi();
     this.createLeaveRoomUi();
     this.createRoomShareUi();
-    this.createSettingsUi?.();
     this.createNameEntryUi();
     this.createGarageUi?.();
     this.empPulseVisual = new EmpPulseVisual(this, { depth: 26 });
@@ -322,7 +319,6 @@ export const gameSceneLifecycleMethods = {
     this.statusBanner.setVisible(false);
     this.syncKeyboardCaptureState();
     this.renderLobbyState();
-    appAudioManager.enterLobby({ restartIntro: true });
   },
 
   setLobbyVisible(visible) {

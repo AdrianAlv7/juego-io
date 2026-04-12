@@ -1,7 +1,6 @@
 import "./hud.css";
 import { WEATHER_EVENT_TYPES } from "../events/weather/catalog.js";
 import { getItemLabel } from "../items/catalog.js";
-import appAudioManager from "./AppAudioManager.js";
 import { speedPxPerSecToKmh } from "../world/race/utils/telemetry.js";
 import { formatRaceTime } from "./hud/formatters.js";
 
@@ -130,7 +129,6 @@ export default class GameplayHudKitOverlay {
 
       <section class="ghuk-card ghuk-minimap">
         <div class="ghuk-minimap-title">Minimap</div>
-        <div class="ghuk-minimap-track" data-ref="gameTrackLabel">Partida: esperando</div>
         <div class="ghuk-minimap-canvas-wrap">
           <canvas data-ref="minimapCanvas"></canvas>
         </div>
@@ -265,7 +263,6 @@ export default class GameplayHudKitOverlay {
       banner: query("banner"),
       weatherEventText: query("weatherEventText"),
       minimapCanvas: query("minimapCanvas"),
-      gameTrackLabel: query("gameTrackLabel"),
       heatCard: query("heatCard"),
       heatFill: query("heatFill"),
       heatValue: query("heatValue"),
@@ -305,11 +302,6 @@ export default class GameplayHudKitOverlay {
     };
 
     this.minimapContext = this.refs.minimapCanvas.getContext("2d");
-    this.applyGameTrackLabel = (label) => {
-      if (!this.refs?.gameTrackLabel) return;
-      this.refs.gameTrackLabel.textContent = label || "Partida: silencio";
-    };
-    appAudioManager.setGameTrackLabelListener(this.applyGameTrackLabel);
   }
 
   attachHandlers() {
@@ -939,7 +931,6 @@ export default class GameplayHudKitOverlay {
 
   destroy() {
     this.scene.scale.off("resize", this.handleResize, this);
-    appAudioManager.setGameTrackLabelListener(null);
     this.weatherButtonHandlers.forEach(({ button, handler }) => {
       button.removeEventListener("click", handler);
     });
