@@ -6,6 +6,7 @@ import {
   WEATHER_EVENT_CONFIG,
   WEATHER_EVENT_TYPES,
 } from "../../events/weather/catalog.js";
+import appAudioManager from "../../ui/AppAudioManager.js";
 import { speedPxPerSecToKmh } from "../../world/race/utils/telemetry.js";
 import {
   CAMERA_DELTA_CAP_MS,
@@ -666,6 +667,7 @@ export const gameSceneGameplayMethods = {
 
     if (!this.finishSent && !this.matchEnded && this.map?.isMatchFinished?.()) {
       this.finishSent = true;
+      appAudioManager.handleGameLocalFinish();
       const stats = this.map?.getMatchStats?.(this.moto) || {};
       this.multiplayer?.emitFinishMatch(stats);
     }

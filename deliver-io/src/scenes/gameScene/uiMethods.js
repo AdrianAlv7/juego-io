@@ -14,12 +14,23 @@ import {
   WEATHER_EVENT_CONFIG,
   WEATHER_EVENT_TYPES,
 } from "../../events/weather/catalog.js";
+import appAudioManager from "../../ui/AppAudioManager.js";
+import LobbyMotoAmbientController from "../../ui/LobbyMotoAmbientController.js";
 import { ACTIVE_MAP } from "../../world/activeMap.js";
 import { USERNAME_MAX_LENGTH, WEATHER_UI_MARGIN } from "./constants.js";
 
 const RAIN_PARTICLE_TEXTURE_KEY = "weather-raindrop";
 const PLAYER_NAME_STORAGE_KEY = "deliver_player_name";
 const LEGACY_PLAYER_NAME_STORAGE_KEY = "repartidor_player_name";
+const LOBBY_TRACK_PREVIEW_LABELS = [
+  "start",
+  "drop1",
+  "drop2",
+  "dropInsano",
+  "end",
+  "intermedio",
+  "mt09",
+];
 
 function bindDomInputNode(scene, node, options = {}) {
   if (!node) return;
@@ -51,6 +62,16 @@ function normalizeTextValue(value) {
   return String(value ?? "");
 }
 
+function clampVolumeSetting(value, fallback = 1) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function formatVolumePercent(value) {
+  return `${Math.round(clampVolumeSetting(value) * 100)}%`;
+}
+
 function setLobbyButtonLabel(buttonNode, value) {
   if (!buttonNode) return;
   const normalized = normalizeTextValue(value);
@@ -62,6 +83,27 @@ function setLobbyButtonLabel(buttonNode, value) {
     buttonNode.appendChild(labelNode);
   }
   labelNode.textContent = normalized;
+}
+
+const AUDIO_TOGGLE_ICONS = {
+  music:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 3v12.55A4 4 0 1 1 14 12V7.2l-6 1.4v6.9A4 4 0 1 1 6 12V7l10-4z"/></svg>',
+  sfx:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 10.5V13.5H7.25L12 18V6L7.25 10.5H3ZM15.5 9.25A4.25 4.25 0 0 1 15.5 14.75L16.9 16.15A6.2 6.2 0 0 0 16.9 7.85L15.5 9.25ZM18.3 6.45A8.15 8.15 0 0 1 18.3 17.55L19.7 18.95A10.1 10.1 0 0 0 19.7 5.05L18.3 6.45Z"/></svg>',
+};
+
+function createAudioToggleButton(config) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `lhl-audio-toggle lhl-audio-toggle--${config.kind || "generic"}`;
+  button.innerHTML = `
+    <span class="lhl-audio-toggle-icon" aria-hidden="true">${AUDIO_TOGGLE_ICONS[config.kind] || ""}</span>
+    <span class="lhl-audio-toggle-meta">
+      <span class="lhl-audio-toggle-label">${config.label || "AUDIO"}</span>
+      <span class="lhl-audio-toggle-state">ON</span>
+    </span>
+  `;
+  return button;
 }
 
 function createDomTextProxy(node, options = {}) {
@@ -331,6 +373,7 @@ export const gameSceneUiMethods = {
       this.currentLobbyState?.roomType === "private" && Boolean(roomCode);
     const isHost = this.currentLobbyState?.hostId === this.multiplayer?.selfId;
     const showGarageButton = Boolean(this.isRegistered && !this.matchRunning);
+    const showSettingsButton = Boolean(this.isRegistered && !this.matchRunning);
     const showShareUi = Boolean(isPrivateRoom);
 
     if (this.garageQuickButton) {
@@ -342,9 +385,19 @@ export const gameSceneUiMethods = {
       this.garageQuickButton.style.display = showGarageButton ? "inline-flex" : "none";
     }
 
+    if (this.settingsQuickButton) {
+      if (this.lobbyGarageActionMount) {
+        if (this.settingsQuickButton.parentElement !== this.lobbyGarageActionMount) {
+          this.lobbyGarageActionMount.appendChild(this.settingsQuickButton);
+        }
+      }
+      this.settingsQuickButton.style.display = showSettingsButton ? "inline-flex" : "none";
+    }
+
     this.roomShareRoot.style.display = showShareUi ? "flex" : "none";
     if (this.lobbyGarageActionMount) {
-      this.lobbyGarageActionMount.style.display = showGarageButton ? "flex" : "none";
+      this.lobbyGarageActionMount.style.display =
+        showGarageButton || showSettingsButton ? "flex" : "none";
     }
 
     if (!showShareUi) {
@@ -487,10 +540,7 @@ export const gameSceneUiMethods = {
     this.privateCreateButton.addEventListener("click", submitCreatePrivate);
     this.privateJoinButton.addEventListener("click", submitJoinPrivate);
     this.extraActionButton.addEventListener("click", () => {
-      this.setLobbyMessage(
-        "Ajustes del lobby: pronto moveremos aqui selector de tablero, audio y HUD.",
-        "#8ad6ff"
-      );
+      this.openSettingsModal({ mode: "entry" });
     });
     this.futureActionButton.addEventListener("click", () => {
       this.openGarageModal({ mode: "entry" });
@@ -601,8 +651,16 @@ export const gameSceneUiMethods = {
     this.extraActionButton?.blur?.();
     this.futureActionButton?.blur?.();
     this.garageQuickButton?.blur?.();
+    this.settingsQuickButton?.blur?.();
     this.garageCloseButton?.blur?.();
     this.garageApplyButton?.blur?.();
+    this.settingsCloseButton?.blur?.();
+    this.settingsPreviewMusicButton?.blur?.();
+    this.settingsTrackPreviewButtons?.forEach((button) => button?.blur?.());
+    this.settingsSfxSlider?.blur?.();
+    this.settingsMusicSlider?.blur?.();
+    this.musicMuteToggleButton?.blur?.();
+    this.sfxMuteToggleButton?.blur?.();
     this.garageOptionButtons?.forEach((button) => button?.blur?.());
     this.syncKeyboardCaptureState();
   },
@@ -812,8 +870,115 @@ export const gameSceneUiMethods = {
     this.refreshGarageRosterUi();
   },
 
+  syncAudioToggleUi() {
+    const syncButton = (buttonNode, config) => {
+      if (!buttonNode) return;
+
+      const isMuted = Boolean(config.isMuted);
+      const stateNode = buttonNode.querySelector(".lhl-audio-toggle-state");
+      buttonNode.classList.toggle("is-muted", isMuted);
+      buttonNode.setAttribute("aria-pressed", isMuted ? "true" : "false");
+      buttonNode.setAttribute("aria-label", isMuted ? config.unmuteLabel : config.muteLabel);
+      buttonNode.title = isMuted ? config.unmuteLabel : config.muteLabel;
+
+      if (stateNode) {
+        stateNode.textContent = isMuted ? "OFF" : "ON";
+      }
+    };
+
+    syncButton(this.musicMuteToggleButton, {
+      isMuted: appAudioManager.getMusicMuted(),
+      muteLabel: "Silenciar musica del lobby",
+      unmuteLabel: "Activar musica del lobby",
+    });
+    syncButton(this.sfxMuteToggleButton, {
+      isMuted: appAudioManager.getSfxMuted(),
+      muteLabel: "Silenciar efectos",
+      unmuteLabel: "Activar efectos",
+    });
+  },
+
+  syncSettingsUi() {
+    if (!this.settingsRoot) return;
+
+    const sfxVolume = clampVolumeSetting(appAudioManager.getSfxVolume(), 0.75);
+    const musicVolume = clampVolumeSetting(appAudioManager.getMusicVolume(), 0.75);
+
+    if (this.settingsSfxSlider) {
+      this.settingsSfxSlider.value = String(Math.round(sfxVolume * 100));
+    }
+    if (this.settingsSfxValue) {
+      this.settingsSfxValue.textContent = formatVolumePercent(sfxVolume);
+    }
+
+    if (this.settingsMusicSlider) {
+      this.settingsMusicSlider.value = String(Math.round(musicVolume * 100));
+    }
+    if (this.settingsMusicValue) {
+      this.settingsMusicValue.textContent = formatVolumePercent(musicVolume);
+    }
+
+    this.syncAudioToggleUi();
+  },
+
+  openSettingsModal(options = {}) {
+    if (!this.settingsRoot) return;
+
+    this.closeGarageModal({ apply: false, silent: true });
+
+    const mode = options.mode === "entry" ? "entry" : "lobby";
+    this.settingsOpenMode = mode;
+    this.settingsRoot.classList.toggle("is-entry-mode", mode === "entry");
+    this.lobbyCardNode?.classList.toggle("is-settings-screen", mode === "entry");
+    this.settingsRoot.style.display = "flex";
+    this.settingsRoot.classList.add("is-open");
+    this.syncSettingsUi();
+
+    if (mode === "entry" && this.nameEntryRoot) {
+      this.nameEntryRoot.style.display = "none";
+    }
+
+    this.setLobbyMessage(
+      mode === "entry"
+        ? "Ajustes abiertos: cambia volumen y cierra para volver."
+        : "Ajustes abiertos: volumen de efectos y musica del lobby.",
+      "#f1b7ff"
+    );
+    this.blurNameEntry();
+    this.syncKeyboardCaptureState();
+  },
+
+  closeSettingsModal(options = {}) {
+    const { silent = false } = options;
+    if (!this.settingsRoot) return;
+
+    const openMode = this.settingsOpenMode || "lobby";
+    this.settingsRoot.classList.remove("is-open");
+    this.settingsRoot.classList.remove("is-entry-mode");
+    this.settingsRoot.style.display = "none";
+    this.lobbyCardNode?.classList.remove("is-settings-screen");
+
+    if (openMode === "entry" && this.nameEntryRoot && !this.isRegistered) {
+      this.nameEntryRoot.style.display = "flex";
+      this.setNameEntryMode("main");
+      this.extraActionButton?.focus?.();
+    }
+
+    if (!silent) {
+      this.setLobbyMessage(
+        this.isRegistered
+          ? "Ajustes cerrados. Los cambios quedaron guardados."
+          : "Escribe username y elige publica o privada."
+      );
+    }
+
+    this.settingsOpenMode = "lobby";
+    this.syncKeyboardCaptureState();
+  },
+
   openGarageModal(options = {}) {
     if (!this.garageRoot) return;
+    this.closeSettingsModal({ silent: true });
     const mode = options.mode === "entry" ? "entry" : "lobby";
     this.garageOpenMode = mode;
     this.garageWorkingMotoId = getGarageMotoById(this.selectedGarageMotoId).id;
@@ -877,6 +1042,297 @@ export const gameSceneUiMethods = {
     this.refreshLobbyGaragePreview();
     this.garageOpenMode = "lobby";
     this.syncKeyboardCaptureState();
+  },
+
+  createSettingsUi() {
+    if (!this.lobbyCardNode) return;
+
+    this.settingsRoot = document.createElement("div");
+    this.settingsRoot.className = "lhl-settings-modal";
+    this.settingsRoot.style.display = "none";
+
+    const backdrop = document.createElement("button");
+    backdrop.type = "button";
+    backdrop.className = "lhl-settings-backdrop";
+    backdrop.setAttribute("aria-label", "Cerrar ajustes");
+    backdrop.addEventListener("click", () => {
+      this.closeSettingsModal();
+    });
+
+    const shell = document.createElement("div");
+    shell.className = "lhl-settings-shell";
+
+    const header = document.createElement("div");
+    header.className = "lhl-settings-header";
+
+    const eyebrow = document.createElement("div");
+    eyebrow.className = "lhl-settings-eyebrow";
+    eyebrow.textContent = "Ajustes";
+
+    const title = document.createElement("div");
+    title.className = "lhl-settings-title";
+    title.textContent = "Audio del lobby";
+
+    const subtitle = document.createElement("div");
+    subtitle.className = "lhl-settings-subtitle";
+    subtitle.textContent =
+      "Controla efectos y musica. Los cambios se aplican y se guardan al instante.";
+
+    header.appendChild(eyebrow);
+    header.appendChild(title);
+    header.appendChild(subtitle);
+
+    const createVolumeCard = (config) => {
+      const card = document.createElement("section");
+      card.className = `lhl-settings-card ${config.cardClass || ""}`.trim();
+
+      const cardTitle = document.createElement("div");
+      cardTitle.className = "lhl-settings-card-title";
+      cardTitle.textContent = config.title;
+
+      const cardDescription = document.createElement("div");
+      cardDescription.className = "lhl-settings-card-description";
+      cardDescription.textContent = config.description;
+
+      const controlWrap = document.createElement("div");
+      controlWrap.className = "lhl-settings-control";
+
+      const topRow = document.createElement("div");
+      topRow.className = "lhl-settings-control-top";
+
+      const label = document.createElement("div");
+      label.className = "lhl-settings-label";
+      label.textContent = config.label;
+
+      const value = document.createElement("div");
+      value.className = "lhl-settings-value";
+      value.textContent = "0%";
+
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = "0";
+      slider.max = "100";
+      slider.step = "1";
+      slider.className = "lhl-settings-slider";
+
+      topRow.appendChild(label);
+      topRow.appendChild(value);
+      controlWrap.appendChild(topRow);
+      controlWrap.appendChild(slider);
+      card.appendChild(cardTitle);
+      card.appendChild(cardDescription);
+      card.appendChild(controlWrap);
+
+      return { card, slider, value };
+    };
+
+    const settingsGrid = document.createElement("div");
+    settingsGrid.className = "lhl-settings-grid";
+
+    const musicCard = createVolumeCard({
+      cardClass: "lhl-settings-card--music",
+      title: "Musica del lobby",
+      description:
+        "Intro fija al entrar y transiciones suaves entre variaciones del track del lobby.",
+      label: "Volumen music",
+    });
+    this.settingsMusicSlider = musicCard.slider;
+    this.settingsMusicValue = musicCard.value;
+
+    const sfxCard = createVolumeCard({
+      cardClass: "lhl-settings-card--sfx",
+      title: "Efectos de interfaz",
+      description:
+        "Hover, click y teclado. El control afecta los sonidos cortos del UI en todo el lobby.",
+      label: "Volumen SFX",
+    });
+    this.settingsSfxSlider = sfxCard.slider;
+    this.settingsSfxValue = sfxCard.value;
+
+    settingsGrid.appendChild(musicCard.card);
+    settingsGrid.appendChild(sfxCard.card);
+
+    const previewCard = document.createElement("section");
+    previewCard.className = "lhl-settings-card lhl-settings-card--preview";
+
+    const previewTitle = document.createElement("div");
+    previewTitle.className = "lhl-settings-card-title";
+    previewTitle.textContent = "Pruebas de pista";
+
+    const previewDescription = document.createElement("div");
+    previewDescription.className = "lhl-settings-card-description";
+    previewDescription.textContent =
+      "Lanza una pista especifica para revisar audio y las motos decorativas sin esperar la rotacion.";
+
+    const previewGrid = document.createElement("div");
+    previewGrid.className = "lhl-settings-preview-grid";
+
+    this.settingsTrackPreviewButtons = LOBBY_TRACK_PREVIEW_LABELS.map((trackLabel) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "lhl-btn lhl-btn-minimal lhl-settings-track-btn";
+      setLobbyButtonLabel(button, trackLabel);
+      button.addEventListener("click", () => {
+        if (appAudioManager.getMusicMuted()) {
+          appAudioManager.setMusicMuted(false);
+        }
+        appAudioManager.previewLobbyTrack(trackLabel);
+        this.syncAudioToggleUi();
+        this.syncSettingsUi();
+      });
+      bindDomInputNode(this, button);
+      previewGrid.appendChild(button);
+      return button;
+    });
+
+    previewCard.appendChild(previewTitle);
+    previewCard.appendChild(previewDescription);
+    previewCard.appendChild(previewGrid);
+    settingsGrid.appendChild(previewCard);
+
+    const note = document.createElement("div");
+    note.className = "lhl-settings-note";
+    note.textContent =
+      "Tip: si el navegador bloquea autoplay, la musica arrancara al primer click o tecla.";
+
+    const footer = document.createElement("div");
+    footer.className = "lhl-settings-footer";
+
+    this.settingsPreviewMusicButton = document.createElement("button");
+    this.settingsPreviewMusicButton.type = "button";
+    this.settingsPreviewMusicButton.className = "lhl-btn lhl-btn-alt lhl-settings-preview-btn";
+    setLobbyButtonLabel(this.settingsPreviewMusicButton, "Iniciar musica");
+    this.settingsPreviewMusicButton.addEventListener("click", () => {
+      if (appAudioManager.getMusicMuted()) {
+        appAudioManager.setMusicMuted(false);
+      }
+      appAudioManager.restartLobbyMusic();
+      this.syncAudioToggleUi();
+      this.syncSettingsUi();
+    });
+
+    this.settingsCloseButton = document.createElement("button");
+    this.settingsCloseButton.type = "button";
+    this.settingsCloseButton.className = "lhl-btn lhl-btn-minimal lhl-settings-close-btn";
+    setLobbyButtonLabel(this.settingsCloseButton, "Cerrar");
+    this.settingsCloseButton.addEventListener("click", () => {
+      this.closeSettingsModal();
+    });
+
+    const applySliderValue = (slider, setter, valueNode) => {
+      const normalized = clampVolumeSetting(Number(slider.value || 0) / 100, 1);
+      setter(normalized);
+      if (valueNode) {
+        valueNode.textContent = formatVolumePercent(normalized);
+      }
+    };
+
+    this.settingsMusicSlider.addEventListener("input", () => {
+      applySliderValue(
+        this.settingsMusicSlider,
+        (value) => appAudioManager.setMusicVolume(value),
+        this.settingsMusicValue
+      );
+    });
+    this.settingsSfxSlider.addEventListener("input", () => {
+      applySliderValue(
+        this.settingsSfxSlider,
+        (value) => appAudioManager.setSfxVolume(value),
+        this.settingsSfxValue
+      );
+    });
+
+    bindDomInputNode(this, this.settingsMusicSlider);
+    bindDomInputNode(this, this.settingsSfxSlider);
+    bindDomInputNode(this, this.settingsPreviewMusicButton);
+    bindDomInputNode(this, this.settingsCloseButton);
+
+    footer.appendChild(this.settingsPreviewMusicButton);
+    footer.appendChild(this.settingsCloseButton);
+
+    shell.appendChild(header);
+    shell.appendChild(settingsGrid);
+    shell.appendChild(note);
+    shell.appendChild(footer);
+
+    this.settingsRoot.appendChild(backdrop);
+    this.settingsRoot.appendChild(shell);
+    this.lobbyCardNode.appendChild(this.settingsRoot);
+
+    this.settingsQuickButton = document.createElement("button");
+    this.settingsQuickButton.type = "button";
+    this.settingsQuickButton.className = "lhl-btn lhl-btn-settings lhl-btn-share";
+    this.settingsQuickButton.style.display = "none";
+    setLobbyButtonLabel(this.settingsQuickButton, "Ajustes");
+    this.settingsQuickButton.addEventListener("click", () => {
+      this.openSettingsModal({ mode: "lobby" });
+    });
+    bindDomInputNode(this, this.settingsQuickButton);
+    this.lobbyGarageActionMount?.appendChild(this.settingsQuickButton);
+
+    this.syncSettingsUi();
+  },
+
+  createAudioToggleUi() {
+    if (!this.lobbyRoot || this.audioDockRoot) return;
+
+    this.audioDockRoot = document.createElement("div");
+    this.audioDockRoot.className = "lhl-audio-dock";
+
+    this.musicMuteToggleButton = createAudioToggleButton({
+      kind: "music",
+      label: "MUS",
+    });
+    this.musicMuteToggleButton.addEventListener("click", () => {
+      appAudioManager.toggleMusicMuted();
+      this.syncAudioToggleUi();
+      this.syncSettingsUi();
+    });
+
+    this.sfxMuteToggleButton = createAudioToggleButton({
+      kind: "sfx",
+      label: "SFX",
+    });
+    this.sfxMuteToggleButton.addEventListener("click", () => {
+      appAudioManager.toggleSfxMuted();
+      this.syncAudioToggleUi();
+      this.syncSettingsUi();
+    });
+
+    bindDomInputNode(this, this.musicMuteToggleButton);
+    bindDomInputNode(this, this.sfxMuteToggleButton);
+
+    this.lobbyTrackDebugNode = document.createElement("div");
+    this.lobbyTrackDebugNode.className = "lhl-track-debug";
+    this.lobbyTrackDebugNode.textContent = appAudioManager.getLobbyTrackLabel();
+
+    this.audioDockRoot.appendChild(this.musicMuteToggleButton);
+    this.audioDockRoot.appendChild(this.sfxMuteToggleButton);
+    this.lobbyRoot.appendChild(this.audioDockRoot);
+    this.lobbyRoot.appendChild(this.lobbyTrackDebugNode);
+
+    const applyTrackLabel = (label) => {
+      if (!this.lobbyTrackDebugNode) return;
+      this.lobbyTrackDebugNode.textContent = label || "Musica: silencio";
+    };
+    const applyTrackState = (state) => {
+      this.lobbyMotoAmbientController?.setTrackState(state);
+    };
+
+    appAudioManager.setLobbyTrackLabelListener(applyTrackLabel);
+    appAudioManager.setLobbyTrackStateListener(applyTrackState);
+    this.syncAudioToggleUi();
+  },
+
+  destroyAudioToggleUi() {
+    appAudioManager.setLobbyTrackLabelListener(null);
+    appAudioManager.setLobbyTrackStateListener(null);
+    this.audioDockRoot?.remove?.();
+    this.lobbyTrackDebugNode?.remove?.();
+    this.audioDockRoot = null;
+    this.musicMuteToggleButton = null;
+    this.sfxMuteToggleButton = null;
+    this.lobbyTrackDebugNode = null;
   },
 
   createGarageUi() {
@@ -1108,6 +1564,7 @@ export const gameSceneUiMethods = {
     this.currentLobbyState = null;
     this.pendingRoomMode = "public";
     this.closeGarageModal({ apply: false, silent: true });
+    this.closeSettingsModal({ silent: true });
     this.lobbyCardNode?.classList.remove("is-private-room", "is-public-room");
     this.setLobbyVisible(true);
     this.setLeaveRoomUiVisible(false);
@@ -1178,6 +1635,24 @@ export const gameSceneUiMethods = {
     this.garageApplyButton = null;
     this.garageOptionButtons = [];
     this.garageWorkingMotoId = null;
+  },
+
+  destroySettingsUi() {
+    if (!this.settingsRoot) return;
+    this.settingsRoot.remove();
+    this.settingsRoot = null;
+    this.settingsOpenMode = "lobby";
+    this.settingsCloseButton = null;
+    this.settingsPreviewMusicButton = null;
+    this.settingsTrackPreviewButtons = [];
+    this.settingsSfxSlider = null;
+    this.settingsSfxValue = null;
+    this.settingsMusicSlider = null;
+    this.settingsMusicValue = null;
+    this.settingsQuickButton?.remove?.();
+    this.settingsQuickButton = null;
+    this.lobbyCardNode?.classList.remove("is-settings-screen");
+    this.syncKeyboardCaptureState();
   },
 
   destroyLeaveRoomUi() {
@@ -1743,6 +2218,8 @@ export const gameSceneUiMethods = {
     this.lobbyGarageActionMount = query("garageActionMount");
     this.lobbyGarageSpotlightNode = query("garageSpotlight");
     this.lobbyPlayersPanelNode = playersPanelNode;
+    this.lobbyMotoAmbientController = new LobbyMotoAmbientController(this.lobbyRoot);
+    this.createAudioToggleUi();
 
     const renderPlayersPanel = (rawValue) => {
       if (!playersPanelNode) return;
@@ -1867,6 +2344,9 @@ export const gameSceneUiMethods = {
 
   destroyLobbyUi() {
     if (!this.lobbyRoot) return;
+    this.destroyAudioToggleUi();
+    this.lobbyMotoAmbientController?.destroy?.();
+    this.lobbyMotoAmbientController = null;
     this.lobbyRoot.remove();
     this.lobbyRoot = null;
     this.lobbyCardNode = null;
