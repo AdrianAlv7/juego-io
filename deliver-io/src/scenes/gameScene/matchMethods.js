@@ -3,7 +3,6 @@
 import Moto from "../../entities/moto.js";
 import { getGarageMotoById } from "../../garage/catalog.js";
 import { createInventoryState } from "../../items/catalog.js";
-import appAudioManager from "../../ui/AppAudioManager.js";
 import { ACTIVE_MAP } from "../../world/activeMap.js";
 import GameplayHudKitOverlay from "../../ui/GameplayHudKitOverlay.js";
 import {
@@ -33,6 +32,7 @@ function createMatchMap(scene, objectiveSeed) {
       scene.shieldEffectSystem?.interceptMotoDamage?.(damage) ?? damage,
     packageDamageInterceptor: (damage) =>
       scene.shieldEffectSystem?.interceptPackageDamage?.(damage) ?? damage,
+<<<<<<< HEAD
     onObjectiveCompleted: (completed) => {
       scene.routeRewardSystem?.handleCompletedObjective?.(completed);
       appAudioManager.handleGameObjectiveCompleted(completed);
@@ -40,6 +40,10 @@ function createMatchMap(scene, objectiveSeed) {
     onObjectiveServiceStarted: (started) => {
       appAudioManager.handleGameObjectiveServiceStarted(started);
     },
+=======
+    onObjectiveCompleted: (completed) =>
+      scene.routeRewardSystem?.handleCompletedObjective?.(completed),
+>>>>>>> 1eae6d0f87dfdceea6323bbca00b05aaea46e70a
   });
 }
 
@@ -300,7 +304,6 @@ export const gameSceneMatchMethods = {
 
   onGameStarted(payload = {}) {
     if (this.matchRunning) return;
-    this.closeSettingsModal?.({ silent: true });
 
     const players = payload.players || {};
     const objectiveSeed = Number(payload.startedAt || Date.now());
@@ -369,7 +372,10 @@ export const gameSceneMatchMethods = {
     this.updateRoomShareUi();
     this.statusBanner.setVisible(false);
     this.syncKeyboardCaptureState();
+<<<<<<< HEAD
     appAudioManager.startGameMusic({ fadeOutMs: 220 });
+=======
+>>>>>>> 1eae6d0f87dfdceea6323bbca00b05aaea46e70a
   },
 
   onFinishWindowStarted(payload = {}) {

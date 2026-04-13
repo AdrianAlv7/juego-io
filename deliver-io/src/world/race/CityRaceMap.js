@@ -45,8 +45,11 @@ export default class CityRaceMap {
     this.objectives = new ObjectiveSystem(scene, {
       basePoint: this.basePoint,
       orders: CITY_RACE_LAYOUT.orders,
+<<<<<<< HEAD
       onObjectiveCompleted: options.onObjectiveCompleted,
       onObjectiveServiceStarted: options.onObjectiveServiceStarted,
+=======
+>>>>>>> 1eae6d0f87dfdceea6323bbca00b05aaea46e70a
       radii: {
         pickupRadius: CITY_RACE_TUNING.pickupRadius,
         dropoffRadius: CITY_RACE_TUNING.dropoffRadius,

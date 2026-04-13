@@ -42,55 +42,12 @@
 .lhl-wrap {
   position: absolute;
   inset: 0;
-  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   gap: 18px;
   padding: 18px clamp(20px, 3vw, 40px) 28px;
-}
-
-.lhl-moto-ambient-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.lhl-moto-ambient-bike {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: clamp(112px, 9vw, 156px);
-  opacity: 0;
-  pointer-events: none;
-  user-select: none;
-  will-change: transform, opacity;
-  filter:
-    drop-shadow(0 12px 20px rgba(0, 0, 0, 0.3))
-    drop-shadow(0 0 16px rgba(120, 180, 255, 0.12));
-}
-
-.lhl-moto-ambient-bike.is-overlay {
-  width: clamp(132px, 10vw, 182px);
-  filter:
-    drop-shadow(0 14px 22px rgba(0, 0, 0, 0.34))
-    drop-shadow(0 0 24px rgba(255, 185, 100, 0.18));
-}
-
-.lhl-moto-ambient-bike.is-donut {
-  width: clamp(122px, 9.5vw, 170px);
-  filter:
-    drop-shadow(0 14px 24px rgba(0, 0, 0, 0.34))
-    drop-shadow(0 0 20px rgba(170, 130, 255, 0.18));
-}
-
-.lhl-moto-ambient-bike.is-cross {
-  filter:
-    drop-shadow(0 12px 18px rgba(0, 0, 0, 0.28))
-    drop-shadow(0 0 16px rgba(115, 215, 255, 0.14));
 }
 
 .lhl-logo {
@@ -123,8 +80,7 @@
   pointer-events: auto;
 }
 
-.lhl-card.is-garage-screen,
-.lhl-card.is-settings-screen {
+.lhl-card.is-garage-screen {
   width: min(1480px, calc(100vw - 18px));
   height: clamp(720px, calc(100vh - 110px), 900px);
   max-height: none;
@@ -190,10 +146,8 @@
 .lhl-garage-side-action {
   display: none;
   width: 100%;
-  align-items: stretch;
+  align-items: center;
   justify-content: flex-start;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .lhl-garage-side-action .lhl-btn-share {
@@ -950,252 +904,6 @@
   display: none;
 }
 
-.lhl-settings-modal {
-  position: absolute;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  z-index: 8;
-  pointer-events: none;
-}
-
-.lhl-settings-modal.is-open {
-  pointer-events: auto;
-}
-
-.lhl-settings-modal.is-entry-mode {
-  padding: 0;
-  align-items: stretch;
-  justify-content: stretch;
-}
-
-.lhl-settings-modal.is-entry-mode .lhl-settings-backdrop {
-  display: none;
-}
-
-.lhl-settings-modal.is-entry-mode .lhl-settings-shell {
-  position: absolute;
-  inset: 0;
-  width: auto;
-  min-height: auto;
-  max-height: none;
-  border-radius: 30px;
-  padding: 34px 42px 30px;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 24px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 86% 16%, rgba(255, 90, 170, 0.14), transparent 20%),
-    radial-gradient(circle at 16% 84%, rgba(70, 182, 255, 0.08), transparent 18%),
-    linear-gradient(160deg, rgba(10, 16, 26, 0.99) 0%, rgba(18, 20, 36, 0.99) 55%, rgba(28, 14, 42, 0.99) 100%);
-}
-
-.lhl-settings-backdrop {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-  background:
-    radial-gradient(circle at top right, rgba(255, 112, 196, 0.16), transparent 24%),
-    rgba(5, 8, 15, 0.78);
-  backdrop-filter: blur(8px);
-}
-
-.lhl-settings-shell {
-  position: relative;
-  width: min(940px, calc(100% - 12px));
-  border-radius: 26px;
-  border: 1px solid rgba(178, 144, 211, 0.24);
-  padding: 28px;
-  background:
-    linear-gradient(160deg, rgba(16, 18, 31, 0.97) 0%, rgba(18, 24, 40, 0.97) 56%, rgba(31, 17, 42, 0.97) 100%);
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 0 0 1px rgba(255, 120, 196, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  pointer-events: auto;
-}
-
-.lhl-settings-header {
-  text-align: center;
-}
-
-.lhl-settings-eyebrow {
-  color: #ffb4db;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.lhl-settings-title {
-  margin-top: 4px;
-  color: #f8fbff;
-  font-size: clamp(28px, 3vw, 46px);
-  font-weight: 800;
-  text-shadow: 0 0 20px rgba(255, 111, 190, 0.16);
-}
-
-.lhl-settings-subtitle {
-  margin-top: 8px;
-  color: #a7b3c6;
-  font-size: clamp(14px, 1.15vw, 18px);
-  letter-spacing: 0.05em;
-  line-height: 1.45;
-}
-
-.lhl-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.lhl-settings-card {
-  min-height: 250px;
-  border-radius: 24px;
-  border: 1px solid rgba(122, 138, 177, 0.28);
-  padding: 20px;
-  background:
-    linear-gradient(155deg, rgba(20, 28, 42, 0.96) 0%, rgba(11, 18, 28, 0.96) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 16px 34px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.lhl-settings-card--music {
-  background:
-    radial-gradient(circle at top right, rgba(255, 183, 86, 0.16), transparent 28%),
-    linear-gradient(155deg, rgba(33, 25, 49, 0.96) 0%, rgba(17, 18, 35, 0.96) 100%);
-}
-
-.lhl-settings-card--sfx {
-  background:
-    radial-gradient(circle at top right, rgba(86, 205, 255, 0.16), transparent 28%),
-    linear-gradient(155deg, rgba(19, 30, 45, 0.96) 0%, rgba(11, 18, 28, 0.96) 100%);
-}
-
-.lhl-settings-card--preview {
-  grid-column: 1 / -1;
-  background:
-    radial-gradient(circle at top right, rgba(255, 118, 118, 0.14), transparent 26%),
-    linear-gradient(155deg, rgba(28, 24, 40, 0.96) 0%, rgba(13, 16, 29, 0.96) 100%);
-}
-
-.lhl-settings-card-title {
-  color: #eef4ff;
-  font-size: clamp(22px, 1.8vw, 30px);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.lhl-settings-card-description {
-  color: #afbdd2;
-  font-size: 15px;
-  line-height: 1.45;
-  min-height: 66px;
-}
-
-.lhl-settings-preview-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: auto;
-}
-
-.lhl-settings-track-btn {
-  min-width: 0;
-  min-height: 66px;
-  height: 66px;
-  padding: 0 16px;
-}
-
-.lhl-settings-track-btn .lhl-btn-label {
-  font-size: clamp(15px, 1.1vw, 18px);
-  letter-spacing: 0.08em;
-}
-
-.lhl-settings-control {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.lhl-settings-control-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.lhl-settings-label {
-  color: #ffd896;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.lhl-settings-value {
-  color: #f8fbff;
-  font-size: 24px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.lhl-settings-slider {
-  width: 100%;
-  accent-color: #ff6fbf;
-  cursor: pointer;
-}
-
-.lhl-settings-card--sfx .lhl-settings-slider {
-  accent-color: #6cd8ff;
-}
-
-.lhl-settings-note {
-  color: #9db0c7;
-  font-size: 13px;
-  line-height: 1.45;
-  text-align: center;
-}
-
-.lhl-settings-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.lhl-settings-preview-btn {
-  min-width: 240px;
-  min-height: 82px;
-  height: 82px;
-}
-
-.lhl-settings-close-btn {
-  min-width: 180px;
-  min-height: 82px;
-  height: 82px;
-}
-
-.lhl-card.is-settings-screen > :not(.lhl-settings-modal) {
-  display: none;
-}
-
 .lhl-garage-stage::before {
   content: "";
   position: absolute;
@@ -1687,166 +1395,6 @@
   height: 84px;
 }
 
-.lhl-audio-dock {
-  position: absolute;
-  right: clamp(16px, 2.4vw, 30px);
-  bottom: clamp(16px, 2.4vw, 26px);
-  z-index: 8;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  pointer-events: auto;
-}
-
-.lhl-track-debug {
-  position: absolute;
-  left: clamp(16px, 2.4vw, 30px);
-  bottom: clamp(16px, 2.4vw, 26px);
-  z-index: 8;
-  min-width: 180px;
-  max-width: min(440px, calc(100vw - 170px));
-  padding: 10px 14px;
-  border: 1px solid rgba(155, 176, 199, 0.22);
-  border-radius: 14px;
-  background: rgba(8, 13, 24, 0.82);
-  color: #dce7f5;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 10px 24px rgba(4, 10, 18, 0.28);
-  pointer-events: none;
-  backdrop-filter: blur(10px);
-}
-
-.lhl-audio-toggle {
-  position: relative;
-  overflow: hidden;
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 138px;
-  min-height: 66px;
-  padding: 12px 14px;
-  border: 1px solid rgba(153, 173, 204, 0.24);
-  border-radius: 20px;
-  background:
-    linear-gradient(160deg, rgba(14, 20, 33, 0.92) 0%, rgba(8, 13, 24, 0.94) 100%);
-  color: #f5f8ff;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 14px 28px rgba(4, 10, 18, 0.36);
-  transition:
-    transform 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    filter 0.2s ease;
-}
-
-.lhl-audio-toggle::before {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 46%);
-  pointer-events: none;
-}
-
-.lhl-audio-toggle:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.48);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 16px 34px rgba(4, 10, 18, 0.44),
-    0 0 20px rgba(110, 174, 255, 0.18);
-  filter: brightness(1.04);
-}
-
-.lhl-audio-toggle:focus-visible {
-  outline: none;
-  border-color: rgba(155, 240, 190, 0.92);
-  box-shadow:
-    0 0 0 1px rgba(155, 240, 190, 0.35),
-    0 0 20px rgba(155, 240, 190, 0.3),
-    0 12px 26px rgba(4, 10, 18, 0.4);
-}
-
-.lhl-audio-toggle.is-muted {
-  border-color: rgba(255, 144, 144, 0.36);
-  background:
-    linear-gradient(160deg, rgba(33, 17, 24, 0.94) 0%, rgba(17, 9, 15, 0.96) 100%);
-}
-
-.lhl-audio-toggle-icon {
-  position: relative;
-  z-index: 1;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  color: #fff4d4;
-  background: linear-gradient(155deg, rgba(255, 183, 86, 0.24), rgba(255, 111, 191, 0.14));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 16px rgba(8, 14, 22, 0.28);
-}
-
-.lhl-audio-toggle--sfx .lhl-audio-toggle-icon {
-  color: #d8f6ff;
-  background: linear-gradient(155deg, rgba(86, 205, 255, 0.22), rgba(77, 124, 255, 0.14));
-}
-
-.lhl-audio-toggle-icon svg {
-  width: 22px;
-  height: 22px;
-}
-
-.lhl-audio-toggle.is-muted .lhl-audio-toggle-icon::after {
-  content: "";
-  position: absolute;
-  width: 34px;
-  height: 3px;
-  border-radius: 999px;
-  background: #ff8a8a;
-  box-shadow: 0 0 10px rgba(255, 138, 138, 0.46);
-  transform: rotate(-38deg);
-}
-
-.lhl-audio-toggle-meta {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.lhl-audio-toggle-label {
-  color: #99adc6;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-
-.lhl-audio-toggle-state {
-  color: #f6faff;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  line-height: 1;
-}
-
-.lhl-audio-toggle.is-muted .lhl-audio-toggle-state {
-  color: #ffb0b0;
-}
-
 .lhl-entry-help {
   color: #a9bfd6;
   font-size: 12px;
@@ -1964,24 +1512,13 @@
     padding: 10px;
   }
 
-  .lhl-settings-modal {
-    padding: 10px;
-  }
-
   .lhl-garage-shell {
     width: 100%;
     padding: 20px 16px 18px;
     gap: 18px;
   }
 
-  .lhl-settings-shell {
-    width: 100%;
-    padding: 20px 16px 18px;
-    gap: 18px;
-  }
-
-  .lhl-card.is-garage-screen,
-  .lhl-card.is-settings-screen {
+  .lhl-card.is-garage-screen {
     width: calc(100vw - 20px);
     height: auto;
     min-height: calc(100vh - 120px);
@@ -1994,31 +1531,6 @@
   .lhl-garage-body {
     grid-template-columns: 1fr;
     gap: 18px;
-  }
-
-  .lhl-settings-grid {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-
-  .lhl-settings-card {
-    min-height: 0;
-    padding: 16px;
-  }
-
-  .lhl-settings-card-description {
-    min-height: 0;
-  }
-
-  .lhl-settings-preview-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .lhl-settings-track-btn {
-    min-height: 54px;
-    height: 54px;
-    padding: 0 12px;
   }
 
   .lhl-garage-stage {
@@ -2056,54 +1568,6 @@
     min-width: 140px;
     min-height: 58px;
     height: 58px;
-  }
-
-  .lhl-settings-close-btn {
-    min-width: 140px;
-    min-height: 58px;
-    height: 58px;
-  }
-
-  .lhl-settings-preview-btn {
-    min-width: 180px;
-    min-height: 58px;
-    height: 58px;
-  }
-
-  .lhl-audio-dock {
-    right: 12px;
-    bottom: 12px;
-    flex-direction: row;
-    gap: 10px;
-  }
-
-  .lhl-track-debug {
-    left: 12px;
-    bottom: 12px;
-    max-width: calc(100vw - 168px);
-    padding: 9px 12px;
-    font-size: 11px;
-  }
-
-  .lhl-audio-toggle {
-    min-width: 116px;
-    min-height: 58px;
-    padding: 10px 12px;
-    border-radius: 18px;
-  }
-
-  .lhl-audio-toggle::before {
-    border-radius: 16px;
-  }
-
-  .lhl-audio-toggle-icon {
-    width: 34px;
-    height: 34px;
-    border-radius: 12px;
-  }
-
-  .lhl-audio-toggle-state {
-    font-size: 16px;
   }
 
   .lhl-share-actions {
