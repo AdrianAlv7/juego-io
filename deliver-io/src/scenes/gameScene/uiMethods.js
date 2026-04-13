@@ -23,13 +23,20 @@ const RAIN_PARTICLE_TEXTURE_KEY = "weather-raindrop";
 const PLAYER_NAME_STORAGE_KEY = "deliver_player_name";
 const LEGACY_PLAYER_NAME_STORAGE_KEY = "repartidor_player_name";
 const LOBBY_TRACK_PREVIEW_LABELS = [
-  "start",
-  "drop1",
-  "drop2",
-  "dropInsano",
+  "intro",
+  "drop1-1",
+  "drop1-2",
+  "drop1-3",
+  "drop1-4",
+  "drop1-5 moto",
+  "drop1-6 moto",
+  "drop1-end",
+  "antes dropinsano",
+  "dropinsano1-1",
+  "dropinsano1-2",
+  "dropinsano1-end",
   "end",
   "intermedio",
-  "mt09",
 ];
 
 function bindDomInputNode(scene, node, options = {}) {

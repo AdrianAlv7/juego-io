@@ -1,7 +1,23 @@
 import { GARAGE_MOTOS } from "../garage/catalog.js";
 
-const REGULAR_PASS_TRACKS = new Set(["drop1", "drop2", "end"]);
-const DONUT_TRACK = "dropInsano";
+const REGULAR_PASS_TRACKS = new Set([
+  "intro",
+  "drop1-1",
+  "drop1-2",
+  "drop1-3",
+  "drop1-4",
+  "drop1-5 moto",
+  "drop1-6 moto",
+  "drop1-end",
+  "end",
+]);
+const MOTO_ACCENT_TRACKS = new Set(["drop1-5 moto", "drop1-6 moto"]);
+const DONUT_TRACKS = new Set([
+  "antes dropinsano",
+  "dropinsano1-1",
+  "dropinsano1-2",
+  "dropinsano1-end",
+]);
 const CROSS_TRACK = "intermedio";
 // Sube o baja este tope si quieres mas o menos trafico simultaneo en tracks normales.
 const MAX_REGULAR_ACTORS = 4;
@@ -327,9 +343,8 @@ const CROSS_PATTERNS = [
 
 export default class LobbyMotoAmbientController {
   // Controla las motos decorativas del lobby usando solo DOM:
-  // - mt09 dispara una pasada rapida horizontal.
-  // - drop1/drop2/end usan trafico suelto.
-  // - dropInsano deja 4 motos grandes en las esquinas girando sobre si mismas.
+  // - intro / drop1 / end usan trafico suelto.
+  // - antes dropinsano y dropinsano1-* mantienen el modo insano en las esquinas.
   // - intermedio lanza cruces en X desde las esquinas.
   constructor(root) {
     this.root = root || null;
@@ -349,7 +364,7 @@ export default class LobbyMotoAmbientController {
     this.rafId = 0;
     this.lastTrafficPatternKey = "";
     this.lastTrafficDirectionGroup = "";
-    this.lastMt09DirectionKey = "";
+    this.currentMotoAccentLabel = "";
     this.insanoSupportMotos = [];
     this.insanoSupportPassIndex = 0;
     this.frameStep = this.frameStep.bind(this);
@@ -387,10 +402,12 @@ export default class LobbyMotoAmbientController {
     this.currentTrackState = nextState;
 
     if (
-      nextState.overlayLabel === "mt09" &&
-      nextState.overlayLabel !== previousState.overlayLabel
+      MOTO_ACCENT_TRACKS.has(nextState.primaryLabel) &&
+      nextState.primaryLabel !== previousState.primaryLabel
     ) {
-      this.spawnMt09Pass();
+      this.handleMotoAccentCue(nextState.primaryLabel);
+    } else if (!MOTO_ACCENT_TRACKS.has(nextState.primaryLabel)) {
+      this.currentMotoAccentLabel = "";
     }
 
     const nextMode = this.resolveMode(nextState.primaryLabel);
@@ -401,9 +418,15 @@ export default class LobbyMotoAmbientController {
 
   resolveMode(trackLabel) {
     if (REGULAR_PASS_TRACKS.has(trackLabel)) return "regular";
-    if (trackLabel === DONUT_TRACK) return "donut";
+    if (DONUT_TRACKS.has(trackLabel)) return "donut";
     if (trackLabel === CROSS_TRACK) return "cross";
     return "idle";
+  }
+
+  handleMotoAccentCue(trackLabel) {
+    // Hook reservado para futuras acentuaciones de 1-5 moto y 1-6 moto.
+    // Por ahora solo dejamos la deteccion lista sin sumar otra animacion extra.
+    this.currentMotoAccentLabel = String(trackLabel || "");
   }
 
   clearProgramTimers() {
@@ -797,37 +820,6 @@ export default class LobbyMotoAmbientController {
       arc: route.arc,
       scale: randomBetween(0.94, 1.16),
       opacity: randomBetween(0.68, 0.9),
-    });
-  }
-
-  spawnMt09Pass() {
-    const bounds = this.getBounds();
-    const fromRight = Math.random() < 0.5;
-    const directionKey = fromRight ? "mt09-rl" : "mt09-lr";
-    const useTopLane =
-      this.lastMt09DirectionKey === directionKey ? Math.random() < 0.35 : Math.random() < 0.5;
-    this.lastMt09DirectionKey = directionKey;
-
-    const route = createHorizontalPass(
-      bounds,
-      fromRight,
-      useTopLane ? randomBetween(0.18, 0.3) : randomBetween(0.68, 0.82)
-    );
-    const moto = this.pickMotoBatch(1)[0];
-    if (!moto) return;
-
-    this.createMotionActor({
-      moto,
-      role: "overlay",
-      className: "is-overlay",
-      patternKey: directionKey,
-      start: route.start,
-      end: route.end,
-      duration: randomBetween(480, 720),
-      arc: 0,
-      scale: randomBetween(1.08, 1.24),
-      opacity: 0.96,
-      easing: easeOutCubic,
     });
   }
 

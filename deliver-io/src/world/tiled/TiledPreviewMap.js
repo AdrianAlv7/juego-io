@@ -428,6 +428,7 @@ export default class TiledPreviewMap {
       basePoint: this.basePoint,
       orders: this.layout.orders,
       onObjectiveCompleted: options.onObjectiveCompleted,
+      onObjectiveServiceStarted: options.onObjectiveServiceStarted,
       radii: {
         pickupRadius: TILED_PREVIEW_TUNING.pickupRadius,
         dropoffRadius: TILED_PREVIEW_TUNING.dropoffRadius,

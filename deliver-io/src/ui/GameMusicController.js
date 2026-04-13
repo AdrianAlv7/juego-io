@@ -1,11 +1,9 @@
+import { distancePxToKm } from "../world/race/utils/telemetry.js";
+
 function clamp01(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(1, number));
-}
-
-function getNow() {
-  return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
 function encodeGameSource(fileName) {
@@ -38,51 +36,101 @@ const GAME_TRACKS = Object.freeze({
   "drop1-2": encodeGameSource("drop1-2.ogg"),
   "drop1-3": encodeGameSource("drop1-3.ogg"),
   "drop1-4": encodeGameSource("drop1-4.ogg"),
-  "drop1-final": encodeGameSource("drop1-final.ogg"),
-  "drop1-semifinal": encodeGameSource("drop1-semifinal.ogg"),
+  "drop1-final4": encodeGameSource("drop1-final4.ogg"),
+  "drop1-final2loop": encodeGameSource("drop1-final2loop.ogg"),
+  "drop1-final2": encodeGameSource("drop1-final2.ogg"),
   "antes-del-drop2": encodeGameSource("antes del drop2.ogg"),
   "drop2-1": encodeGameSource("drop2-1.ogg"),
   "drop2-2": encodeGameSource("drop2-2.ogg"),
   "drop2-3": encodeGameSource("drop2-3.ogg"),
   "drop2-4": encodeGameSource("drop2-4.ogg"),
-  "antes-del-drop3": encodeGameSource("antes del drop3.ogg"),
-  "loop-antes-del-drop3": encodeGameSource("loop antes del drop 3.ogg"),
+  "drop2-5": encodeGameSource("drop2-5.ogg"),
+  "drop2-6": encodeGameSource("drop2-6.ogg"),
+  "drop2-7": encodeGameSource("drop2-7.ogg"),
+  "antes-del-drop3-1": encodeGameSource("antes del drop3-1.ogg"),
+  "antes-del-drop3-2": encodeGameSource("antes del drop3-2.ogg"),
+  "antes-del-drop3-3": encodeGameSource("antes del drop3-3.ogg"),
+  "loop-antes-del-drop3-1": encodeGameSource("loop antes del drop 3-1.ogg"),
+  "loop-antes-del-drop3-2": encodeGameSource("loop antes del drop 3-2.ogg"),
   "inicio-drop3": encodeGameSource("inicio drop 3.ogg"),
-  "drop3-1": encodeGameSource("drop3-1.ogg"),
-  "drop3-2": encodeGameSource("drop3-2.ogg"),
-  "drop3-3": encodeGameSource("drop3-3.ogg"),
-  "drop3-4": encodeGameSource("drop3-4.ogg"),
+  "drop3-1-1": encodeGameSource("drop3-1-1.ogg"),
+  "drop3-1-2": encodeGameSource("drop3-1-2.ogg"),
+  "drop3-2-1": encodeGameSource("drop3-2-1.ogg"),
+  "drop3-2-2": encodeGameSource("drop3-2-2.ogg"),
+  "drop3-3-1": encodeGameSource("drop3-3-1.ogg"),
+  "drop3-3-2": encodeGameSource("drop3-3-2.ogg"),
+  "drop3-4-1": encodeGameSource("drop3-4-1.ogg"),
+  "drop3-4-2": encodeGameSource("drop3-4-2.ogg"),
   final: encodeGameSource("final.ogg"),
   chill1: encodeGameSource("chill1.ogg"),
   chill2: encodeGameSource("chill2.ogg"),
+  subida1: encodeGameSource("subida1.ogg"),
+  subida2: encodeGameSource("subida2.ogg"),
 });
 
-const DROP1_LOOP = Object.freeze(["drop1-1", "drop1-2", "drop1-3", "drop1-4"]);
-const DROP2_LOOP = Object.freeze(["drop2-1", "drop2-2", "drop2-3", "drop2-4"]);
-const DROP3_LOOP = Object.freeze(["drop3-1", "drop3-2", "drop3-3", "drop3-4"]);
+const DROP1_MAIN_LOOP = Object.freeze(["drop1-1", "drop1-2", "drop1-3", "drop1-4"]);
+const DROP1_WAIT_LOOP = Object.freeze([
+  "drop1-final4",
+  "drop1-final2loop",
+  "drop1-final2",
+  "drop1-4",
+]);
+const DROP2_LOOP = Object.freeze([
+  "drop2-1",
+  "drop2-2",
+  "drop2-3",
+  "drop2-4",
+  "drop2-5",
+  "drop2-6",
+  "drop2-7",
+]);
+const DROP3_LOOP = Object.freeze([
+  "drop3-1-1",
+  "drop3-1-2",
+  "drop3-2-1",
+  "drop3-2-2",
+  "drop3-3-1",
+  "drop3-3-2",
+  "drop3-4-1",
+  "drop3-4-2",
+]);
+const BEFORE_DROP3_CHAIN = Object.freeze([
+  "antes-del-drop3-1",
+  "antes-del-drop3-2",
+  "antes-del-drop3-3",
+]);
+const BEFORE_DROP3_WAIT_LOOP = Object.freeze([
+  "loop-antes-del-drop3-1",
+  "loop-antes-del-drop3-2",
+]);
+const SHORT_BEFORE_DROP3_DISTANCE_KM_THRESHOLD = 0.27;
 
-function isDrop1EarlyLoop(label) {
-  return label === "drop1-1" || label === "drop1-2";
+function canAdvanceFromDrop1Label(label) {
+  return label !== "drop1-final2loop";
 }
 
 export default class GameMusicController {
   // Guia rapida para retocar la musica de partida:
   // - trackGain: balance interno contra el master general.
-  // - decodeLeadMs: cuanto antes dejamos decodificada la siguiente pista.
-  // - scheduleLeadMs: margen para programar el siguiente clip sin dejar hueco.
-  // - stopFadeOutMs: fade suave al salir de sala o volver al lobby.
-  // - visibilityFadeOutMs / visibilityFadeInMs: reaccion al perder o recuperar foco.
-  // - computeNextTrack(): flujo musical real, loops y rupturas por objetivos.
+  // - decodeLeadMs / scheduleLeadMs: cuanto antes cargamos y programamos el siguiente clip.
+  // - computeNextTrack(): aqui vive el flujo por pedidos, loops y cortes a final.
+  // - pendingDrop1Advance / pendingDrop2Advance: eventos ya cumplidos que esperan fin de pista.
+  // - hasStartedOrder3Pickup: se activa apenas empieza el cronometro del pickup 3.
   constructor(options = {}) {
-    this.masterVolume = clamp01(options.masterVolume ?? 0.100);
+    this.masterVolume = clamp01(options.masterVolume ?? 0.1);
     // Este gain usa el mismo slider global de musica del manager.
     // Solo define el peso interno de las pistas de carrera para igualarlas con lobby.
-    this.trackGain = clamp01(options.trackGain ?? 0.50);
-    this.decodeLeadMs = Math.max(250, Number(options.decodeLeadMs ?? 2200)); 
+    this.trackGain = clamp01(options.trackGain ?? 0.5);
+    this.decodeLeadMs = Math.max(250, Number(options.decodeLeadMs ?? 2200));
     this.scheduleLeadMs = Math.max(25, Number(options.scheduleLeadMs ?? 140));
+    this.startFadeInMs = Math.max(0, Number(options.startFadeInMs ?? 160));
     this.stopFadeOutMs = Math.max(0, Number(options.stopFadeOutMs ?? 260));
     this.visibilityFadeOutMs = Math.max(0, Number(options.visibilityFadeOutMs ?? 180));
     this.visibilityFadeInMs = Math.max(0, Number(options.visibilityFadeInMs ?? 220));
+    this.beforeDrop3ShortRouteKmThreshold = Math.max(
+      0,
+      Number(options.beforeDrop3ShortRouteKmThreshold ?? SHORT_BEFORE_DROP3_DISTANCE_KM_THRESHOLD)
+    );
     this.onTrackLabelChange =
       typeof options.onTrackLabelChange === "function" ? options.onTrackLabelChange : null;
 
@@ -187,44 +235,54 @@ export default class GameMusicController {
     });
   }
 
-  // Esto ayuda al manager global a decidir si debe esperar un fade antes
-  // de cambiar entre musica de lobby y musica de partida.
   isSessionActive() {
     return Boolean(this.shouldPlay || this.currentPlayback || this.queuedPlayback);
   }
 
   resetSequenceState() {
     this.phase = "idle";
-    this.drop1LoopIndex = -1;
+    this.drop1MainIndex = -1;
+    this.drop1WaitIndex = -1;
     this.drop2LoopIndex = -1;
+    this.beforeDrop3ChainIndex = -1;
+    this.beforeDrop3LoopIndex = -1;
     this.drop3LoopIndex = -1;
-    this.pendingDrop1Closure = false;
-    this.pendingDrop2Closure = false;
-    this.hasPickedOrder3 = false;
+    this.pendingDrop1Advance = false;
+    this.pendingDrop2Advance = false;
+    this.hasStartedOrder3Pickup = false;
+    this.useShortBeforeDrop3Route = false;
     this.hasReachedFinish = false;
   }
 
   getSequenceSnapshot() {
     return {
       phase: this.phase,
-      drop1LoopIndex: this.drop1LoopIndex,
+      drop1MainIndex: this.drop1MainIndex,
+      drop1WaitIndex: this.drop1WaitIndex,
       drop2LoopIndex: this.drop2LoopIndex,
+      beforeDrop3ChainIndex: this.beforeDrop3ChainIndex,
+      beforeDrop3LoopIndex: this.beforeDrop3LoopIndex,
       drop3LoopIndex: this.drop3LoopIndex,
-      pendingDrop1Closure: this.pendingDrop1Closure,
-      pendingDrop2Closure: this.pendingDrop2Closure,
-      hasPickedOrder3: this.hasPickedOrder3,
+      pendingDrop1Advance: this.pendingDrop1Advance,
+      pendingDrop2Advance: this.pendingDrop2Advance,
+      hasStartedOrder3Pickup: this.hasStartedOrder3Pickup,
+      useShortBeforeDrop3Route: this.useShortBeforeDrop3Route,
       hasReachedFinish: this.hasReachedFinish,
     };
   }
 
   applySequenceSnapshot(snapshot = {}) {
     this.phase = String(snapshot.phase || "idle");
-    this.drop1LoopIndex = Number(snapshot.drop1LoopIndex ?? -1);
+    this.drop1MainIndex = Number(snapshot.drop1MainIndex ?? -1);
+    this.drop1WaitIndex = Number(snapshot.drop1WaitIndex ?? -1);
     this.drop2LoopIndex = Number(snapshot.drop2LoopIndex ?? -1);
+    this.beforeDrop3ChainIndex = Number(snapshot.beforeDrop3ChainIndex ?? -1);
+    this.beforeDrop3LoopIndex = Number(snapshot.beforeDrop3LoopIndex ?? -1);
     this.drop3LoopIndex = Number(snapshot.drop3LoopIndex ?? -1);
-    this.pendingDrop1Closure = Boolean(snapshot.pendingDrop1Closure);
-    this.pendingDrop2Closure = Boolean(snapshot.pendingDrop2Closure);
-    this.hasPickedOrder3 = Boolean(snapshot.hasPickedOrder3);
+    this.pendingDrop1Advance = Boolean(snapshot.pendingDrop1Advance);
+    this.pendingDrop2Advance = Boolean(snapshot.pendingDrop2Advance);
+    this.hasStartedOrder3Pickup = Boolean(snapshot.hasStartedOrder3Pickup);
+    this.useShortBeforeDrop3Route = Boolean(snapshot.useShortBeforeDrop3Route);
     this.hasReachedFinish = Boolean(snapshot.hasReachedFinish);
   }
 
@@ -285,9 +343,7 @@ export default class GameMusicController {
       });
     }
 
-    const shouldScheduleNow =
-      remainingMs <= this.scheduleLeadMs || Boolean(this.queuedPlayback);
-    if (shouldScheduleNow) {
+    if (remainingMs <= this.scheduleLeadMs || Boolean(this.queuedPlayback)) {
       this.scheduleUpcomingTrack(true);
     }
   }
@@ -357,81 +413,132 @@ export default class GameMusicController {
     );
   }
 
+  // Reglas del flujo:
+  // - pedido 1: start -> drop1-1..4, luego wait loop final4 -> final2loop -> final2 -> drop1-4
+  // - solo drop1-final2loop no puede saltar directo a antes del drop2
+  // - pedido 2: drop2-1..7, y tras drop2-7 el loop vuelve a drop2-2
+  // - pedido 3: antes del drop3-1/2/3 y luego loop 3-1/3-2 hasta que arranca el pickup 3
+  // - meta: cualquier drop3-* cierra con final al terminar la pista actual
   computeNextTrack(snapshot = {}, endedLabel = "") {
     const nextState = {
       phase: String(snapshot.phase || "idle"),
-      drop1LoopIndex: Number(snapshot.drop1LoopIndex ?? -1),
+      drop1MainIndex: Number(snapshot.drop1MainIndex ?? -1),
+      drop1WaitIndex: Number(snapshot.drop1WaitIndex ?? -1),
       drop2LoopIndex: Number(snapshot.drop2LoopIndex ?? -1),
+      beforeDrop3ChainIndex: Number(snapshot.beforeDrop3ChainIndex ?? -1),
+      beforeDrop3LoopIndex: Number(snapshot.beforeDrop3LoopIndex ?? -1),
       drop3LoopIndex: Number(snapshot.drop3LoopIndex ?? -1),
-      pendingDrop1Closure: Boolean(snapshot.pendingDrop1Closure),
-      pendingDrop2Closure: Boolean(snapshot.pendingDrop2Closure),
-      hasPickedOrder3: Boolean(snapshot.hasPickedOrder3),
+      pendingDrop1Advance: Boolean(snapshot.pendingDrop1Advance),
+      pendingDrop2Advance: Boolean(snapshot.pendingDrop2Advance),
+      hasStartedOrder3Pickup: Boolean(snapshot.hasStartedOrder3Pickup),
+      useShortBeforeDrop3Route: Boolean(snapshot.useShortBeforeDrop3Route),
       hasReachedFinish: Boolean(snapshot.hasReachedFinish),
     };
 
     switch (nextState.phase) {
       case "start":
-        nextState.phase = "drop1-loop";
-        nextState.drop1LoopIndex = 0;
-        return { nextLabel: DROP1_LOOP[nextState.drop1LoopIndex], nextState };
-      case "drop1-loop":
-        if (nextState.pendingDrop1Closure) {
-          nextState.phase = "drop1-close";
-          nextState.pendingDrop1Closure = false;
-          return {
-            nextLabel: isDrop1EarlyLoop(endedLabel) ? "drop1-semifinal" : "drop1-final",
-            nextState,
-          };
+        nextState.phase = "drop1-main";
+        nextState.drop1MainIndex = 0;
+        return { nextLabel: DROP1_MAIN_LOOP[nextState.drop1MainIndex], nextState };
+
+      case "drop1-main":
+        if (nextState.pendingDrop1Advance && canAdvanceFromDrop1Label(endedLabel)) {
+          nextState.phase = "before-drop2";
+          nextState.pendingDrop1Advance = false;
+          return { nextLabel: "antes-del-drop2", nextState };
         }
-        nextState.drop1LoopIndex = (nextState.drop1LoopIndex + 1) % DROP1_LOOP.length;
-        return { nextLabel: DROP1_LOOP[nextState.drop1LoopIndex], nextState };
-      case "drop1-close":
-        nextState.phase = "before-drop2";
-        return { nextLabel: "antes-del-drop2", nextState };
+        if (nextState.drop1MainIndex < DROP1_MAIN_LOOP.length - 1) {
+          nextState.drop1MainIndex += 1;
+          return { nextLabel: DROP1_MAIN_LOOP[nextState.drop1MainIndex], nextState };
+        }
+        nextState.phase = "drop1-wait";
+        nextState.drop1WaitIndex = 0;
+        return { nextLabel: DROP1_WAIT_LOOP[nextState.drop1WaitIndex], nextState };
+
+      case "drop1-wait":
+        if (nextState.pendingDrop1Advance && canAdvanceFromDrop1Label(endedLabel)) {
+          nextState.phase = "before-drop2";
+          nextState.pendingDrop1Advance = false;
+          return { nextLabel: "antes-del-drop2", nextState };
+        }
+        nextState.drop1WaitIndex = (nextState.drop1WaitIndex + 1) % DROP1_WAIT_LOOP.length;
+        return { nextLabel: DROP1_WAIT_LOOP[nextState.drop1WaitIndex], nextState };
+
       case "before-drop2":
         nextState.phase = "drop2-loop";
         nextState.drop2LoopIndex = 0;
         return { nextLabel: DROP2_LOOP[nextState.drop2LoopIndex], nextState };
+
       case "drop2-loop":
-        if (nextState.pendingDrop2Closure) {
-          nextState.phase = "before-drop3";
-          nextState.pendingDrop2Closure = false;
-          return { nextLabel: "antes-del-drop3", nextState };
+        if (nextState.pendingDrop2Advance) {
+          nextState.phase = "before-drop3-chain";
+          nextState.beforeDrop3ChainIndex = 0;
+          nextState.pendingDrop2Advance = false;
+          return { nextLabel: BEFORE_DROP3_CHAIN[nextState.beforeDrop3ChainIndex], nextState };
         }
-        nextState.drop2LoopIndex = (nextState.drop2LoopIndex + 1) % DROP2_LOOP.length;
+        if (nextState.drop2LoopIndex < DROP2_LOOP.length - 1) {
+          nextState.drop2LoopIndex += 1;
+        } else {
+          // El loop del bloque 2 vuelve a drop2-2 para no resetear toda la subida.
+          nextState.drop2LoopIndex = 1;
+        }
         return { nextLabel: DROP2_LOOP[nextState.drop2LoopIndex], nextState };
-      case "before-drop3":
-        if (nextState.hasPickedOrder3) {
+
+      case "before-drop3-chain":
+        if (nextState.beforeDrop3ChainIndex < BEFORE_DROP3_CHAIN.length - 1) {
+          if (nextState.useShortBeforeDrop3Route && nextState.beforeDrop3ChainIndex === 0) {
+            nextState.beforeDrop3ChainIndex = 2;
+          } else {
+            nextState.beforeDrop3ChainIndex += 1;
+          }
+          return { nextLabel: BEFORE_DROP3_CHAIN[nextState.beforeDrop3ChainIndex], nextState };
+        }
+        if (nextState.hasStartedOrder3Pickup) {
           nextState.phase = "drop3-intro";
           return { nextLabel: "inicio-drop3", nextState };
         }
         nextState.phase = "before-drop3-loop";
-        return { nextLabel: "loop-antes-del-drop3", nextState };
+        nextState.beforeDrop3LoopIndex = 0;
+        return { nextLabel: BEFORE_DROP3_WAIT_LOOP[nextState.beforeDrop3LoopIndex], nextState };
+
       case "before-drop3-loop":
-        if (nextState.hasPickedOrder3) {
+        if (nextState.hasStartedOrder3Pickup) {
           nextState.phase = "drop3-intro";
           return { nextLabel: "inicio-drop3", nextState };
         }
-        return { nextLabel: "loop-antes-del-drop3", nextState };
+        nextState.beforeDrop3LoopIndex =
+          (nextState.beforeDrop3LoopIndex + 1) % BEFORE_DROP3_WAIT_LOOP.length;
+        return { nextLabel: BEFORE_DROP3_WAIT_LOOP[nextState.beforeDrop3LoopIndex], nextState };
+
       case "drop3-intro":
         nextState.phase = "drop3-loop";
         nextState.drop3LoopIndex = 0;
         return { nextLabel: DROP3_LOOP[nextState.drop3LoopIndex], nextState };
+
       case "drop3-loop":
         if (nextState.hasReachedFinish) {
           nextState.phase = "final";
           return { nextLabel: "final", nextState };
         }
-        nextState.drop3LoopIndex = (nextState.drop3LoopIndex + 1) % DROP3_LOOP.length;
+        if (nextState.drop3LoopIndex >= DROP3_LOOP.length - 1) {
+          // drop3-4-2 no embona con drop3-1-1; el loop vuelve a drop3-2-1.
+          nextState.drop3LoopIndex = 2;
+        } else {
+          nextState.drop3LoopIndex += 1;
+        }
         return { nextLabel: DROP3_LOOP[nextState.drop3LoopIndex], nextState };
+
       case "final":
         nextState.phase = "chill-intro";
         return { nextLabel: "chill1", nextState };
+
       case "chill-intro":
         nextState.phase = "chill-loop";
         return { nextLabel: "chill2", nextState };
+
       case "chill-loop":
         return { nextLabel: "chill2", nextState };
+
       default:
         return { nextLabel: "", nextState };
     }
@@ -472,9 +579,7 @@ export default class GameMusicController {
 
         const startTime = context.currentTime + 0.012;
         const playback = this.createPlayback(label, buffer, startTime, offsetSec);
-        if (!playback) {
-          return false;
-        }
+        if (!playback) return false;
 
         const previousPlayback = this.currentPlayback;
         this.cancelQueuedPlayback();
@@ -559,9 +664,7 @@ export default class GameMusicController {
           return;
         }
 
-        if (this.queuedPlayback) {
-          this.cancelQueuedPlayback();
-        }
+        this.cancelQueuedPlayback();
 
         const queuedPlayback = this.createPlayback(
           nextLabel,
@@ -646,7 +749,7 @@ export default class GameMusicController {
     this.setCurrentTrack("");
     this.ensureContextRunning();
     this.warmAllBuffers();
-    this.startTrackNow("start");
+    this.startTrackNow("start", { fadeInMs: this.startFadeInMs });
   }
 
   handleObjectiveCompleted(completed = {}) {
@@ -654,13 +757,30 @@ export default class GameMusicController {
     const orderNumber = Number(completed.orderNumber || 0);
 
     if (kind === "dropoff" && orderNumber === 1) {
-      this.pendingDrop1Closure = true;
+      this.pendingDrop1Advance = true;
     } else if (kind === "dropoff" && orderNumber === 2) {
-      this.pendingDrop2Closure = true;
-    } else if (kind === "pickup" && orderNumber === 3) {
-      this.hasPickedOrder3 = true;
+      this.pendingDrop2Advance = true;
+      const nextObjectiveDistanceKm = distancePxToKm(Number(completed.nextObjectiveDistancePx || 0));
+      // Si E2 -> R3 queda muy corto, saltamos "antes del drop3-2" para conservar musicalidad:
+      // antes del drop3-1 -> antes del drop3-3 -> loops -> inicio drop 3.
+      this.useShortBeforeDrop3Route =
+        nextObjectiveDistanceKm > 0 &&
+        nextObjectiveDistanceKm < this.beforeDrop3ShortRouteKmThreshold;
     }
 
+    if (this.currentPlayback) {
+      this.scheduleUpcomingTrack(Boolean(this.queuedPlayback));
+    }
+  }
+
+  handleObjectiveServiceStarted(started = {}) {
+    const kind = String(started.kind || "");
+    const orderNumber = Number(started.orderNumber || 0);
+    if (kind !== "pickup" || orderNumber !== 3 || this.hasStartedOrder3Pickup) {
+      return;
+    }
+
+    this.hasStartedOrder3Pickup = true;
     if (this.currentPlayback) {
       this.scheduleUpcomingTrack(Boolean(this.queuedPlayback));
     }
@@ -684,12 +804,7 @@ export default class GameMusicController {
   suspendPlayback(options = {}) {
     const context = this.getAudioContext();
     const current = this.currentPlayback;
-    if (
-      !context ||
-      !this.shouldPlay ||
-      this.suspendedForInactivity ||
-      !current
-    ) {
+    if (!context || !this.shouldPlay || this.suspendedForInactivity || !current) {
       return false;
     }
 
@@ -733,6 +848,7 @@ export default class GameMusicController {
     const resumeState = this.resumeState;
     this.sessionId += 1;
     this.suspendedForInactivity = false;
+    this.resumeState = null;
     this.applySequenceSnapshot(resumeState.stateSnapshot);
     this.startTrackNow(resumeState.label, {
       offsetSec: resumeState.offsetSec,

@@ -37,6 +37,9 @@ function createMatchMap(scene, objectiveSeed) {
       scene.routeRewardSystem?.handleCompletedObjective?.(completed);
       appAudioManager.handleGameObjectiveCompleted(completed);
     },
+    onObjectiveServiceStarted: (started) => {
+      appAudioManager.handleGameObjectiveServiceStarted(started);
+    },
   });
 }
 
@@ -366,7 +369,7 @@ export const gameSceneMatchMethods = {
     this.updateRoomShareUi();
     this.statusBanner.setVisible(false);
     this.syncKeyboardCaptureState();
-    appAudioManager.startGameMusic({ fadeOutMs: 620 });
+    appAudioManager.startGameMusic({ fadeOutMs: 220 });
   },
 
   onFinishWindowStarted(payload = {}) {

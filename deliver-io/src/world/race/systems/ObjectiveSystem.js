@@ -26,6 +26,7 @@ export default class ObjectiveSystem {
     this.orders = options.orders;
     this.totalOrders = this.orders.length;
     this.onObjectiveCompleted = options.onObjectiveCompleted || null;
+    this.onObjectiveServiceStarted = options.onObjectiveServiceStarted || null;
     this.radii = options.radii;
     this.serviceTimeMs = options.serviceTimeMs;
     this.defaultEventDurationMs = options.defaultEventDurationMs;
@@ -288,11 +289,24 @@ export default class ObjectiveSystem {
       kind: completed.kind,
       orderNumber: completed.orderNumber,
       label: completed.label,
+      nextKind: next?.kind || "",
+      nextOrderNumber: Number(next?.orderNumber || 0),
+      nextLabel: next?.label || "",
+      nextObjectiveDistancePx: next
+        ? Phaser.Math.Distance.Between(completed.x, completed.y, next.x, next.y)
+        : 0,
     });
     this.updateVisuals();
   }
 
   startServiceFor(target) {
+    // Este callback nos deja reaccionar al arranque real del cronometro de servicio,
+    // sin esperar a que el pickup o dropoff termine.
+    this.onObjectiveServiceStarted?.({
+      kind: target.kind,
+      orderNumber: target.orderNumber,
+      label: target.label,
+    });
     this.currentServiceIndex = this.currentIndex;
     this.serviceStartMs = this.scene.time.now;
     this.serviceProgress = 0;

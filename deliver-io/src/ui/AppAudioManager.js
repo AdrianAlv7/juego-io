@@ -388,6 +388,10 @@ class AppAudioManager {
     this.gameMusicController.handleObjectiveCompleted(completed);
   }
 
+  handleGameObjectiveServiceStarted(started) {
+    this.gameMusicController.handleObjectiveServiceStarted(started);
+  }
+
   handleGameLocalFinish() {
     this.gameMusicController.handleLocalFinish();
   }
