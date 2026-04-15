@@ -314,6 +314,11 @@
   border-color: rgba(255, 110, 110, 0.68);
 }
 
+.ghuk-banner[data-tone="leave"] {
+  color: #ffd6d6;
+  border-color: rgba(235, 96, 96, 0.52);
+}
+
 .ghuk-banner[data-tone="turbo"] {
   color: #ffe7ce;
   border-color: rgba(255, 140, 80, 0.72);
@@ -337,6 +342,90 @@
   letter-spacing: 0.045em;
   text-transform: uppercase;
   animation: ghuk-slide-down 260ms ease;
+}
+
+.ghuk-spectator {
+  position: absolute;
+  top: clamp(108px, 15vh, 168px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: clamp(260px, 33vw, 560px);
+  max-width: min(78vw, 720px);
+  border-radius: 14px;
+  border: 1px solid rgba(156, 206, 255, 0.44);
+  background: linear-gradient(155deg, rgba(12, 23, 38, 0.92), rgba(6, 12, 20, 0.92));
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.42);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: auto;
+  animation: ghuk-slide-down 220ms ease;
+}
+
+.ghuk-spectator-center {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.ghuk-spectator-label {
+  font-family: var(--hud-font-title);
+  font-size: clamp(10px, 0.83vw, 13px);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: rgba(196, 224, 255, 0.82);
+}
+
+.ghuk-spectator-name {
+  margin-top: 2px;
+  font-family: var(--hud-font-title);
+  font-size: clamp(16px, 1.42vw, 24px);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #f2f8ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghuk-spectator-status {
+  margin-top: 4px;
+  font-family: var(--hud-font-title);
+  font-size: clamp(12px, 1vw, 16px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #ffb6ae;
+}
+
+.ghuk-spectator-nav {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 11px;
+  border: 1px solid rgba(126, 190, 255, 0.6);
+  background: linear-gradient(150deg, rgba(33, 81, 130, 0.94), rgba(19, 50, 86, 0.94));
+  color: #ecf5ff;
+  font-family: var(--hud-font-title);
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  transition: filter 140ms ease, transform 140ms ease, border-color 140ms ease;
+}
+
+.ghuk-spectator-nav:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  border-color: rgba(193, 230, 255, 0.88);
+}
+
+.ghuk-spectator-nav:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+  filter: none;
 }
 
 .ghuk-minimap {
@@ -778,24 +867,32 @@
   position: absolute;
   right: clamp(12px, 1.1vw, 20px);
   bottom: clamp(330px, 42vh, 460px);
-  width: clamp(224px, 16.5vw, 312px);
+  width: clamp(292px, 20.5vw, 388px);
   border-radius: 12px;
-  padding: 10px;
+  padding: 10px 10px 11px;
   pointer-events: auto;
 }
 
 .ghuk-controls-title {
   font-family: var(--hud-font-title);
-  font-size: clamp(10px, 0.85vw, 13px);
+  font-size: clamp(10px, 0.84vw, 13px);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   color: #d4e9ff;
 }
 
+.ghuk-controls-group-title {
+  margin-top: 8px;
+  font-size: clamp(9px, 0.74vw, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: rgba(191, 220, 255, 0.74);
+}
+
 .ghuk-controls-grid {
-  margin-top: 7px;
+  margin-top: 6px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -806,23 +903,238 @@
   background: rgba(25, 40, 60, 0.82);
   color: #f3f8ff;
   font-family: var(--hud-font-body);
-  font-size: clamp(11px, 0.84vw, 13px);
-  padding: 7px 6px;
+  font-size: clamp(10px, 0.76vw, 12px);
+  line-height: 1.1;
+  min-height: 34px;
+  padding: 6px 5px;
   cursor: pointer;
-  transition: transform 120ms ease, filter 120ms ease, border-color 120ms ease;
+  transition:
+    transform 120ms ease,
+    filter 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .ghuk-btn:hover {
   transform: translateY(-1px);
   filter: brightness(1.08);
   border-color: rgba(239, 247, 255, 0.5);
+  box-shadow: 0 0 0 1px rgba(239, 247, 255, 0.16);
 }
 
 .ghuk-btn[data-tone="rain"] { border-color: rgba(102, 170, 255, 0.6); }
 .ghuk-btn[data-tone="sunny"] { border-color: rgba(255, 181, 96, 0.6); }
 .ghuk-btn[data-tone="night"] { border-color: rgba(164, 152, 255, 0.6); }
 .ghuk-btn[data-tone="clear"] { border-color: rgba(168, 181, 201, 0.5); }
-.ghuk-btn[data-tone="train"] { border-color: rgba(255, 140, 140, 0.6); grid-column: span 2; }
+.ghuk-btn[data-tone="train"] { border-color: rgba(255, 140, 140, 0.66); }
+.ghuk-btn[data-tone="spectator"] { border-color: rgba(180, 220, 255, 0.62); }
+.ghuk-btn[data-tone="spectator"].is-active {
+  border-color: rgba(255, 193, 123, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 193, 123, 0.22), 0 0 16px rgba(255, 168, 96, 0.22);
+}
+.ghuk-btn[data-tone="turbo"] { border-color: rgba(255, 179, 98, 0.7); }
+.ghuk-btn[data-tone="oil"] { border-color: rgba(176, 191, 208, 0.54); }
+.ghuk-btn[data-tone="wall"] { border-color: rgba(255, 164, 112, 0.62); }
+.ghuk-btn[data-tone="emp"] { border-color: rgba(130, 214, 255, 0.72); }
+.ghuk-btn[data-tone="shield"] { border-color: rgba(175, 255, 214, 0.7); }
+.ghuk-btn[data-tone="ghost"] { border-color: rgba(173, 210, 255, 0.72); }
+.ghuk-btn[data-tone="finish"] { border-color: rgba(255, 214, 130, 0.82); }
+
+.ghuk-settings-modal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.ghuk-settings-modal:not(.ghuk-hidden) {
+  pointer-events: auto;
+}
+
+.ghuk-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(6, 10, 16, 0.38);
+  backdrop-filter: blur(1.2px);
+  cursor: pointer;
+}
+
+.ghuk-settings-shell {
+  width: min(560px, 84vw);
+  min-height: 260px;
+  border-radius: 18px;
+  border: 1px solid rgba(158, 201, 255, 0.36);
+  box-shadow: 0 26px 42px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(160deg, rgba(17, 29, 47, 0.96), rgba(9, 15, 23, 0.96));
+  padding: clamp(14px, 1.8vw, 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  position: relative;
+  pointer-events: auto;
+}
+
+.ghuk-settings-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+  min-height: 44px;
+  padding-right: 58px;
+}
+
+.ghuk-settings-title {
+  width: 100%;
+  text-align: center;
+  font-family: var(--hud-font-title);
+  font-size: clamp(16px, 1.4vw, 22px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f5fbff;
+}
+
+.ghuk-settings-close {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 42px;
+  min-width: 42px;
+  min-height: 0;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 122, 152, 0.72);
+  background: linear-gradient(150deg, rgba(112, 25, 50, 0.97), rgba(76, 15, 34, 0.97));
+  color: #ffe7ee;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255, 121, 155, 0.14), 0 0 10px rgba(244, 63, 94, 0.4);
+  transition: filter 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.ghuk-settings-close:hover {
+  filter: brightness(1.08);
+  border-color: rgba(255, 171, 192, 0.82);
+  transform: translateY(-1px);
+}
+
+.ghuk-settings-close-label {
+  display: block;
+  font-family: var(--hud-font-title);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.ghuk-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 94%;
+  margin: 0 auto;
+}
+
+.ghuk-settings-mute-btn {
+  width: 56px;
+  min-width: 56px;
+  min-height: 0;
+  height: 46px;
+  padding: 0;
+  border-radius: 11px;
+  border: 1px solid rgba(127, 194, 255, 0.68);
+  background: linear-gradient(150deg, rgba(32, 88, 146, 0.95), rgba(23, 58, 104, 0.95));
+  color: #d5eeff;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(123, 192, 255, 0.14), 0 0 10px rgba(77, 170, 255, 0.32);
+  transition: filter 120ms ease, border-color 120ms ease, transform 120ms ease;
+  flex: 0 0 auto;
+}
+
+.ghuk-settings-mute-btn--music {
+  border-color: rgba(217, 168, 255, 0.7);
+  background: linear-gradient(150deg, rgba(80, 52, 110, 0.95), rgba(43, 30, 76, 0.95));
+  color: #ead9ff;
+  box-shadow: 0 0 0 1px rgba(213, 160, 255, 0.14), 0 0 10px rgba(177, 109, 255, 0.28);
+}
+
+.ghuk-settings-mute-btn--sfx {
+  border-color: rgba(127, 194, 255, 0.68);
+  background: linear-gradient(150deg, rgba(32, 88, 146, 0.95), rgba(23, 58, 104, 0.95));
+  color: #d5eeff;
+  box-shadow: 0 0 0 1px rgba(123, 192, 255, 0.14), 0 0 10px rgba(77, 170, 255, 0.32);
+}
+
+.ghuk-settings-mute-btn:hover {
+  filter: brightness(1.08);
+  border-color: rgba(187, 226, 255, 0.82);
+  transform: translateY(-1px);
+}
+
+.ghuk-settings-mute-btn.is-muted {
+  border-color: rgba(255, 180, 163, 0.72);
+  background: linear-gradient(150deg, rgba(143, 72, 37, 0.95), rgba(98, 44, 24, 0.95));
+  color: #ffd8ca;
+  box-shadow: 0 0 0 1px rgba(255, 166, 141, 0.16), 0 0 10px rgba(255, 130, 104, 0.3);
+}
+
+.ghuk-settings-mute-icon {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.ghuk-settings-mute-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ghuk-settings-slider-wrap {
+  min-width: 0;
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ghuk-settings-slider-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #d8ebff;
+  font-size: clamp(12px, 0.94vw, 14px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ghuk-settings-slider {
+  width: 100%;
+  accent-color: #79c3ff;
+  cursor: pointer;
+}
+
+.ghuk-settings-leave-btn {
+  margin-top: 6px;
+  width: 100%;
+  max-width: 94%;
+  align-self: center;
+  min-height: 0;
+  height: 56px;
+}
+
+.ghuk-settings-leave-btn .lhl-btn-label {
+  font-size: clamp(15px, 1vw, 18px);
+  letter-spacing: 0.11em;
+}
 
 .ghuk-countdown {
   position: absolute;
@@ -952,6 +1264,18 @@
   animation: ghuk-glow 300ms ease;
 }
 
+.ghuk-root.ghuk-root--spectator-finished .ghuk-race,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-minimap,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-package,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-dashboard,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-inventory,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-turbo,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-heat,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-weather-indicator,
+.ghuk-root.ghuk-root--spectator-finished .ghuk-weather-event {
+  display: none !important;
+}
+
 @media (max-width: 900px) {
   .ghuk-controls { display: none; }
   .ghuk-heat { top: clamp(132px, 20vh, 180px); height: clamp(196px, 28vh, 286px); }
@@ -959,6 +1283,24 @@
   .ghuk-weather-indicator { bottom: clamp(160px, 21vh, 214px); }
   .ghuk-dashboard { width: clamp(240px, 44vw, 380px); }
   .ghuk-package { width: clamp(220px, 45vw, 370px); }
+  .ghuk-spectator {
+    min-width: min(94vw, 560px);
+    padding: 9px 10px;
+    gap: 8px;
+  }
+  .ghuk-spectator-nav {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+  .ghuk-settings-shell { width: min(560px, 92vw); }
+  .ghuk-settings-leave-btn {
+    width: 100%;
+    height: 52px;
+  }
+  .ghuk-settings-leave-btn .lhl-btn-label {
+    font-size: clamp(13px, 3.6vw, 16px);
+  }
 }
 
 @keyframes ghuk-pop {

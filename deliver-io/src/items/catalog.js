@@ -3,6 +3,7 @@ export const ITEM_TYPES = Object.freeze({
   WALL: "wall",
   EMP: "emp",
   SHIELD: "shield",
+  GHOST: "ghost",
 });
 
 export const ITEM_MAX_PER_PLAYER = 2;
@@ -14,7 +15,7 @@ export const ITEM_CONFIG = Object.freeze({
     label: "Aceite",
     placementOffset: 78,
     rotationOffset: 0,
-    width: 228,
+    width: 304,
     height: 74,
     effectDurationMs: 3000,
     removalDelayMs: 1500,
@@ -38,7 +39,7 @@ export const ITEM_CONFIG = Object.freeze({
     label: "Muro",
     placementOffset: 18,
     rotationOffset: Math.PI / 2,
-    width: 188,
+    width: 220,
     height: 34,
     damagePercent: 20,
     draw: Object.freeze({
@@ -51,15 +52,15 @@ export const ITEM_CONFIG = Object.freeze({
   [ITEM_TYPES.EMP]: Object.freeze({
     type: ITEM_TYPES.EMP,
     label: "PEM",
-    radius: 520,
+    radius: 620,
     pulseVisualDurationMs: 560,
     effectDurationMs: 5000,
-    initialSpeedFactor: 0.74,
+    initialSpeedFactor: 0.5,
     handling: Object.freeze({
       lateralGripMultiplier: 1.03,
       turnMultiplier: 0.9,
-      dragMultiplier: 1.15,
-      enginePowerMultiplier: 0.78,
+      dragMultiplier: 1.18,
+      enginePowerMultiplier: 0.5,
     }),
     draw: Object.freeze({
       color: 0x6cc6ff,
@@ -69,6 +70,11 @@ export const ITEM_CONFIG = Object.freeze({
   [ITEM_TYPES.SHIELD]: Object.freeze({
     type: ITEM_TYPES.SHIELD,
     label: "Escudo",
+  }),
+  [ITEM_TYPES.GHOST]: Object.freeze({
+    type: ITEM_TYPES.GHOST,
+    label: "Fantasma",
+    effectDurationMs: 2000,
   }),
 });
 

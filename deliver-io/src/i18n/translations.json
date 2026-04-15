@@ -1,0 +1,420 @@
+{
+  "meta": {
+    "defaultLanguage": "es",
+    "availableLanguages": [
+      "es",
+      "en"
+    ]
+  },
+  "template": {
+    "languages": {
+      "es": "",
+      "en": ""
+    },
+    "buttons": {
+      "public": "",
+      "private": "",
+      "settings": "",
+      "garage": "",
+      "createRoom": "",
+      "joinRoom": "",
+      "back": "",
+      "ready": "",
+      "notReady": "",
+      "start": "",
+      "cancel": "",
+      "copyCode": "",
+      "copiedText": "",
+      "close": "",
+      "startMusic": "",
+      "apply": "",
+      "exit": ""
+    },
+    "labels": {
+      "lobby": "",
+      "username": "",
+      "roomCode": "",
+      "code": "",
+      "shareCode": "",
+      "privateRoom": "",
+      "publicRoom": "",
+      "host": "",
+      "waiting": "",
+      "noPlayers": "",
+      "lobbyTitle": "",
+      "lobbySubtitle": "",
+      "privateRoomTitle": "",
+      "publicRoomTitle": "",
+      "privateRoomSubtitle": "",
+      "publicRoomSubtitle": ""
+    },
+    "settings": {
+      "title": "",
+      "subtitle": "",
+      "sectionVolume": "",
+      "sectionControls": "",
+      "sectionLanguage": "",
+      "musicTitle": "",
+      "musicDescription": "",
+      "musicVolumeLabel": "",
+      "sfxTitle": "",
+      "sfxDescription": "",
+      "sfxVolumeLabel": "",
+      "previewTitle": "",
+      "previewDescription": "",
+      "tipAutoplay": "",
+      "controlsTitle": "",
+      "controlsDescription": "",
+      "controlsGuideTitle": "",
+      "languageTitle": "",
+      "languageDescription": "",
+      "muteMusic": "",
+      "unmuteMusic": "",
+      "muteSfx": "",
+      "unmuteSfx": ""
+    },
+    "messages": {
+      "entryDefault": "",
+      "privateMode": "",
+      "hostShareAndStart": "",
+      "privateWaitHost": "",
+      "countdownPrivate": "",
+      "countdownPublic": "",
+      "publicMissingPlayers": "",
+      "publicNotAllReady": "",
+      "publicAllReady": "",
+      "settingsOpened": "",
+      "settingsOpenedEntry": "",
+      "settingsClosed": "",
+      "settingsClosedEntry": "",
+      "roomCodeCopied": "",
+      "roomCodeCopyError": "",
+      "languageApplied": "",
+      "busyPublic": "",
+      "busyCreatePrivate": "",
+      "busyJoinPrivate": "",
+      "privateJoinNeedsCode": "",
+      "busyPublicSearch": "",
+      "busyPrivateCreate": "",
+      "busyPrivateJoin": "",
+      "controlPresetApplied": "",
+      "playerLeftRoom": "",
+      "garageOpenedEntry": "",
+      "garageOpened": "",
+      "garageApplied": "",
+      "returningLobby": "",
+      "publicMatchFinished": "",
+      "privateMatchFinished": ""
+    },
+    "errors": {
+      "roomGeneric": "",
+      "roomJoinFailed": "",
+      "retryBackend": "",
+      "connectBackend": "",
+      "socketFailed": "",
+      "checkSocketUrl": ""
+    },
+    "controls": {
+      "presets": {
+        "flechitas": "",
+        "wasd": ""
+      },
+      "guide": {
+        "actions": {
+          "accelerate": "",
+          "reverse": "",
+          "left": "",
+          "right": "",
+          "drift": "",
+          "brake": "",
+          "item": "",
+          "nitro": ""
+        }
+      }
+    },
+    "garage": {
+      "title": "",
+      "subtitle": "",
+      "yourBike": "",
+      "skins": ""
+    },
+    "hints": {
+      "shareAsHost": "",
+      "shareAsGuest": ""
+    }
+  },
+  "es": {
+    "languages": {
+      "es": "Espanol",
+      "en": "Ingles"
+    },
+    "buttons": {
+      "public": "Publica",
+      "private": "Privada",
+      "settings": "Ajustes",
+      "garage": "Garage",
+      "createRoom": "Crear sala",
+      "joinRoom": "Unirse a sala",
+      "back": "Regresar",
+      "ready": "Listo",
+      "notReady": "No listo",
+      "start": "Empezar",
+      "cancel": "Cancelar",
+      "copyCode": "Copiar codigo",
+      "copiedText": "Texto copiado",
+      "close": "Cerrar",
+      "startMusic": "Iniciar musica",
+      "apply": "Aplicar",
+      "exit": "Salir"
+    },
+    "labels": {
+      "lobby": "Lobby",
+      "username": "Username",
+      "roomCode": "Codigo de sala",
+      "code": "Codigo",
+      "shareCode": "Comparte este codigo",
+      "privateRoom": "Sala privada",
+      "publicRoom": "Sala publica",
+      "host": "Creador",
+      "waiting": "Esperando",
+      "noPlayers": "Sin jugadores",
+      "lobbyTitle": "Sala Deliver.io",
+      "lobbySubtitle": "Publica o privada | Maximo 6 jugadores",
+      "privateRoomTitle": "Sala privada {roomCode}",
+      "publicRoomTitle": "Sala publica",
+      "privateRoomSubtitle": "Codigo {roomCode} | Conectados: {connected}/{maxPlayers} | Listos: {readyCount}/{totalPlayers}",
+      "publicRoomSubtitle": "Emparejamiento publico | Conectados: {connected}/{maxPlayers} | Listos: {readyCount}/{totalPlayers}"
+    },
+    "settings": {
+      "title": "Audio y controles",
+      "subtitle": "Cambios rapidos para volumen y esquema de teclas. Se guardan al instante.",
+      "sectionVolume": "Volumen",
+      "sectionControls": "Controles",
+      "sectionLanguage": "Idioma",
+      "musicTitle": "Musica del lobby",
+      "musicDescription": "Intro fija al entrar y transiciones suaves entre variaciones del track del lobby.",
+      "musicVolumeLabel": "Volumen musica",
+      "sfxTitle": "Efectos de interfaz",
+      "sfxDescription": "Hover, click y teclado. El control afecta los sonidos cortos del UI en todo el lobby.",
+      "sfxVolumeLabel": "Volumen SFX",
+      "previewTitle": "Pruebas de pista",
+      "previewDescription": "Lanza una pista especifica para revisar audio y las motos decorativas sin esperar la rotacion.",
+      "tipAutoplay": "Tip: si el navegador bloquea autoplay, la musica arrancara al primer click o tecla.",
+      "controlsTitle": "Preset de controles",
+      "controlsDescription": "Elige el esquema para jugar. Se usa dentro de partida al instante.",
+      "controlsGuideTitle": "Guia activa: {preset}",
+      "languageTitle": "Idioma",
+      "languageDescription": "Selecciona idioma y aplica al momento en botones y mensajes del lobby.",
+      "muteMusic": "Silenciar musica del lobby",
+      "unmuteMusic": "Activar musica del lobby",
+      "muteSfx": "Silenciar efectos",
+      "unmuteSfx": "Activar efectos"
+    },
+    "messages": {
+      "entryDefault": "Escribe username y elige publica o privada.",
+      "privateMode": "Modo privada: crea sala o unete con codigo.",
+      "hostShareAndStart": "Eres creador. Comparte codigo {roomCode} y presiona {startLabel}.",
+      "privateWaitHost": "Sala privada: espera al creador o marquense Listo para acelerar la cuenta.",
+      "countdownPrivate": "Cuenta regresiva activa: {seconds}s para iniciar partida. Pulsa {cancelLabel} para detenerla.",
+      "countdownPublic": "Sala publica llena. Inicio automatico en {seconds}s.",
+      "publicMissingPlayers": "Faltan {missingPlayers} jugador(es) para llenar la sala. Al llenarse inicia cuenta de 10s.",
+      "publicNotAllReady": "Sala llena. Marca Listo para reducir la cuenta a 3 segundos.",
+      "publicAllReady": "Todos listos. El inicio se redujo a 3 segundos.",
+      "settingsOpened": "Ajustes abiertos: ajusta volumen, controles e idioma del lobby.",
+      "settingsOpenedEntry": "Ajustes abiertos: volumen, controles e idioma listos para configurar.",
+      "settingsClosed": "Ajustes cerrados. Los cambios quedaron guardados.",
+      "settingsClosedEntry": "Escribe username y elige publica o privada.",
+      "roomCodeCopied": "Codigo {roomCode} copiado al portapapeles.",
+      "roomCodeCopyError": "No se pudo copiar. Comparte este codigo manualmente: {roomCode}",
+      "languageApplied": "Idioma aplicado: {languageLabel}.",
+      "busyPublic": "Buscando...",
+      "busyCreatePrivate": "Creando...",
+      "busyJoinPrivate": "Uniendo...",
+      "privateJoinNeedsCode": "Escribe un codigo para entrar a una sala privada.",
+      "busyPublicSearch": "Buscando sala publica...",
+      "busyPrivateCreate": "Creando sala privada...",
+      "busyPrivateJoin": "Uniendote a sala privada...",
+      "controlPresetApplied": "Preset de controles aplicado: {preset}.",
+      "playerLeftRoom": "{playerName} abandono la sala",
+      "garageOpenedEntry": "Garage abierto: elige tu moto, aplica o cierra para volver.",
+      "garageOpened": "Garage abierto: cambia tu skin antes de iniciar.",
+      "garageApplied": "Garage aplicado: {moto}.",
+      "returningLobby": "Regresando al lobby...",
+      "publicMatchFinished": "Partida publica finalizada. Puedes regresar al lobby o jugar otra publica.",
+      "privateMatchFinished": "Puedes volver al lobby o esperar el cierre automatico."
+    },
+    "errors": {
+      "roomGeneric": "Error de sala.",
+      "roomJoinFailed": "No se pudo entrar a la sala.",
+      "retryBackend": "Revisa el backend y vuelve a intentar.",
+      "connectBackend": "No se pudo conectar al servidor. Revisa la URL del backend.",
+      "socketFailed": "Fallo la conexion al socket.",
+      "checkSocketUrl": "Revisa VITE_SOCKET_SERVER_URL o el tunel del puerto 3000."
+    },
+    "controls": {
+      "presets": {
+        "flechitas": "Flechitas",
+        "wasd": "WASD"
+      },
+      "guide": {
+        "actions": {
+          "accelerate": "Acelerar",
+          "reverse": "Reversa",
+          "left": "Girar izquierda",
+          "right": "Girar derecha",
+          "drift": "Drift",
+          "brake": "Freno",
+          "item": "Soltar item",
+          "nitro": "Nitro"
+        }
+      }
+    },
+    "garage": {
+      "title": "Elige tu moto",
+      "subtitle": "Selecciona una skin y aplicala al instante.",
+      "yourBike": "Tu moto",
+      "skins": "Skins"
+    },
+    "hints": {
+      "shareAsHost": "Compartelo con tus amigos para que entren directo a tu sala privada.",
+      "shareAsGuest": "Guardalo o copialo si quieres invitar a alguien mas despues."
+    }
+  },
+  "en": {
+    "languages": {
+      "es": "Spanish",
+      "en": "English"
+    },
+    "buttons": {
+      "public": "Public",
+      "private": "Private",
+      "settings": "Settings",
+      "garage": "Garage",
+      "createRoom": "Create room",
+      "joinRoom": "Join room",
+      "back": "Back",
+      "ready": "Ready",
+      "notReady": "Not ready",
+      "start": "Start",
+      "cancel": "Cancel",
+      "copyCode": "Copy code",
+      "copiedText": "Copied",
+      "close": "Close",
+      "startMusic": "Start music",
+      "apply": "Apply",
+      "exit": "Exit"
+    },
+    "labels": {
+      "lobby": "Lobby",
+      "username": "Username",
+      "roomCode": "Room code",
+      "code": "Code",
+      "shareCode": "Share this code",
+      "privateRoom": "Private room",
+      "publicRoom": "Public room",
+      "host": "Host",
+      "waiting": "Waiting",
+      "noPlayers": "No players",
+      "lobbyTitle": "Deliver.io lobby",
+      "lobbySubtitle": "Public or private | Max 6 players",
+      "privateRoomTitle": "Private room {roomCode}",
+      "publicRoomTitle": "Public room",
+      "privateRoomSubtitle": "Code {roomCode} | Connected: {connected}/{maxPlayers} | Ready: {readyCount}/{totalPlayers}",
+      "publicRoomSubtitle": "Public matchmaking | Connected: {connected}/{maxPlayers} | Ready: {readyCount}/{totalPlayers}"
+    },
+    "settings": {
+      "title": "Audio and controls",
+      "subtitle": "Quick changes for volume and key layout. Saved instantly.",
+      "sectionVolume": "Volume",
+      "sectionControls": "Controls",
+      "sectionLanguage": "Language",
+      "musicTitle": "Lobby music",
+      "musicDescription": "Fixed intro on entry and smooth transitions between lobby track variations.",
+      "musicVolumeLabel": "Music volume",
+      "sfxTitle": "Interface effects",
+      "sfxDescription": "Hover, click and keyboard sounds. This affects short UI sounds in lobby.",
+      "sfxVolumeLabel": "SFX volume",
+      "previewTitle": "Track preview",
+      "previewDescription": "Play a specific track to check audio and ambient bikes without waiting for rotation.",
+      "tipAutoplay": "Tip: if autoplay is blocked by browser policy, music starts on first click or key press.",
+      "controlsTitle": "Control preset",
+      "controlsDescription": "Choose your layout. It is used in-match instantly.",
+      "controlsGuideTitle": "Active guide: {preset}",
+      "languageTitle": "Language",
+      "languageDescription": "Pick your language and apply changes instantly to lobby buttons and messages.",
+      "muteMusic": "Mute lobby music",
+      "unmuteMusic": "Enable lobby music",
+      "muteSfx": "Mute effects",
+      "unmuteSfx": "Enable effects"
+    },
+    "messages": {
+      "entryDefault": "Type username and choose public or private.",
+      "privateMode": "Private mode: create a room or join with a code.",
+      "hostShareAndStart": "You are host. Share code {roomCode} and press {startLabel}.",
+      "privateWaitHost": "Private room: wait for host, or everyone mark Ready to speed up countdown.",
+      "countdownPrivate": "Countdown active: {seconds}s to start. Press {cancelLabel} to stop it.",
+      "countdownPublic": "Public room full. Auto start in {seconds}s.",
+      "publicMissingPlayers": "{missingPlayers} player(s) missing to fill room. 10s countdown starts once full.",
+      "publicNotAllReady": "Room is full. Mark Ready to reduce countdown to 3 seconds.",
+      "publicAllReady": "All ready. Start countdown reduced to 3 seconds.",
+      "settingsOpened": "Settings open: adjust volume, controls and language.",
+      "settingsOpenedEntry": "Settings open: volume, controls and language ready to configure.",
+      "settingsClosed": "Settings closed. Changes were saved.",
+      "settingsClosedEntry": "Type username and choose public or private.",
+      "roomCodeCopied": "Code {roomCode} copied to clipboard.",
+      "roomCodeCopyError": "Could not copy. Share this code manually: {roomCode}",
+      "languageApplied": "Language applied: {languageLabel}.",
+      "busyPublic": "Searching...",
+      "busyCreatePrivate": "Creating...",
+      "busyJoinPrivate": "Joining...",
+      "privateJoinNeedsCode": "Type a code to join a private room.",
+      "busyPublicSearch": "Searching public room...",
+      "busyPrivateCreate": "Creating private room...",
+      "busyPrivateJoin": "Joining private room...",
+      "controlPresetApplied": "Control preset applied: {preset}.",
+      "playerLeftRoom": "{playerName} left the room",
+      "garageOpenedEntry": "Garage open: pick your bike, apply, or close to return.",
+      "garageOpened": "Garage open: change your skin before match start.",
+      "garageApplied": "Garage applied: {moto}.",
+      "returningLobby": "Returning to lobby...",
+      "publicMatchFinished": "Public match finished. You can return to lobby or queue another public match.",
+      "privateMatchFinished": "You can return to lobby or wait for automatic close."
+    },
+    "errors": {
+      "roomGeneric": "Room error.",
+      "roomJoinFailed": "Could not join the room.",
+      "retryBackend": "Check backend and try again.",
+      "connectBackend": "Could not connect to server. Check backend URL.",
+      "socketFailed": "Socket connection failed.",
+      "checkSocketUrl": "Check VITE_SOCKET_SERVER_URL or the port 3000 tunnel."
+    },
+    "controls": {
+      "presets": {
+        "flechitas": "Arrows",
+        "wasd": "WASD"
+      },
+      "guide": {
+        "actions": {
+          "accelerate": "Accelerate",
+          "reverse": "Reverse",
+          "left": "Turn left",
+          "right": "Turn right",
+          "drift": "Drift",
+          "brake": "Brake",
+          "item": "Use item",
+          "nitro": "Nitro"
+        }
+      }
+    },
+    "garage": {
+      "title": "Choose your bike",
+      "subtitle": "Select a skin and apply it instantly.",
+      "yourBike": "Your bike",
+      "skins": "Skins"
+    },
+    "hints": {
+      "shareAsHost": "Share it so friends can join your private room directly.",
+      "shareAsGuest": "Keep it or copy it if you want to invite someone later."
+    }
+  }
+}

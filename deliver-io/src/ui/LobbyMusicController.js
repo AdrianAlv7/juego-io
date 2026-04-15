@@ -1,11 +1,12 @@
+import {
+  DEFAULT_LOBBY_MUSIC_PRESET_ID,
+  getLobbyMusicPreset,
+} from "./music/lobbyPresets.js";
+
 function clamp01(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(1, number));
-}
-
-function encodeLobbySource(fileName) {
-  return encodeURI(`/assets/sound/lobby/${fileName}`);
 }
 
 function decodeAudioBuffer(context, arrayBuffer) {
@@ -41,17 +42,6 @@ function buildInsanoPatternKey(pattern) {
   return Array.isArray(pattern) ? pattern.join(" > ") : "";
 }
 
-function normalizeLobbyLabel(label) {
-  const normalized = String(label || "").trim();
-  if (!normalized) return "";
-
-  if (LOBBY_TRACKS[normalized]) {
-    return normalized;
-  }
-
-  return LOBBY_PREVIEW_ALIASES[normalized] || "";
-}
-
 function chooseWeightedOption(items, previousKey = "") {
   const normalizedItems = Array.isArray(items) ? items.filter(Boolean) : [];
   if (!normalizedItems.length) return null;
@@ -74,48 +64,6 @@ function chooseWeightedOption(items, previousKey = "") {
   return sourceItems[sourceItems.length - 1] || null;
 }
 
-const LOBBY_TRACKS = Object.freeze({
-  intro: encodeLobbySource("intro.ogg"),
-  "drop1-1": encodeLobbySource("drop1-1.ogg"),
-  "drop1-2": encodeLobbySource("drop1-2.ogg"),
-  "drop1-3": encodeLobbySource("drop1-3.ogg"),
-  "drop1-4": encodeLobbySource("drop1-4.ogg"),
-  "drop1-5 moto": encodeLobbySource("drop1-5 moto.ogg"),
-  "drop1-6 moto": encodeLobbySource("drop1-6 moto.ogg"),
-  "drop1-end": encodeLobbySource("drop1-end.ogg"),
-  "antes dropinsano": encodeLobbySource("antes dropinsano.ogg"),
-  intermedio: encodeLobbySource("intermedio.ogg"),
-  "dropinsano1-1": encodeLobbySource("dropinsano1-1.ogg"),
-  "dropinsano1-2": encodeLobbySource("dropinsano1-2.ogg"),
-  "dropinsano1-end": encodeLobbySource("dropinsano1-end.ogg"),
-  end: encodeLobbySource("end.ogg"),
-});
-
-const LOBBY_PREVIEW_ALIASES = Object.freeze({
-  start: "intro",
-  drop1: "drop1-1",
-  drop2: "drop1-4",
-  dropInsano: "dropinsano1-1",
-});
-
-const DROP1_ENTRY_LABELS = Object.freeze(["drop1-1", "drop1-2"]);
-const DROP1_LIGAMENTS = Object.freeze({
-  "drop1-1": "drop1-4",
-  "drop1-2": "drop1-3",
-});
-const DROP1_MOTO_LABELS = Object.freeze(["drop1-5 moto", "drop1-6 moto"]);
-const INSANO_PATTERNS = Object.freeze([
-  Object.freeze(["dropinsano1-1"]),
-  Object.freeze(["dropinsano1-2"]),
-  Object.freeze(["dropinsano1-1", "dropinsano1-2"]),
-]);
-const DROP1_BLOCK_OPTIONS = Object.freeze([
-  Object.freeze({ key: "entry-end", weight: 14 }),
-  Object.freeze({ key: "entry-partner-end", weight: 24 }),
-  Object.freeze({ key: "entry-moto-end", weight: 25 }),
-  Object.freeze({ key: "entry-partner-moto-end", weight: 37 }),
-]);
-
 export default class LobbyMusicController {
   // Guia rapida para retocar la musica del lobby:
   // - trackGain: balance interno del lobby contra el slider global de musica.
@@ -125,9 +73,11 @@ export default class LobbyMusicController {
   // - buildCyclePlan(): aqui viven las reglas de combinacion entre intro, drop1, insano y end.
   // - pickDrop1BlockOption() / pickInsanoPattern(): ajusta variedad sin romper ligamentos.
   constructor(options = {}) {
+    this.applyPresetById(options.presetId || DEFAULT_LOBBY_MUSIC_PRESET_ID);
+
     this.masterVolume = clamp01(options.masterVolume ?? 0.75);
     // Lobby y game comparten el mismo slider general; este gain solo empareja su pegada interna.
-    this.trackGain = clamp01(options.trackGain ?? 0.5);
+    this.trackGain = clamp01(options.trackGain ?? this.preset?.trackGain ?? 0.5);
     this.decodeLeadMs = Math.max(250, Number(options.decodeLeadMs ?? 2200));
     this.scheduleLeadMs = Math.max(25, Number(options.scheduleLeadMs ?? 140));
     this.stopFadeOutMs = Math.max(0, Number(options.stopFadeOutMs ?? 260));
@@ -160,6 +110,53 @@ export default class LobbyMusicController {
     this.resetSequenceState();
     this.emitTrackStateChange();
     this.emitTrackLabelChange();
+  }
+
+  applyPresetById(presetId) {
+    const nextPreset = getLobbyMusicPreset(presetId);
+    this.presetId = nextPreset?.id || DEFAULT_LOBBY_MUSIC_PRESET_ID;
+    this.preset = nextPreset;
+    this.trackMap = this.preset?.tracks || {};
+    this.previewAliases = this.preset?.previewAliases || {};
+    this.sequenceConfig = this.preset?.sequence || {};
+    this.presetVisualProfile = this.preset?.visualProfile || {};
+    return this.preset;
+  }
+
+  setPreset(presetId, options = {}) {
+    const nextPreset = getLobbyMusicPreset(presetId);
+    if (nextPreset?.id === this.preset?.id) return false;
+
+    const shouldResume = Boolean(options.resumePlayback ?? this.shouldPlay);
+    this.stop({ fadeOutMs: 0 });
+    this.applyPresetById(nextPreset.id);
+    this.trackGain = clamp01(options.trackGain ?? nextPreset?.trackGain ?? this.trackGain ?? 0.5);
+    this.bufferCache.clear();
+    this.bufferWarmupStarted = false;
+
+    if (shouldResume) {
+      this.enterLobby({ restartIntro: options.restartIntro !== false });
+    }
+    return true;
+  }
+
+  getPresetInfo() {
+    return {
+      id: this.preset?.id || DEFAULT_LOBBY_MUSIC_PRESET_ID,
+      label: this.preset?.label || "Lobby Music",
+      visualProfile: this.presetVisualProfile || {},
+    };
+  }
+
+  getPreviewLabels() {
+    return Object.keys(this.trackMap || {});
+  }
+
+  normalizeLobbyLabel(label) {
+    const normalized = String(label || "").trim();
+    if (!normalized) return "";
+    if (this.trackMap?.[normalized]) return normalized;
+    return this.previewAliases?.[normalized] || "";
   }
 
   getAudioContext() {
@@ -205,8 +202,8 @@ export default class LobbyMusicController {
   }
 
   loadBuffer(label) {
-    const normalizedLabel = normalizeLobbyLabel(label);
-    const source = LOBBY_TRACKS[normalizedLabel];
+    const normalizedLabel = this.normalizeLobbyLabel(label);
+    const source = this.trackMap[normalizedLabel];
     if (!source) {
       return Promise.resolve(null);
     }
@@ -236,7 +233,7 @@ export default class LobbyMusicController {
   warmAllBuffers() {
     if (this.bufferWarmupStarted) return;
     this.bufferWarmupStarted = true;
-    Object.keys(LOBBY_TRACKS).forEach((label) => {
+    Object.keys(this.trackMap || {}).forEach((label) => {
       this.loadBuffer(label).catch(() => {
         // Si una pista falla, la reintentaremos justo cuando haga falta.
       });
@@ -298,9 +295,9 @@ export default class LobbyMusicController {
   }
 
   setCurrentTrack(label) {
-    this.currentTrackLabel = normalizeLobbyLabel(label);
+    this.currentTrackLabel = this.normalizeLobbyLabel(label);
     this.currentTrackSource = this.currentTrackLabel
-      ? LOBBY_TRACKS[this.currentTrackLabel] || ""
+      ? this.trackMap[this.currentTrackLabel] || ""
       : "";
     this.emitTrackStateChange();
     this.emitTrackLabelChange();
@@ -390,20 +387,29 @@ export default class LobbyMusicController {
   }
 
   pickNextDropEntry(previousEntryLabel = "") {
+    const drop1EntryLabels = Array.isArray(this.sequenceConfig?.drop1EntryLabels)
+      ? this.sequenceConfig.drop1EntryLabels
+      : [];
     if (previousEntryLabel === "drop1-1") return "drop1-2";
     if (previousEntryLabel === "drop1-2") return "drop1-1";
-    return pickRandom(DROP1_ENTRY_LABELS) || DROP1_ENTRY_LABELS[0];
+    return pickRandom(drop1EntryLabels) || drop1EntryLabels[0] || "";
   }
 
   pickDrop1BlockOption(previousKey = "") {
+    const drop1BlockOptions = Array.isArray(this.sequenceConfig?.drop1BlockOptions)
+      ? this.sequenceConfig.drop1BlockOptions
+      : [];
     return (
-      chooseWeightedOption(DROP1_BLOCK_OPTIONS, previousKey) || DROP1_BLOCK_OPTIONS[0]
+      chooseWeightedOption(drop1BlockOptions, previousKey) || drop1BlockOptions[0] || null
     );
   }
 
   pickMotoAccent(previousMotoLabel = "") {
-    const filteredLabels = DROP1_MOTO_LABELS.filter((label) => label !== previousMotoLabel);
-    return pickRandom(filteredLabels.length ? filteredLabels : DROP1_MOTO_LABELS);
+    const drop1MotoLabels = Array.isArray(this.sequenceConfig?.drop1MotoLabels)
+      ? this.sequenceConfig.drop1MotoLabels
+      : [];
+    const filteredLabels = drop1MotoLabels.filter((label) => label !== previousMotoLabel);
+    return pickRandom(filteredLabels.length ? filteredLabels : drop1MotoLabels);
   }
 
   shouldUseIntermedio(snapshot = {}) {
@@ -416,11 +422,14 @@ export default class LobbyMusicController {
   }
 
   pickInsanoPattern(previousPatternKey = "") {
-    const candidatePatterns = INSANO_PATTERNS.filter(
+    const insanoPatterns = Array.isArray(this.sequenceConfig?.insanoPatterns)
+      ? this.sequenceConfig.insanoPatterns
+      : [];
+    const candidatePatterns = insanoPatterns.filter(
       (pattern) => buildInsanoPatternKey(pattern) !== previousPatternKey
     );
     const selectedPattern = pickRandom(
-      candidatePatterns.length ? candidatePatterns : INSANO_PATTERNS
+      candidatePatterns.length ? candidatePatterns : insanoPatterns
     );
     return Array.isArray(selectedPattern) ? selectedPattern.slice() : [];
   }
@@ -447,7 +456,12 @@ export default class LobbyMusicController {
       safeSnapshot.completedCycleCount + (markPreviousCycleCompleted ? 1 : 0);
 
     const entryLabel = this.pickNextDropEntry(safeSnapshot.lastCycleEntryLabel);
-    const partnerLabel = DROP1_LIGAMENTS[entryLabel];
+    const drop1Ligaments =
+      this.sequenceConfig?.drop1Ligaments &&
+      typeof this.sequenceConfig.drop1Ligaments === "object"
+        ? this.sequenceConfig.drop1Ligaments
+        : {};
+    const partnerLabel = drop1Ligaments[entryLabel];
     const drop1Block = this.pickDrop1BlockOption(safeSnapshot.lastDropBlockKey);
     const plan = ["intro", entryLabel];
 
@@ -528,7 +542,7 @@ export default class LobbyMusicController {
   }
 
   startTrackNow(label, options = {}) {
-    const normalizedLabel = normalizeLobbyLabel(label);
+    const normalizedLabel = this.normalizeLobbyLabel(label);
     if (!normalizedLabel) {
       return Promise.resolve(false);
     }
@@ -837,7 +851,7 @@ export default class LobbyMusicController {
   }
 
   previewTrackByLabel(label) {
-    const normalizedLabel = normalizeLobbyLabel(label);
+    const normalizedLabel = this.normalizeLobbyLabel(label);
     if (!normalizedLabel) {
       return false;
     }
@@ -918,7 +932,7 @@ export default class LobbyMusicController {
     this.suspendedForInactivity = false;
     this.resumeState = null;
     this.previewMode = Boolean(resumeState.previewMode);
-    this.previewTrackLabel = normalizeLobbyLabel(resumeState.previewTrackLabel);
+    this.previewTrackLabel = this.normalizeLobbyLabel(resumeState.previewTrackLabel);
     this.applySequenceSnapshot(resumeState.sequenceSnapshot);
     this.startTrackNow(resumeState.label, {
       offsetSec: resumeState.offsetSec,

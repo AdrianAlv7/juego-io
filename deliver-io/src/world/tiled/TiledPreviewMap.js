@@ -549,6 +549,7 @@ export default class TiledPreviewMap {
       impact: 0,
       penetration: 0,
       speedKmh,
+      ghostBypassed: false,
     };
   }
 
@@ -591,6 +592,10 @@ export default class TiledPreviewMap {
 
   setGuideSuppressed(suppressed) {
     this.guide.setSuppressed(Boolean(suppressed));
+  }
+
+  setCountdownSuppressed(suppressed) {
+    this.countdown?.setSuppressed?.(Boolean(suppressed));
   }
 
   getMotoMaxHealth() {
@@ -758,6 +763,13 @@ export default class TiledPreviewMap {
       contactState.trainBlocked = false;
       return collisionInfo;
     }
+    if (moto?.shouldBypassCollision?.(this.scene.time.now)) {
+      contactState.trainBlocked = false;
+      return {
+        ...this.getCollisionInfoDefaults(collisionInfo.speedKmh),
+        ghostBypassed: true,
+      };
+    }
 
     const distances = [
       { edge: "left", value: Math.abs(x - rect.left) },
@@ -789,6 +801,7 @@ export default class TiledPreviewMap {
       impact: 0.2,
       penetration: distances[0]?.value || 0,
       speedKmh: collisionInfo.speedKmh,
+      ghostBypassed: false,
     };
   }
 
@@ -822,6 +835,15 @@ export default class TiledPreviewMap {
     );
     const fallbackPosition =
       nearestRoadPosition || this.safeRoadPositions.get(moto) || this.spawnPoint;
+    const nowMs = Number(this.scene?.time?.now || Date.now());
+    if (moto?.shouldBypassCollision?.(nowMs)) {
+      contactState.colliding = false;
+      return this.enforceTrainCollision(moto, {
+        ...this.getCollisionInfoDefaults(speedKmh),
+        ghostBypassed: true,
+      });
+    }
+
     const correctionX = fallbackPosition.x - moto.sprite.x;
     const correctionY = fallbackPosition.y - moto.sprite.y;
     const correctionLength = Math.hypot(correctionX, correctionY);
@@ -910,6 +932,14 @@ export default class TiledPreviewMap {
         moto.handleTrackCollision?.(itemResult.collisionInfo);
       }
     }
+    const hasGhostCollisionContact = Boolean(
+      collisionInfo?.collided ||
+        collisionInfo?.ghostBypassed ||
+        itemResult?.collisionInfo?.collided ||
+        itemResult?.collisionInfo?.ghostBypassed ||
+        itemResult?.ghostBypassed
+    );
+    moto.updateGhostCollisionContact?.(hasGhostCollisionContact, nowMs);
 
     this.health.applyCollision(collisionInfo, nowMs);
     this.motoHealth.applyCollision(collisionInfo, nowMs);

@@ -16,13 +16,27 @@ import {
 } from "../../events/weather/catalog.js";
 import appAudioManager from "../../ui/AppAudioManager.js";
 import LobbyMotoAmbientController from "../../ui/LobbyMotoAmbientController.js";
+import {
+  CONTROL_PRESET_IDS,
+  getControlGuideRows,
+  getControlPreset,
+  loadControlPresetId,
+  saveControlPresetId,
+} from "../../systems/controlPresets.js";
+import {
+  getAvailableLanguages,
+  getLanguage,
+  getLanguageLabel,
+  setLanguage,
+  t,
+} from "../../i18n/index.js";
 import { ACTIVE_MAP } from "../../world/activeMap.js";
 import { USERNAME_MAX_LENGTH, WEATHER_UI_MARGIN } from "./constants.js";
 
 const RAIN_PARTICLE_TEXTURE_KEY = "weather-raindrop";
 const PLAYER_NAME_STORAGE_KEY = "deliver_player_name";
 const LEGACY_PLAYER_NAME_STORAGE_KEY = "repartidor_player_name";
-const LOBBY_TRACK_PREVIEW_LABELS = [
+const DEFAULT_LOBBY_TRACK_PREVIEW_LABELS = [
   "intro",
   "drop1-1",
   "drop1-2",
@@ -38,6 +52,42 @@ const LOBBY_TRACK_PREVIEW_LABELS = [
   "end",
   "intermedio",
 ];
+const SETTINGS_SECTION_IDS = Object.freeze({
+  VOLUME: "volume",
+  CONTROLS: "controls",
+  LANGUAGE: "language",
+});
+const CONTROL_PRESET_TRANSLATION_KEYS = Object.freeze({
+  [CONTROL_PRESET_IDS.ARROWS]: "controls.presets.flechitas",
+  [CONTROL_PRESET_IDS.WASD]: "controls.presets.wasd",
+});
+const CONTROL_GUIDE_ACTION_KEYS = Object.freeze([
+  "accelerate",
+  "reverse",
+  "left",
+  "right",
+  "drift",
+  "brake",
+  "item",
+  "nitro",
+]);
+
+function getLocalizedControlPresetLabel(presetId) {
+  const preset = getControlPreset(presetId);
+  const key = CONTROL_PRESET_TRANSLATION_KEYS[preset.id] || "";
+  return key ? t(key, {}, preset.label) : preset.label;
+}
+
+function getLocalizedControlGuideRows(presetId) {
+  return getControlGuideRows(presetId).map((entry, index) => ({
+    ...entry,
+    action: t(
+      `controls.guide.actions.${CONTROL_GUIDE_ACTION_KEYS[index]}`,
+      {},
+      entry.action
+    ),
+  }));
+}
 
 function bindDomInputNode(scene, node, options = {}) {
   if (!node) return;
@@ -77,6 +127,44 @@ function clampVolumeSetting(value, fallback = 1) {
 
 function formatVolumePercent(value) {
   return `${Math.round(clampVolumeSetting(value) * 100)}%`;
+}
+
+function isTextEntryElement(node) {
+  if (!(node instanceof HTMLElement)) return false;
+
+  if (node instanceof HTMLTextAreaElement) {
+    return !node.disabled && !node.readOnly;
+  }
+
+  if (node instanceof HTMLInputElement) {
+    if (node.disabled || node.readOnly) return false;
+    const inputType = String(node.type || "text").toLowerCase();
+    const nonTextTypes = new Set([
+      "button",
+      "checkbox",
+      "color",
+      "date",
+      "datetime-local",
+      "file",
+      "hidden",
+      "image",
+      "month",
+      "number",
+      "radio",
+      "range",
+      "reset",
+      "submit",
+      "time",
+      "week",
+    ]);
+    return !nonTextTypes.has(inputType);
+  }
+
+  if (node instanceof HTMLSelectElement) {
+    return !node.disabled;
+  }
+
+  return node.isContentEditable;
 }
 
 function setLobbyButtonLabel(buttonNode, value) {
@@ -267,7 +355,7 @@ export const gameSceneUiMethods = {
       {
         button: this.publicMatchButton,
         modes: ["public"],
-        busyLabel: "Buscando...",
+        busyLabel: t("messages.busyPublic", {}, "Buscando..."),
       },
       {
         button: this.privateModeButton,
@@ -277,12 +365,12 @@ export const gameSceneUiMethods = {
       {
         button: this.privateCreateButton,
         modes: ["private_create"],
-        busyLabel: "Creando...",
+        busyLabel: t("messages.busyCreatePrivate", {}, "Creando..."),
       },
       {
         button: this.privateJoinButton,
         modes: ["private_join"],
-        busyLabel: "Uniendo...",
+        busyLabel: t("messages.busyJoinPrivate", {}, "Uniendo..."),
       },
       {
         button: this.extraActionButton,
@@ -352,23 +440,40 @@ export const gameSceneUiMethods = {
   async copyCurrentRoomCode() {
     const roomCode = this.currentLobbyState?.roomCode || "";
     if (!roomCode) return;
+    if ((this.roomShareCopyCooldownUntilMs || 0) > Date.now()) return;
 
     try {
       await navigator.clipboard.writeText(roomCode);
+      this.roomShareCopyCooldownUntilMs = Date.now() + 1800;
       if (this.roomShareButton) {
-        setLobbyButtonLabel(this.roomShareButton, "Codigo copiado");
+        this.roomShareButton.disabled = true;
+        setLobbyButtonLabel(this.roomShareButton, t("buttons.copiedText", {}, "Texto copiado"));
       }
-      this.setLobbyMessage(`Codigo ${roomCode} copiado al portapapeles.`, "#95f5c8");
-      window.setTimeout(() => {
-        if (this.roomShareButton) {
-          setLobbyButtonLabel(this.roomShareButton, "Copiar codigo");
-        }
-      }, 1400);
+      this.setLobbyMessage(
+        t("messages.roomCodeCopied", { roomCode }, `Codigo ${roomCode} copiado al portapapeles.`),
+        "#95f5c8"
+      );
+      if (this.roomShareCopyResetTimer) {
+        window.clearTimeout(this.roomShareCopyResetTimer);
+      }
+      this.roomShareCopyResetTimer = window.setTimeout(() => {
+        this.roomShareCopyResetTimer = null;
+        this.roomShareCopyCooldownUntilMs = 0;
+        this.updateRoomShareUi?.();
+      }, 1800);
     } catch (_error) {
       this.setLobbyMessage(
-        `No se pudo copiar. Comparte este codigo manualmente: ${roomCode}`,
+        t(
+          "messages.roomCodeCopyError",
+          { roomCode },
+          `No se pudo copiar. Comparte este codigo manualmente: ${roomCode}`
+        ),
         "#ffcf88"
       );
+      this.roomShareCopyCooldownUntilMs = 0;
+      if (this.roomShareButton) {
+        this.roomShareButton.disabled = false;
+      }
     }
   },
 
@@ -421,19 +526,34 @@ export const gameSceneUiMethods = {
     }
     if (this.roomShareLabel) {
       this.roomShareLabel.textContent = isHost
-        ? "Comparte este codigo"
-        : "Codigo de sala";
+        ? t("labels.shareCode", {}, "Comparte este codigo")
+        : t("labels.roomCode", {}, "Codigo de sala");
       this.roomShareLabel.style.display = "";
     }
     if (this.roomShareHint) {
       this.roomShareHint.textContent =
         isHost
-          ? "Compartelo con tus amigos para que entren directo a tu sala privada."
-          : "Guardalo o copialo si quieres invitar a alguien mas despues.";
+          ? t(
+              "hints.shareAsHost",
+              {},
+              "Compartelo con tus amigos para que entren directo a tu sala privada."
+            )
+          : t(
+              "hints.shareAsGuest",
+              {},
+              "Guardalo o copialo si quieres invitar a alguien mas despues."
+            );
       this.roomShareHint.style.display = "";
     }
     if (this.roomShareButton) {
-      setLobbyButtonLabel(this.roomShareButton, "Copiar codigo");
+      const cooldownActive = (this.roomShareCopyCooldownUntilMs || 0) > Date.now();
+      setLobbyButtonLabel(
+        this.roomShareButton,
+        cooldownActive
+          ? t("buttons.copiedText", {}, "Texto copiado")
+          : t("buttons.copyCode", {}, "Copiar codigo")
+      );
+      this.roomShareButton.disabled = cooldownActive;
       this.roomShareButton.style.display = "inline-flex";
     }
   },
@@ -442,7 +562,7 @@ export const gameSceneUiMethods = {
     if (typeof document === "undefined") return false;
     const activeElement = document.activeElement;
     if (!(activeElement instanceof HTMLElement)) return false;
-    return ["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName);
+    return isTextEntryElement(activeElement);
   },
 
   syncKeyboardCaptureState() {
@@ -471,7 +591,7 @@ export const gameSceneUiMethods = {
 
     const helperCaption = document.createElement("div");
     helperCaption.className = "lhl-entry-caption";
-    helperCaption.textContent = "Lobby";
+    helperCaption.textContent = t("labels.lobby", {}, "Lobby");
 
     const usernameRow = document.createElement("div");
     usernameRow.className = "lhl-inputs-row";
@@ -480,12 +600,12 @@ export const gameSceneUiMethods = {
     nameGroup.className = "lhl-input-group lhl-input-group--full";
     const nameLabel = document.createElement("label");
     nameLabel.className = "lhl-input-label";
-    nameLabel.textContent = "Username";
+    nameLabel.textContent = t("labels.username", {}, "Username");
 
     this.nameInput = document.createElement("input");
     this.nameInput.type = "text";
     this.nameInput.maxLength = USERNAME_MAX_LENGTH;
-    this.nameInput.placeholder = "Username";
+    this.nameInput.placeholder = t("labels.username", {}, "Username");
     this.nameInput.className = "lhl-input lhl-input-player";
 
     nameGroup.appendChild(nameLabel);
@@ -506,28 +626,49 @@ export const gameSceneUiMethods = {
     this.privateActionsRoot = document.createElement("div");
     this.privateActionsRoot.className = "lhl-private-view";
 
-    this.publicMatchButton = makeActionButton("Publica", "lhl-btn-public");
-    this.privateModeButton = makeActionButton("Privada", "lhl-btn-private");
-    this.extraActionButton = makeActionButton("Ajustes", "lhl-btn-settings");
-    this.futureActionButton = makeActionButton("Garage", "lhl-btn-garage");
+    this.publicMatchButton = makeActionButton(
+      t("buttons.public", {}, "Publica"),
+      "lhl-btn-public"
+    );
+    this.privateModeButton = makeActionButton(
+      t("buttons.private", {}, "Privada"),
+      "lhl-btn-private"
+    );
+    this.extraActionButton = makeActionButton(
+      t("buttons.settings", {}, "Ajustes"),
+      "lhl-btn-settings"
+    );
+    this.futureActionButton = makeActionButton(
+      t("buttons.garage", {}, "Garage"),
+      "lhl-btn-garage"
+    );
 
     const roomGroup = document.createElement("div");
     roomGroup.className = "lhl-input-group lhl-input-group--full";
     const roomLabel = document.createElement("label");
     roomLabel.className = "lhl-input-label";
-    roomLabel.textContent = "Codigo de sala";
+    roomLabel.textContent = t("labels.roomCode", {}, "Codigo de sala");
 
     this.roomCodeInput = document.createElement("input");
     this.roomCodeInput.type = "text";
     this.roomCodeInput.maxLength = 8;
-    this.roomCodeInput.placeholder = "Codigo";
+    this.roomCodeInput.placeholder = t("labels.code", {}, "Codigo");
     this.roomCodeInput.className = "lhl-input lhl-input-room";
     roomGroup.appendChild(roomLabel);
     roomGroup.appendChild(this.roomCodeInput);
 
-    this.privateCreateButton = makeActionButton("Crear sala", "lhl-btn-private");
-    this.privateJoinButton = makeActionButton("Unirse a sala", "lhl-btn-warn");
-    this.privateBackButton = makeActionButton("Regresar", "lhl-btn-minimal");
+    this.privateCreateButton = makeActionButton(
+      t("buttons.createRoom", {}, "Crear sala"),
+      "lhl-btn-private"
+    );
+    this.privateJoinButton = makeActionButton(
+      t("buttons.joinRoom", {}, "Unirse a sala"),
+      "lhl-btn-warn"
+    );
+    this.privateBackButton = makeActionButton(
+      t("buttons.back", {}, "Regresar"),
+      "lhl-btn-minimal"
+    );
 
     const submitPublic = () => this.submitNameEntry("public");
     const submitCreatePrivate = () => this.submitNameEntry("private_create");
@@ -536,12 +677,17 @@ export const gameSceneUiMethods = {
     this.publicMatchButton.addEventListener("click", submitPublic);
     this.privateModeButton.addEventListener("click", () => {
       this.setNameEntryMode("private");
-      this.setLobbyMessage("Modo privada: crea sala o unete con codigo.", "#8ad6ff");
+      this.setLobbyMessage(
+        t("messages.privateMode", {}, "Modo privada: crea sala o unete con codigo."),
+        "#8ad6ff"
+      );
       this.roomCodeInput?.focus();
     });
     this.privateBackButton.addEventListener("click", () => {
       this.setNameEntryMode("main");
-      this.setLobbyMessage("Escribe username y elige publica o privada.");
+      this.setLobbyMessage(
+        t("messages.entryDefault", {}, "Escribe username y elige publica o privada.")
+      );
       this.nameInput?.focus();
     });
     this.privateCreateButton.addEventListener("click", submitCreatePrivate);
@@ -598,7 +744,13 @@ export const gameSceneUiMethods = {
     const roomCode = this.getNormalizedRoomCode();
     const resolvedRoomCode = roomMode === "private_create" ? "" : roomCode;
     if (roomMode === "private_join" && !resolvedRoomCode) {
-      this.lobbyMessage.setText("Escribe un codigo para entrar a una sala privada.");
+      this.lobbyMessage.setText(
+        t(
+          "messages.privateJoinNeedsCode",
+          {},
+          "Escribe un codigo para entrar a una sala privada."
+        )
+      );
       this.lobbyMessage.setColor("#ffcf88");
       this.roomCodeInput?.focus();
       return;
@@ -612,10 +764,10 @@ export const gameSceneUiMethods = {
     this.setNameEntryBusy(roomMode);
     this.setLobbyMessage(
       roomMode === "public"
-        ? "Buscando sala publica..."
+        ? t("messages.busyPublicSearch", {}, "Buscando sala publica...")
         : roomMode === "private_create"
-          ? "Creando sala privada..."
-          : "Uniendote a sala privada..."
+          ? t("messages.busyPrivateCreate", {}, "Creando sala privada...")
+          : t("messages.busyPrivateJoin", {}, "Uniendote a sala privada...")
     );
 
     this.multiplayer.start({
@@ -895,18 +1047,355 @@ export const gameSceneUiMethods = {
 
     syncButton(this.musicMuteToggleButton, {
       isMuted: appAudioManager.getMusicMuted(),
-      muteLabel: "Silenciar musica del lobby",
-      unmuteLabel: "Activar musica del lobby",
+      muteLabel: t("settings.muteMusic", {}, "Silenciar musica del lobby"),
+      unmuteLabel: t("settings.unmuteMusic", {}, "Activar musica del lobby"),
     });
     syncButton(this.sfxMuteToggleButton, {
       isMuted: appAudioManager.getSfxMuted(),
-      muteLabel: "Silenciar efectos",
-      unmuteLabel: "Activar efectos",
+      muteLabel: t("settings.muteSfx", {}, "Silenciar efectos"),
+      unmuteLabel: t("settings.unmuteSfx", {}, "Activar efectos"),
     });
+  },
+
+  getActiveControlPresetId() {
+    const runtimePreset =
+      this.inputSystem?.getControlPresetId?.() || this.controlPresetId || "flechitas";
+    return getControlPreset(runtimePreset).id;
+  },
+
+  renderSettingsControlGuide() {
+    if (!this.settingsControlGuideGrid) return;
+
+    const preset = getControlPreset(this.getActiveControlPresetId());
+    const guideRows = getLocalizedControlGuideRows(preset.id);
+    this.settingsControlGuideGrid.innerHTML = "";
+
+    guideRows.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "lhl-settings-guide-row";
+
+      const keyNode = document.createElement("div");
+      keyNode.className = "lhl-settings-guide-key";
+      keyNode.textContent = entry.key;
+
+      const actionNode = document.createElement("div");
+      actionNode.className = "lhl-settings-guide-action";
+      actionNode.textContent = entry.action;
+
+      row.appendChild(keyNode);
+      row.appendChild(actionNode);
+      this.settingsControlGuideGrid.appendChild(row);
+    });
+
+    if (this.settingsControlGuideTitle) {
+      this.settingsControlGuideTitle.textContent = t(
+        "settings.controlsGuideTitle",
+        {
+          preset: getLocalizedControlPresetLabel(preset.id),
+        },
+        `Guia activa: ${preset.label}`
+      );
+    }
+  },
+
+  applyControlPreset(presetId, options = {}) {
+    const { silent = false } = options;
+    const preset = getControlPreset(saveControlPresetId(presetId));
+
+    this.controlPresetId = preset.id;
+    this.inputSystem?.setControlPreset?.(preset.id);
+    this.syncSettingsUi();
+
+    if (!silent) {
+      this.setLobbyMessage(
+        t(
+          "messages.controlPresetApplied",
+          { preset: getLocalizedControlPresetLabel(preset.id) },
+          `Preset de controles aplicado: ${preset.label}.`
+        ),
+        "#8ad6ff"
+      );
+    }
+  },
+
+  applyLanguageSelection(languageCode, options = {}) {
+    const { silent = false } = options;
+    const nextLanguage = setLanguage(languageCode);
+    const languageLabel = getLanguageLabel(nextLanguage, nextLanguage.toUpperCase());
+    this.refreshLocalizedUiText?.();
+    this.syncSettingsUi?.();
+
+    if (!silent) {
+      this.setLobbyMessage(
+        t("messages.languageApplied", { languageLabel }),
+        "#8ad6ff"
+      );
+    }
+  },
+
+  refreshLocalizedUiText() {
+    if (this.nameEntryRoot) {
+      const captionNode = this.nameEntryRoot.querySelector(".lhl-entry-caption");
+      if (captionNode) {
+        captionNode.textContent = t("labels.lobby", {}, "Lobby");
+      }
+
+      const nameLabelNode = this.nameInput
+        ?.closest(".lhl-input-group")
+        ?.querySelector(".lhl-input-label");
+      if (nameLabelNode) {
+        nameLabelNode.textContent = t("labels.username", {}, "Username");
+      }
+      if (this.nameInput) {
+        this.nameInput.placeholder = t("labels.username", {}, "Username");
+      }
+
+      const roomLabelNode = this.roomCodeInput
+        ?.closest(".lhl-input-group")
+        ?.querySelector(".lhl-input-label");
+      if (roomLabelNode) {
+        roomLabelNode.textContent = t("labels.roomCode", {}, "Codigo de sala");
+      }
+      if (this.roomCodeInput) {
+        this.roomCodeInput.placeholder = t("labels.code", {}, "Codigo");
+      }
+
+      if (this.publicMatchButton) {
+        this.publicMatchButton.dataset.defaultLabel = t("buttons.public", {}, "Publica");
+      }
+      if (this.privateModeButton) {
+        this.privateModeButton.dataset.defaultLabel = t("buttons.private", {}, "Privada");
+      }
+      if (this.privateCreateButton) {
+        this.privateCreateButton.dataset.defaultLabel = t(
+          "buttons.createRoom",
+          {},
+          "Crear sala"
+        );
+      }
+      if (this.privateJoinButton) {
+        this.privateJoinButton.dataset.defaultLabel = t(
+          "buttons.joinRoom",
+          {},
+          "Unirse a sala"
+        );
+      }
+      if (this.privateBackButton) {
+        this.privateBackButton.dataset.defaultLabel = t("buttons.back", {}, "Regresar");
+      }
+      if (this.extraActionButton) {
+        this.extraActionButton.dataset.defaultLabel = t(
+          "buttons.settings",
+          {},
+          "Ajustes"
+        );
+      }
+      if (this.futureActionButton) {
+        this.futureActionButton.dataset.defaultLabel = t("buttons.garage", {}, "Garage");
+      }
+
+      const busyState = Boolean(this.nameInput?.disabled || this.roomCodeInput?.disabled);
+      this.setNameEntryBusy?.(busyState ? this.pendingRoomMode : null);
+    }
+
+    if (this.leaveRoomButton) {
+      setLobbyButtonLabel(this.leaveRoomButton, t("buttons.exit", {}, "Salir"));
+    }
+    if (this.settingsQuickButton) {
+      setLobbyButtonLabel(this.settingsQuickButton, t("buttons.settings", {}, "Ajustes"));
+    }
+    if (this.garageQuickButton) {
+      setLobbyButtonLabel(this.garageQuickButton, t("buttons.garage", {}, "Garage"));
+    }
+
+    if (this.settingsRoot) {
+      this.applySettingsTranslations?.();
+    }
+
+    this.updateRoomShareUi?.();
+    this.renderLobbyState?.();
+  },
+
+  setSettingsSection(sectionId = SETTINGS_SECTION_IDS.VOLUME) {
+    const normalized = Object.values(SETTINGS_SECTION_IDS).includes(sectionId)
+      ? sectionId
+      : SETTINGS_SECTION_IDS.VOLUME;
+    this.settingsActiveSection = normalized;
+
+    if (!this.settingsRoot) return;
+
+    const showVolume = normalized === SETTINGS_SECTION_IDS.VOLUME;
+    const showControls = normalized === SETTINGS_SECTION_IDS.CONTROLS;
+    const showLanguage = normalized === SETTINGS_SECTION_IDS.LANGUAGE;
+    this.settingsVolumePanel?.classList.toggle("is-active", showVolume);
+    this.settingsControlsPanel?.classList.toggle("is-active", showControls);
+    this.settingsLanguagePanel?.classList.toggle("is-active", showLanguage);
+    this.settingsVolumeSectionButton?.classList.toggle("is-active", showVolume);
+    this.settingsControlsSectionButton?.classList.toggle("is-active", showControls);
+    this.settingsLanguageSectionButton?.classList.toggle("is-active", showLanguage);
+    this.settingsVolumeSectionButton?.setAttribute("aria-pressed", showVolume ? "true" : "false");
+    this.settingsControlsSectionButton?.setAttribute(
+      "aria-pressed",
+      showControls ? "true" : "false"
+    );
+    this.settingsLanguageSectionButton?.setAttribute(
+      "aria-pressed",
+      showLanguage ? "true" : "false"
+    );
+
+    if (this.settingsPreviewMusicButton) {
+      this.settingsPreviewMusicButton.style.display = showVolume ? "inline-flex" : "none";
+    }
+  },
+
+  applySettingsTranslations() {
+    if (!this.settingsRoot) return;
+
+    if (this.settingsEyebrowText) {
+      this.settingsEyebrowText.textContent = t("buttons.settings", {}, "Ajustes");
+    }
+    if (this.settingsTitleText) {
+      this.settingsTitleText.textContent = t("settings.title", {}, "Audio y controles");
+    }
+    if (this.settingsSubtitleText) {
+      this.settingsSubtitleText.textContent = t(
+        "settings.subtitle",
+        {},
+        "Cambios rapidos para volumen y esquema de teclas. Se guardan al instante."
+      );
+    }
+
+    setLobbyButtonLabel(
+      this.settingsVolumeSectionButton,
+      t("settings.sectionVolume", {}, "Volumen")
+    );
+    setLobbyButtonLabel(
+      this.settingsControlsSectionButton,
+      t("settings.sectionControls", {}, "Controles")
+    );
+    setLobbyButtonLabel(
+      this.settingsLanguageSectionButton,
+      t("settings.sectionLanguage", {}, "Idioma")
+    );
+    setLobbyButtonLabel(
+      this.settingsPreviewMusicButton,
+      t("buttons.startMusic", {}, "Iniciar musica")
+    );
+    setLobbyButtonLabel(this.settingsCloseButton, t("buttons.close", {}, "Cerrar"));
+
+    if (this.settingsTextNodes) {
+      if (this.settingsTextNodes.musicTitle) {
+        this.settingsTextNodes.musicTitle.textContent = t(
+          "settings.musicTitle",
+          {},
+          "Musica del lobby"
+        );
+      }
+      if (this.settingsTextNodes.musicDescription) {
+        this.settingsTextNodes.musicDescription.textContent = t(
+          "settings.musicDescription",
+          {},
+          "Intro fija al entrar y transiciones suaves entre variaciones del track del lobby."
+        );
+      }
+      if (this.settingsTextNodes.musicLabel) {
+        this.settingsTextNodes.musicLabel.textContent = t(
+          "settings.musicVolumeLabel",
+          {},
+          "Volumen music"
+        );
+      }
+      if (this.settingsTextNodes.sfxTitle) {
+        this.settingsTextNodes.sfxTitle.textContent = t(
+          "settings.sfxTitle",
+          {},
+          "Efectos de interfaz"
+        );
+      }
+      if (this.settingsTextNodes.sfxDescription) {
+        this.settingsTextNodes.sfxDescription.textContent = t(
+          "settings.sfxDescription",
+          {},
+          "Hover, click y teclado. El control afecta los sonidos cortos del UI en todo el lobby."
+        );
+      }
+      if (this.settingsTextNodes.sfxLabel) {
+        this.settingsTextNodes.sfxLabel.textContent = t(
+          "settings.sfxVolumeLabel",
+          {},
+          "Volumen SFX"
+        );
+      }
+      if (this.settingsTextNodes.previewTitle) {
+        this.settingsTextNodes.previewTitle.textContent = t(
+          "settings.previewTitle",
+          {},
+          "Pruebas de pista"
+        );
+      }
+      if (this.settingsTextNodes.previewDescription) {
+        this.settingsTextNodes.previewDescription.textContent = t(
+          "settings.previewDescription",
+          {},
+          "Lanza una pista especifica para revisar audio y las motos decorativas sin esperar la rotacion."
+        );
+      }
+      if (this.settingsTextNodes.autoplayTip) {
+        this.settingsTextNodes.autoplayTip.textContent = t(
+          "settings.tipAutoplay",
+          {},
+          "Tip: si el navegador bloquea autoplay, la musica arrancara al primer click o tecla."
+        );
+      }
+      if (this.settingsTextNodes.controlsTitle) {
+        this.settingsTextNodes.controlsTitle.textContent = t(
+          "settings.controlsTitle",
+          {},
+          "Preset de controles"
+        );
+      }
+      if (this.settingsTextNodes.controlsDescription) {
+        this.settingsTextNodes.controlsDescription.textContent = t(
+          "settings.controlsDescription",
+          {},
+          "Elige el esquema para jugar. Se usa dentro de partida al instante."
+        );
+      }
+      if (this.settingsTextNodes.languageTitle) {
+        this.settingsTextNodes.languageTitle.textContent = t(
+          "settings.languageTitle",
+          {},
+          "Idioma"
+        );
+      }
+      if (this.settingsTextNodes.languageDescription) {
+        this.settingsTextNodes.languageDescription.textContent = t(
+          "settings.languageDescription",
+          {},
+          "Selecciona idioma y aplica al momento en botones y mensajes del lobby."
+        );
+      }
+    }
+
+    if (this.settingsControlPresetButtons) {
+      this.settingsControlPresetButtons.forEach((buttonNode, presetId) => {
+        setLobbyButtonLabel(buttonNode, getLocalizedControlPresetLabel(presetId));
+      });
+    }
+
+    if (this.settingsLanguageButtons) {
+      this.settingsLanguageButtons.forEach((buttonNode, languageCode) => {
+        setLobbyButtonLabel(
+          buttonNode,
+          getLanguageLabel(languageCode, String(languageCode || "").toUpperCase())
+        );
+      });
+    }
   },
 
   syncSettingsUi() {
     if (!this.settingsRoot) return;
+    this.applySettingsTranslations?.();
 
     const sfxVolume = clampVolumeSetting(appAudioManager.getSfxVolume(), 0.75);
     const musicVolume = clampVolumeSetting(appAudioManager.getMusicVolume(), 0.75);
@@ -925,6 +1414,34 @@ export const gameSceneUiMethods = {
       this.settingsMusicValue.textContent = formatVolumePercent(musicVolume);
     }
 
+    const activePresetId = this.getActiveControlPresetId();
+    this.controlPresetId = activePresetId;
+    this.inputSystem?.setControlPreset?.(activePresetId);
+
+    if (this.settingsControlPresetButtons) {
+      this.settingsControlPresetButtons.forEach((buttonNode, presetId) => {
+        const selected = presetId === activePresetId;
+        buttonNode.classList.toggle("is-selected", selected);
+        buttonNode.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+    }
+    this.renderSettingsControlGuide();
+    if (this.settingsLanguageButtons) {
+      const selectedLanguage = getLanguage();
+      this.settingsLanguageButtons.forEach((buttonNode, languageCode) => {
+        const selected = languageCode === selectedLanguage;
+        buttonNode.classList.toggle("is-selected", selected);
+        buttonNode.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+    }
+
+    const sectionToApply = Object.values(SETTINGS_SECTION_IDS).includes(
+      this.settingsActiveSection
+    )
+      ? this.settingsActiveSection
+      : SETTINGS_SECTION_IDS.VOLUME;
+    this.setSettingsSection(sectionToApply);
+
     this.syncAudioToggleUi();
   },
 
@@ -939,6 +1456,7 @@ export const gameSceneUiMethods = {
     this.lobbyCardNode?.classList.toggle("is-settings-screen", mode === "entry");
     this.settingsRoot.style.display = "flex";
     this.settingsRoot.classList.add("is-open");
+    this.setSettingsSection(SETTINGS_SECTION_IDS.VOLUME);
     this.syncSettingsUi();
 
     if (mode === "entry" && this.nameEntryRoot) {
@@ -947,9 +1465,17 @@ export const gameSceneUiMethods = {
 
     this.setLobbyMessage(
       mode === "entry"
-        ? "Ajustes abiertos: cambia volumen y cierra para volver."
-        : "Ajustes abiertos: volumen de efectos y musica del lobby.",
-      "#f1b7ff"
+        ? t(
+            "messages.settingsOpenedEntry",
+            {},
+            "Ajustes abiertos: volumen, controles e idioma listos para configurar."
+          )
+        : t(
+            "messages.settingsOpened",
+            {},
+            "Ajustes abiertos: ajusta volumen, preset de controles e idioma del lobby."
+          ),
+      "#8ad6ff"
     );
     this.blurNameEntry();
     this.syncKeyboardCaptureState();
@@ -974,8 +1500,12 @@ export const gameSceneUiMethods = {
     if (!silent) {
       this.setLobbyMessage(
         this.isRegistered
-          ? "Ajustes cerrados. Los cambios quedaron guardados."
-          : "Escribe username y elige publica o privada."
+          ? t(
+              "messages.settingsClosed",
+              {},
+              "Ajustes cerrados. Los cambios quedaron guardados."
+            )
+          : t("messages.entryDefault", {}, "Escribe username y elige publica o privada.")
       );
     }
 
@@ -999,8 +1529,16 @@ export const gameSceneUiMethods = {
     }
     this.setLobbyMessage(
       mode === "entry"
-        ? "Garage abierto: elige tu moto, aplica o cierra para volver."
-        : "Garage abierto: cambia tu skin antes de iniciar.",
+        ? t(
+            "messages.garageOpenedEntry",
+            {},
+            "Garage abierto: elige tu moto, aplica o cierra para volver."
+          )
+        : t(
+            "messages.garageOpened",
+            {},
+            "Garage abierto: cambia tu skin antes de iniciar."
+          ),
       "#d8b7ff"
     );
     this.blurNameEntry();
@@ -1031,10 +1569,19 @@ export const gameSceneUiMethods = {
         this.multiplayer?.emitSetGarageMoto?.(selectedMoto.id);
       }
       if (!silent) {
-        this.setLobbyMessage(`Garage aplicado: ${selectedMoto.label}.`, "#d8b7ff");
+        this.setLobbyMessage(
+          t(
+            "messages.garageApplied",
+            { moto: selectedMoto.label },
+            `Garage aplicado: ${selectedMoto.label}.`
+          ),
+          "#d8b7ff"
+        );
       }
     } else if (!silent && openMode === "entry") {
-      this.setLobbyMessage("Escribe username y elige publica o privada.");
+      this.setLobbyMessage(
+        t("messages.entryDefault", {}, "Escribe username y elige publica o privada.")
+      );
     }
 
     this.garageRoot.classList.remove("is-open");
@@ -1053,6 +1600,9 @@ export const gameSceneUiMethods = {
 
   createSettingsUi() {
     if (!this.lobbyCardNode) return;
+    this.controlPresetId = loadControlPresetId();
+    this.inputSystem?.setControlPreset?.(this.controlPresetId);
+    this.settingsTextNodes = {};
 
     this.settingsRoot = document.createElement("div");
     this.settingsRoot.className = "lhl-settings-modal";
@@ -1061,7 +1611,7 @@ export const gameSceneUiMethods = {
     const backdrop = document.createElement("button");
     backdrop.type = "button";
     backdrop.className = "lhl-settings-backdrop";
-    backdrop.setAttribute("aria-label", "Cerrar ajustes");
+    backdrop.setAttribute("aria-label", t("buttons.close", {}, "Cerrar ajustes"));
     backdrop.addEventListener("click", () => {
       this.closeSettingsModal();
     });
@@ -1074,20 +1624,69 @@ export const gameSceneUiMethods = {
 
     const eyebrow = document.createElement("div");
     eyebrow.className = "lhl-settings-eyebrow";
-    eyebrow.textContent = "Ajustes";
+    eyebrow.textContent = t("buttons.settings", {}, "Ajustes");
+    this.settingsEyebrowText = eyebrow;
 
     const title = document.createElement("div");
     title.className = "lhl-settings-title";
-    title.textContent = "Audio del lobby";
+    title.textContent = t("settings.title", {}, "Audio y controles");
+    this.settingsTitleText = title;
 
     const subtitle = document.createElement("div");
     subtitle.className = "lhl-settings-subtitle";
-    subtitle.textContent =
-      "Controla efectos y musica. Los cambios se aplican y se guardan al instante.";
+    subtitle.textContent = t(
+      "settings.subtitle",
+      {},
+      "Cambios rapidos para volumen y esquema de teclas. Se guardan al instante."
+    );
+    this.settingsSubtitleText = subtitle;
 
     header.appendChild(eyebrow);
     header.appendChild(title);
     header.appendChild(subtitle);
+
+    this.settingsSectionsRoot = document.createElement("div");
+    this.settingsSectionsRoot.className = "lhl-settings-sections";
+
+    this.settingsVolumeSectionButton = document.createElement("button");
+    this.settingsVolumeSectionButton.type = "button";
+    this.settingsVolumeSectionButton.className =
+      "lhl-btn lhl-btn-minimal lhl-settings-section-btn";
+    setLobbyButtonLabel(
+      this.settingsVolumeSectionButton,
+      t("settings.sectionVolume", {}, "Volumen")
+    );
+    this.settingsVolumeSectionButton.addEventListener("click", () => {
+      this.setSettingsSection(SETTINGS_SECTION_IDS.VOLUME);
+    });
+
+    this.settingsControlsSectionButton = document.createElement("button");
+    this.settingsControlsSectionButton.type = "button";
+    this.settingsControlsSectionButton.className =
+      "lhl-btn lhl-btn-minimal lhl-settings-section-btn";
+    setLobbyButtonLabel(
+      this.settingsControlsSectionButton,
+      t("settings.sectionControls", {}, "Controles")
+    );
+    this.settingsControlsSectionButton.addEventListener("click", () => {
+      this.setSettingsSection(SETTINGS_SECTION_IDS.CONTROLS);
+    });
+
+    this.settingsLanguageSectionButton = document.createElement("button");
+    this.settingsLanguageSectionButton.type = "button";
+    this.settingsLanguageSectionButton.className =
+      "lhl-btn lhl-btn-minimal lhl-settings-section-btn";
+    setLobbyButtonLabel(
+      this.settingsLanguageSectionButton,
+      t("settings.sectionLanguage", {}, "Idioma")
+    );
+    this.settingsLanguageSectionButton.addEventListener("click", () => {
+      this.setSettingsSection(SETTINGS_SECTION_IDS.LANGUAGE);
+    });
+
+    this.settingsSectionsRoot.appendChild(this.settingsVolumeSectionButton);
+    this.settingsSectionsRoot.appendChild(this.settingsControlsSectionButton);
+    this.settingsSectionsRoot.appendChild(this.settingsLanguageSectionButton);
 
     const createVolumeCard = (config) => {
       const card = document.createElement("section");
@@ -1130,31 +1729,46 @@ export const gameSceneUiMethods = {
       card.appendChild(cardDescription);
       card.appendChild(controlWrap);
 
-      return { card, slider, value };
+      return { card, slider, value, cardTitle, cardDescription, label };
     };
+
+    this.settingsVolumePanel = document.createElement("div");
+    this.settingsVolumePanel.className = "lhl-settings-panel lhl-settings-panel--volume";
 
     const settingsGrid = document.createElement("div");
     settingsGrid.className = "lhl-settings-grid";
 
     const musicCard = createVolumeCard({
       cardClass: "lhl-settings-card--music",
-      title: "Musica del lobby",
-      description:
-        "Intro fija al entrar y transiciones suaves entre variaciones del track del lobby.",
-      label: "Volumen music",
+      title: t("settings.musicTitle", {}, "Musica del lobby"),
+      description: t(
+        "settings.musicDescription",
+        {},
+        "Intro fija al entrar y transiciones suaves entre variaciones del track del lobby."
+      ),
+      label: t("settings.musicVolumeLabel", {}, "Volumen music"),
     });
     this.settingsMusicSlider = musicCard.slider;
     this.settingsMusicValue = musicCard.value;
+    this.settingsTextNodes.musicTitle = musicCard.cardTitle;
+    this.settingsTextNodes.musicDescription = musicCard.cardDescription;
+    this.settingsTextNodes.musicLabel = musicCard.label;
 
     const sfxCard = createVolumeCard({
       cardClass: "lhl-settings-card--sfx",
-      title: "Efectos de interfaz",
-      description:
-        "Hover, click y teclado. El control afecta los sonidos cortos del UI en todo el lobby.",
-      label: "Volumen SFX",
+      title: t("settings.sfxTitle", {}, "Efectos de interfaz"),
+      description: t(
+        "settings.sfxDescription",
+        {},
+        "Hover, click y teclado. El control afecta los sonidos cortos del UI en todo el lobby."
+      ),
+      label: t("settings.sfxVolumeLabel", {}, "Volumen SFX"),
     });
     this.settingsSfxSlider = sfxCard.slider;
     this.settingsSfxValue = sfxCard.value;
+    this.settingsTextNodes.sfxTitle = sfxCard.cardTitle;
+    this.settingsTextNodes.sfxDescription = sfxCard.cardDescription;
+    this.settingsTextNodes.sfxLabel = sfxCard.label;
 
     settingsGrid.appendChild(musicCard.card);
     settingsGrid.appendChild(sfxCard.card);
@@ -1164,17 +1778,28 @@ export const gameSceneUiMethods = {
 
     const previewTitle = document.createElement("div");
     previewTitle.className = "lhl-settings-card-title";
-    previewTitle.textContent = "Pruebas de pista";
+    previewTitle.textContent = t("settings.previewTitle", {}, "Pruebas de pista");
+    this.settingsTextNodes.previewTitle = previewTitle;
 
     const previewDescription = document.createElement("div");
     previewDescription.className = "lhl-settings-card-description";
-    previewDescription.textContent =
-      "Lanza una pista especifica para revisar audio y las motos decorativas sin esperar la rotacion.";
+    previewDescription.textContent = t(
+      "settings.previewDescription",
+      {},
+      "Lanza una pista especifica para revisar audio y las motos decorativas sin esperar la rotacion."
+    );
+    this.settingsTextNodes.previewDescription = previewDescription;
 
     const previewGrid = document.createElement("div");
     previewGrid.className = "lhl-settings-preview-grid";
 
-    this.settingsTrackPreviewButtons = LOBBY_TRACK_PREVIEW_LABELS.map((trackLabel) => {
+    const dynamicTrackPreviewLabels = appAudioManager.getLobbyTrackPreviewLabels?.();
+    const trackPreviewLabels =
+      Array.isArray(dynamicTrackPreviewLabels) && dynamicTrackPreviewLabels.length
+        ? dynamicTrackPreviewLabels
+        : DEFAULT_LOBBY_TRACK_PREVIEW_LABELS;
+
+    this.settingsTrackPreviewButtons = trackPreviewLabels.map((trackLabel) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "lhl-btn lhl-btn-minimal lhl-settings-track-btn";
@@ -1196,11 +1821,120 @@ export const gameSceneUiMethods = {
     previewCard.appendChild(previewDescription);
     previewCard.appendChild(previewGrid);
     settingsGrid.appendChild(previewCard);
+    this.settingsVolumePanel.appendChild(settingsGrid);
 
     const note = document.createElement("div");
     note.className = "lhl-settings-note";
-    note.textContent =
-      "Tip: si el navegador bloquea autoplay, la musica arrancara al primer click o tecla.";
+    note.textContent = t(
+      "settings.tipAutoplay",
+      {},
+      "Tip: si el navegador bloquea autoplay, la musica arrancara al primer click o tecla."
+    );
+    this.settingsTextNodes.autoplayTip = note;
+    this.settingsVolumePanel.appendChild(note);
+
+    this.settingsControlsPanel = document.createElement("div");
+    this.settingsControlsPanel.className = "lhl-settings-panel lhl-settings-panel--controls";
+
+    const controlsCard = document.createElement("section");
+    controlsCard.className = "lhl-settings-card lhl-settings-card--controls";
+
+    const controlsTitle = document.createElement("div");
+    controlsTitle.className = "lhl-settings-card-title";
+    controlsTitle.textContent = t("settings.controlsTitle", {}, "Preset de controles");
+    this.settingsTextNodes.controlsTitle = controlsTitle;
+
+    const controlsDescription = document.createElement("div");
+    controlsDescription.className = "lhl-settings-card-description";
+    controlsDescription.textContent = t(
+      "settings.controlsDescription",
+      {},
+      "Elige el esquema para jugar. Se usa dentro de partida al instante."
+    );
+    this.settingsTextNodes.controlsDescription = controlsDescription;
+
+    const controlsPresetGrid = document.createElement("div");
+    controlsPresetGrid.className = "lhl-settings-preset-grid";
+    this.settingsControlPresetButtons = new Map();
+
+    const buildPresetButton = (presetId) => {
+      const preset = getControlPreset(presetId);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "lhl-btn lhl-btn-minimal lhl-settings-preset-btn";
+      setLobbyButtonLabel(button, getLocalizedControlPresetLabel(preset.id));
+      button.addEventListener("click", () => {
+        this.applyControlPreset(preset.id);
+      });
+      bindDomInputNode(this, button);
+      this.settingsControlPresetButtons.set(preset.id, button);
+      controlsPresetGrid.appendChild(button);
+    };
+    buildPresetButton(CONTROL_PRESET_IDS.ARROWS);
+    buildPresetButton(CONTROL_PRESET_IDS.WASD);
+
+    this.settingsControlGuideTitle = document.createElement("div");
+    this.settingsControlGuideTitle.className = "lhl-settings-controls-title";
+    this.settingsControlGuideTitle.textContent = t(
+      "settings.controlsGuideTitle",
+      { preset: getLocalizedControlPresetLabel(this.getActiveControlPresetId()) },
+      "Guia activa"
+    );
+
+    this.settingsControlGuideGrid = document.createElement("div");
+    this.settingsControlGuideGrid.className = "lhl-settings-controls-guide";
+
+    controlsCard.appendChild(controlsTitle);
+    controlsCard.appendChild(controlsDescription);
+    controlsCard.appendChild(controlsPresetGrid);
+    controlsCard.appendChild(this.settingsControlGuideTitle);
+    controlsCard.appendChild(this.settingsControlGuideGrid);
+    this.settingsControlsPanel.appendChild(controlsCard);
+
+    this.settingsLanguagePanel = document.createElement("div");
+    this.settingsLanguagePanel.className = "lhl-settings-panel lhl-settings-panel--language";
+    this.settingsLanguageButtons = new Map();
+
+    const languageCard = document.createElement("section");
+    languageCard.className = "lhl-settings-card lhl-settings-card--controls";
+
+    const languageTitle = document.createElement("div");
+    languageTitle.className = "lhl-settings-card-title";
+    languageTitle.textContent = t("settings.languageTitle", {}, "Idioma");
+    this.settingsTextNodes.languageTitle = languageTitle;
+
+    const languageDescription = document.createElement("div");
+    languageDescription.className = "lhl-settings-card-description";
+    languageDescription.textContent = t(
+      "settings.languageDescription",
+      {},
+      "Selecciona idioma y aplica al momento en botones y mensajes del lobby."
+    );
+    this.settingsTextNodes.languageDescription = languageDescription;
+
+    const languageGrid = document.createElement("div");
+    languageGrid.className = "lhl-settings-preset-grid";
+
+    getAvailableLanguages().forEach((languageCode) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "lhl-btn lhl-btn-minimal lhl-settings-preset-btn";
+      setLobbyButtonLabel(
+        button,
+        getLanguageLabel(languageCode, String(languageCode || "").toUpperCase())
+      );
+      button.addEventListener("click", () => {
+        this.applyLanguageSelection(languageCode);
+      });
+      bindDomInputNode(this, button);
+      this.settingsLanguageButtons.set(languageCode, button);
+      languageGrid.appendChild(button);
+    });
+
+    languageCard.appendChild(languageTitle);
+    languageCard.appendChild(languageDescription);
+    languageCard.appendChild(languageGrid);
+    this.settingsLanguagePanel.appendChild(languageCard);
 
     const footer = document.createElement("div");
     footer.className = "lhl-settings-footer";
@@ -1208,7 +1942,10 @@ export const gameSceneUiMethods = {
     this.settingsPreviewMusicButton = document.createElement("button");
     this.settingsPreviewMusicButton.type = "button";
     this.settingsPreviewMusicButton.className = "lhl-btn lhl-btn-alt lhl-settings-preview-btn";
-    setLobbyButtonLabel(this.settingsPreviewMusicButton, "Iniciar musica");
+    setLobbyButtonLabel(
+      this.settingsPreviewMusicButton,
+      t("buttons.startMusic", {}, "Iniciar musica")
+    );
     this.settingsPreviewMusicButton.addEventListener("click", () => {
       if (appAudioManager.getMusicMuted()) {
         appAudioManager.setMusicMuted(false);
@@ -1221,7 +1958,7 @@ export const gameSceneUiMethods = {
     this.settingsCloseButton = document.createElement("button");
     this.settingsCloseButton.type = "button";
     this.settingsCloseButton.className = "lhl-btn lhl-btn-minimal lhl-settings-close-btn";
-    setLobbyButtonLabel(this.settingsCloseButton, "Cerrar");
+    setLobbyButtonLabel(this.settingsCloseButton, t("buttons.close", {}, "Cerrar"));
     this.settingsCloseButton.addEventListener("click", () => {
       this.closeSettingsModal();
     });
@@ -1249,6 +1986,9 @@ export const gameSceneUiMethods = {
       );
     });
 
+    bindDomInputNode(this, this.settingsVolumeSectionButton);
+    bindDomInputNode(this, this.settingsControlsSectionButton);
+    bindDomInputNode(this, this.settingsLanguageSectionButton);
     bindDomInputNode(this, this.settingsMusicSlider);
     bindDomInputNode(this, this.settingsSfxSlider);
     bindDomInputNode(this, this.settingsPreviewMusicButton);
@@ -1258,8 +1998,10 @@ export const gameSceneUiMethods = {
     footer.appendChild(this.settingsCloseButton);
 
     shell.appendChild(header);
-    shell.appendChild(settingsGrid);
-    shell.appendChild(note);
+    shell.appendChild(this.settingsSectionsRoot);
+    shell.appendChild(this.settingsVolumePanel);
+    shell.appendChild(this.settingsControlsPanel);
+    shell.appendChild(this.settingsLanguagePanel);
     shell.appendChild(footer);
 
     this.settingsRoot.appendChild(backdrop);
@@ -1270,13 +2012,15 @@ export const gameSceneUiMethods = {
     this.settingsQuickButton.type = "button";
     this.settingsQuickButton.className = "lhl-btn lhl-btn-settings lhl-btn-share";
     this.settingsQuickButton.style.display = "none";
-    setLobbyButtonLabel(this.settingsQuickButton, "Ajustes");
+    setLobbyButtonLabel(this.settingsQuickButton, t("buttons.settings", {}, "Ajustes"));
     this.settingsQuickButton.addEventListener("click", () => {
       this.openSettingsModal({ mode: "lobby" });
     });
     bindDomInputNode(this, this.settingsQuickButton);
     this.lobbyGarageActionMount?.appendChild(this.settingsQuickButton);
 
+    this.settingsActiveSection = SETTINGS_SECTION_IDS.VOLUME;
+    this.applySettingsTranslations?.();
     this.syncSettingsUi();
   },
 
@@ -1357,7 +2101,7 @@ export const gameSceneUiMethods = {
     const backdrop = document.createElement("button");
     backdrop.type = "button";
     backdrop.className = "lhl-garage-backdrop";
-    backdrop.setAttribute("aria-label", "Cerrar garage");
+    backdrop.setAttribute("aria-label", t("buttons.close", {}, "Cerrar garage"));
     backdrop.addEventListener("click", () => {
       this.closeGarageModal({ apply: false });
     });
@@ -1373,15 +2117,19 @@ export const gameSceneUiMethods = {
 
     const eyebrow = document.createElement("div");
     eyebrow.className = "lhl-garage-eyebrow";
-    eyebrow.textContent = "Garage";
+    eyebrow.textContent = t("buttons.garage", {}, "Garage");
 
     const title = document.createElement("div");
     title.className = "lhl-garage-title";
-    title.textContent = "Elige tu moto";
+    title.textContent = t("garage.title", {}, "Elige tu moto");
 
     const subtitle = document.createElement("div");
     subtitle.className = "lhl-garage-subtitle";
-    subtitle.textContent = "Selecciona una skin y aplicala al instante.";
+    subtitle.textContent = t(
+      "garage.subtitle",
+      {},
+      "Selecciona una skin y aplicala al instante."
+    );
 
     headerTop.appendChild(eyebrow);
     header.appendChild(headerTop);
@@ -1396,7 +2144,7 @@ export const gameSceneUiMethods = {
 
     const previewLabel = document.createElement("div");
     previewLabel.className = "lhl-garage-section-label";
-    previewLabel.textContent = "Tu moto";
+    previewLabel.textContent = t("garage.yourBike", {}, "Tu moto");
 
     const previewStage = document.createElement("div");
     previewStage.className = "lhl-garage-stage";
@@ -1417,7 +2165,7 @@ export const gameSceneUiMethods = {
 
     const optionsLabel = document.createElement("div");
     optionsLabel.className = "lhl-garage-section-label";
-    optionsLabel.textContent = "Skins";
+    optionsLabel.textContent = t("garage.skins", {}, "Skins");
 
     const optionsGrid = document.createElement("div");
     optionsGrid.className = "lhl-garage-grid";
@@ -1462,7 +2210,7 @@ export const gameSceneUiMethods = {
     this.garageApplyButton = document.createElement("button");
     this.garageApplyButton.type = "button";
     this.garageApplyButton.className = "lhl-btn lhl-btn-alt lhl-garage-apply";
-    setLobbyButtonLabel(this.garageApplyButton, "Aplicar");
+    setLobbyButtonLabel(this.garageApplyButton, t("buttons.apply", {}, "Aplicar"));
     this.garageApplyButton.addEventListener("click", () => {
       this.closeGarageModal({ apply: true });
     });
@@ -1472,7 +2220,7 @@ export const gameSceneUiMethods = {
     this.garageCloseButton.type = "button";
     this.garageCloseButton.className =
       "lhl-btn lhl-btn-minimal lhl-garage-close-btn";
-    setLobbyButtonLabel(this.garageCloseButton, "Cerrar");
+    setLobbyButtonLabel(this.garageCloseButton, t("buttons.close", {}, "Cerrar"));
     this.garageCloseButton.addEventListener("click", () => {
       this.closeGarageModal({ apply: false });
     });
@@ -1500,7 +2248,7 @@ export const gameSceneUiMethods = {
     this.leaveRoomButton = document.createElement("button");
     this.leaveRoomButton.type = "button";
     this.leaveRoomButton.className = "lhl-btn lhl-btn-leave";
-    setLobbyButtonLabel(this.leaveRoomButton, "Salir");
+    setLobbyButtonLabel(this.leaveRoomButton, t("buttons.exit", {}, "Salir"));
     this.leaveRoomButton.addEventListener("click", () => this.leaveCurrentRoom());
     bindDomInputNode(this, this.leaveRoomButton);
 
@@ -1519,7 +2267,7 @@ export const gameSceneUiMethods = {
     this.roomShareActions.className = "lhl-share-actions";
 
     this.roomShareLabel = document.createElement("div");
-    this.roomShareLabel.textContent = "Codigo de sala";
+    this.roomShareLabel.textContent = t("labels.roomCode", {}, "Codigo de sala");
     this.roomShareLabel.className = "lhl-share-label";
 
     this.roomShareCodeValue = document.createElement("div");
@@ -1531,7 +2279,7 @@ export const gameSceneUiMethods = {
     this.roomShareButton = document.createElement("button");
     this.roomShareButton.type = "button";
     this.roomShareButton.className = "lhl-btn lhl-btn-copy";
-    setLobbyButtonLabel(this.roomShareButton, "Copiar codigo");
+    setLobbyButtonLabel(this.roomShareButton, t("buttons.copyCode", {}, "Copiar codigo"));
     this.roomShareButton.addEventListener("click", () => this.copyCurrentRoomCode());
     bindDomInputNode(this, this.roomShareButton);
 
@@ -1539,7 +2287,7 @@ export const gameSceneUiMethods = {
     this.garageQuickButton.type = "button";
     this.garageQuickButton.className = "lhl-btn lhl-btn-garage lhl-btn-share";
     this.garageQuickButton.style.display = "none";
-    setLobbyButtonLabel(this.garageQuickButton, "Garage");
+    setLobbyButtonLabel(this.garageQuickButton, t("buttons.garage", {}, "Garage"));
     this.garageQuickButton.addEventListener("click", () => {
       this.openGarageModal({ mode: "lobby" });
     });
@@ -1562,16 +2310,25 @@ export const gameSceneUiMethods = {
     this.syncKeyboardCaptureState();
   },
 
-  leaveCurrentRoom() {
+  leaveCurrentRoom(options = {}) {
+    const allowInMatch = Boolean(options.allowInMatch);
     if (!this.isRegistered) return;
-    if (this.matchRunning && !this.matchEnded) return;
+    const inLiveMatch = this.matchRunning && !this.matchEnded;
+    if (inLiveMatch && !allowInMatch) return;
+    const shouldResetMatchScene = Boolean(
+      this.matchRunning || this.map || this.moto || this.hud
+    );
 
+    this.hud?.closeSettingsMenu?.({ silent: true });
+    this.closeGarageModal({ apply: false, silent: true });
+    this.closeSettingsModal({ silent: true });
     this.multiplayer?.destroy();
     this.isRegistered = false;
     this.currentLobbyState = null;
     this.pendingRoomMode = "public";
-    this.closeGarageModal({ apply: false, silent: true });
-    this.closeSettingsModal({ silent: true });
+    if (shouldResetMatchScene) {
+      this.resetToLobby();
+    }
     this.lobbyCardNode?.classList.remove("is-private-room", "is-public-room");
     this.setLobbyVisible(true);
     this.setLeaveRoomUiVisible(false);
@@ -1596,11 +2353,15 @@ export const gameSceneUiMethods = {
     }
     this.updatePrivateJoinButtonState();
 
-    this.lobbyTitle.setText("Sala Deliver.io");
-    this.lobbySubtitle.setText("Publica o privada | Maximo 6 jugadores");
+    this.lobbyTitle.setText(t("labels.lobbyTitle", {}, "Sala Deliver.io"));
+    this.lobbySubtitle.setText(
+      t("labels.lobbySubtitle", {}, "Publica o privada | Maximo 6 jugadores")
+    );
     this.lobbyPlayersPanel?.setVisible(false);
     this.playersListText.setText([]);
-    this.setLobbyMessage("Escribe username y elige publica o privada.");
+    this.setLobbyMessage(
+      t("messages.entryDefault", {}, "Escribe username y elige publica o privada.")
+    );
     this.readyButtonRect?.setVisible(false);
     this.readyButtonLabel?.setVisible(false);
     this.readyButtonRect?.disableInteractive();
@@ -1649,6 +2410,22 @@ export const gameSceneUiMethods = {
     this.settingsRoot.remove();
     this.settingsRoot = null;
     this.settingsOpenMode = "lobby";
+    this.settingsActiveSection = SETTINGS_SECTION_IDS.VOLUME;
+    this.settingsSectionsRoot = null;
+    this.settingsVolumeSectionButton = null;
+    this.settingsControlsSectionButton = null;
+    this.settingsLanguageSectionButton = null;
+    this.settingsVolumePanel = null;
+    this.settingsControlsPanel = null;
+    this.settingsLanguagePanel = null;
+    this.settingsControlPresetButtons = null;
+    this.settingsLanguageButtons = null;
+    this.settingsControlGuideGrid = null;
+    this.settingsControlGuideTitle = null;
+    this.settingsEyebrowText = null;
+    this.settingsTitleText = null;
+    this.settingsSubtitleText = null;
+    this.settingsTextNodes = null;
     this.settingsCloseButton = null;
     this.settingsPreviewMusicButton = null;
     this.settingsTrackPreviewButtons = [];
@@ -1672,6 +2449,11 @@ export const gameSceneUiMethods = {
 
   destroyRoomShareUi() {
     if (!this.roomShareRoot) return;
+    if (this.roomShareCopyResetTimer) {
+      window.clearTimeout(this.roomShareCopyResetTimer);
+      this.roomShareCopyResetTimer = null;
+    }
+    this.roomShareCopyCooldownUntilMs = 0;
     this.roomShareRoot.remove();
     this.roomShareRoot = null;
     this.roomShareActions = null;
@@ -2154,7 +2936,9 @@ export const gameSceneUiMethods = {
     this.setNameEntryMode("main");
     this.updatePrivateJoinButtonState();
     if (!autoQueuePublic) {
-      this.setLobbyMessage("Escribe username y elige publica o privada.");
+      this.setLobbyMessage(
+        t("messages.entryDefault", {}, "Escribe username y elige publica o privada.")
+      );
       this.nameInput?.focus();
       return;
     }
@@ -2164,7 +2948,11 @@ export const gameSceneUiMethods = {
   requestLobbyReturn() {
     if (!this.matchEnded) return;
     this.multiplayer?.emitRequestLobbyReturn();
-    this.lobbyReturnText.textContent = "Regresando al lobby...";
+    this.lobbyReturnText.textContent = t(
+      "messages.returningLobby",
+      {},
+      "Regresando al lobby..."
+    );
   },
 
   destroyLobbyReturnUi() {
@@ -2193,8 +2981,8 @@ export const gameSceneUiMethods = {
         <div class="lhl-logo">Deliver<span>.io</span></div>
         <div class="lhl-card" data-ref="lobbyCard">
           <div class="lhl-header">
-            <div class="lhl-title" data-ref="lobbyTitle">Sala Deliver.io</div>
-            <div class="lhl-subtitle" data-ref="lobbySubtitle">Publica o privada | Maximo 6 jugadores</div>
+            <div class="lhl-title" data-ref="lobbyTitle">${t("labels.lobbyTitle", {}, "Sala Deliver.io")}</div>
+            <div class="lhl-subtitle" data-ref="lobbySubtitle">${t("labels.lobbySubtitle", {}, "Publica o privada | Maximo 6 jugadores")}</div>
           </div>
           <div class="lhl-share-mount" data-ref="shareMount"></div>
           <div class="lhl-garage-toolbar">
@@ -2264,7 +3052,7 @@ export const gameSceneUiMethods = {
           if (player?.id === hostId) {
             const hostBadge = document.createElement("span");
             hostBadge.className = "lhl-player-badge";
-            hostBadge.textContent = "Creador";
+            hostBadge.textContent = t("labels.host", {}, "Creador");
             appendBadge(hostBadge);
           }
 
@@ -2272,7 +3060,9 @@ export const gameSceneUiMethods = {
           readyBadge.className = player?.ready
             ? "lhl-player-badge lhl-player-badge--ready"
             : "lhl-player-badge lhl-player-badge--pending";
-          readyBadge.textContent = player?.ready ? "Listo" : "Esperando";
+          readyBadge.textContent = player?.ready
+            ? t("buttons.ready", {}, "Listo")
+            : t("labels.waiting", {}, "Esperando");
           appendBadge(readyBadge);
 
           if (player?.id === this.multiplayer?.selfId) {
@@ -2289,7 +3079,7 @@ export const gameSceneUiMethods = {
         .map((line) => line.trim())
         .filter(Boolean);
       if (!fallbackLines.length) {
-        fallbackLines.push("Sin jugadores");
+        fallbackLines.push(t("labels.noPlayers", {}, "Sin jugadores"));
       }
       fallbackLines.forEach((line) => {
         const row = document.createElement("div");
@@ -2312,13 +3102,13 @@ export const gameSceneUiMethods = {
     this.readyButtonNode = document.createElement("button");
     this.readyButtonNode.type = "button";
     this.readyButtonNode.className = "lhl-btn lhl-btn-ready";
-    setLobbyButtonLabel(this.readyButtonNode, "Listo");
+    setLobbyButtonLabel(this.readyButtonNode, t("buttons.ready", {}, "Listo"));
     this.lobbyActionsMount?.appendChild(this.readyButtonNode);
 
     this.startButtonNode = document.createElement("button");
     this.startButtonNode.type = "button";
     this.startButtonNode.className = "lhl-btn lhl-btn-start";
-    setLobbyButtonLabel(this.startButtonNode, "Empezar");
+    setLobbyButtonLabel(this.startButtonNode, t("buttons.start", {}, "Empezar"));
     this.lobbyActionsMount?.appendChild(this.startButtonNode);
 
     this.readyButtonRect = createDomButtonProxy(this.readyButtonNode);
@@ -2335,6 +3125,18 @@ export const gameSceneUiMethods = {
     this.startButtonRect = createDomButtonProxy(this.startButtonNode);
     this.startButtonLabel = createDomTextProxy(this.startButtonNode);
     this.startButtonRect.on("pointerdown", () => {
+      const lobbyState = this.currentLobbyState || {};
+      const isPrivateRoom = String(lobbyState.roomType || "") === "private";
+      const isHost = lobbyState.hostId === this.multiplayer?.selfId;
+      const countdownEndsAt = Number(lobbyState.lobbyCountdownEndsAt || 0);
+      const countdownActive =
+        !Boolean(lobbyState.started) && countdownEndsAt > Date.now();
+
+      if (isPrivateRoom && isHost && countdownActive) {
+        this.multiplayer?.emitCancelStartGame?.();
+        return;
+      }
+
       this.multiplayer?.emitStartGame(ACTIVE_MAP.getSpawnPoint());
     });
 

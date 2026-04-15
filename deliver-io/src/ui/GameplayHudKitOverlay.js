@@ -1,6 +1,6 @@
 import "./hud.css";
 import { WEATHER_EVENT_TYPES } from "../events/weather/catalog.js";
-import { getItemLabel } from "../items/catalog.js";
+import { getItemLabel, ITEM_TYPES } from "../items/catalog.js";
 import appAudioManager from "./AppAudioManager.js";
 import { speedPxPerSecToKmh } from "../world/race/utils/telemetry.js";
 import { formatRaceTime } from "./hud/formatters.js";
@@ -11,6 +11,12 @@ const DASHBOARD_MODE_LABEL = Object.freeze({
   dual: "Dual Analog",
   hybrid: "Hybrid",
   digital: "Full Digital",
+});
+const SETTINGS_AUDIO_ICONS = Object.freeze({
+  music:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 3v12.55A4 4 0 1 1 14 12V7.2l-6 1.4v6.9A4 4 0 1 1 6 12V7l10-4z"/></svg>',
+  sfx:
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 10.5V13.5H7.25L12 18V6L7.25 10.5H3ZM15.5 9.25A4.25 4.25 0 0 1 15.5 14.75L16.9 16.15A6.2 6.2 0 0 0 16.9 7.85L15.5 9.25ZM18.3 6.45A8.15 8.15 0 0 1 18.3 17.55L19.7 18.95A10.1 10.1 0 0 0 19.7 5.05L18.3 6.45Z"/></svg>',
 });
 
 function numberColorToCss(colorValue, fallback = "#ffd56a") {
@@ -29,6 +35,10 @@ function clamp01(value) {
 function toNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function formatPercent(value) {
+  return `${Math.round(clamp01(value) * 100)}%`;
 }
 
 function escapeHtml(value) {
@@ -86,6 +96,7 @@ export default class GameplayHudKitOverlay {
     this.lastWeatherType = WEATHER_EVENT_TYPES.NONE;
     this.lastCountdownLabel = "";
     this.lastFinishCallSecond = -1;
+    this.lastSpectatorTargetId = "";
     this.lastMinimapState = {
       localPlayer: null,
       remotePlayers: [],
@@ -94,6 +105,7 @@ export default class GameplayHudKitOverlay {
     this.minimapTextureKey = "";
     this.minimapTextureImage = null;
     this.dashboardMode = "dual";
+    this.settingsMenuOpen = false;
 
     this.createDom();
     this.attachHandlers();
@@ -127,6 +139,53 @@ export default class GameplayHudKitOverlay {
 
       <section class="ghuk-banner ghuk-hidden" data-ref="banner"></section>
       <section class="ghuk-weather-event ghuk-hidden" data-ref="weatherEventText"></section>
+      <section class="ghuk-spectator ghuk-hidden" data-ref="spectatorRoot">
+        <button class="ghuk-spectator-nav ghuk-spectator-nav--left" data-ref="spectatorPrev" type="button" aria-label="Jugador anterior">&lt;</button>
+        <div class="ghuk-spectator-center">
+          <div class="ghuk-spectator-label">Espectando</div>
+          <div class="ghuk-spectator-name" data-ref="spectatorName">Jugador</div>
+          <div class="ghuk-spectator-status ghuk-hidden" data-ref="spectatorStatus">Finalizado</div>
+        </div>
+        <button class="ghuk-spectator-nav ghuk-spectator-nav--right" data-ref="spectatorNext" type="button" aria-label="Siguiente jugador">&gt;</button>
+      </section>
+      <section class="ghuk-settings-modal ghuk-hidden" data-ref="settingsModal" aria-hidden="true">
+        <button class="ghuk-settings-backdrop" data-ref="settingsBackdrop" type="button" aria-label="Cerrar ajustes de partida"></button>
+        <div class="ghuk-settings-shell">
+          <div class="ghuk-settings-header">
+            <div class="ghuk-settings-title">Ajustes Rapidos</div>
+            <button class="ghuk-settings-close" data-ref="settingsClose" type="button" aria-label="Cerrar ajustes">
+              <span class="ghuk-settings-close-label">X</span>
+            </button>
+          </div>
+          <div class="ghuk-settings-row">
+            <button class="ghuk-settings-mute-btn ghuk-settings-mute-btn--sfx" data-ref="sfxMuteButton" type="button" aria-label="Silenciar efectos">
+              <span class="ghuk-settings-mute-icon" data-ref="sfxMuteIcon">${SETTINGS_AUDIO_ICONS.sfx}</span>
+            </button>
+            <div class="ghuk-settings-slider-wrap">
+              <div class="ghuk-settings-slider-label">
+                <span>Efectos</span>
+                <span data-ref="sfxVolumeValue">75%</span>
+              </div>
+              <input class="ghuk-settings-slider" data-ref="sfxSlider" type="range" min="0" max="100" step="1" value="75" />
+            </div>
+          </div>
+          <div class="ghuk-settings-row">
+            <button class="ghuk-settings-mute-btn ghuk-settings-mute-btn--music" data-ref="musicMuteButton" type="button" aria-label="Silenciar musica">
+              <span class="ghuk-settings-mute-icon" data-ref="musicMuteIcon">${SETTINGS_AUDIO_ICONS.music}</span>
+            </button>
+            <div class="ghuk-settings-slider-wrap">
+              <div class="ghuk-settings-slider-label">
+                <span>Musica</span>
+                <span data-ref="musicVolumeValue">75%</span>
+              </div>
+              <input class="ghuk-settings-slider" data-ref="musicSlider" type="range" min="0" max="100" step="1" value="75" />
+            </div>
+          </div>
+          <button class="lhl-btn lhl-btn-leave ghuk-settings-leave-btn" data-ref="leaveMatchButton" type="button">
+            <span class="lhl-btn-label">Salir de partida</span>
+          </button>
+        </div>
+      </section>
 
       <section class="ghuk-card ghuk-minimap">
         <div class="ghuk-minimap-title">Minimap</div>
@@ -222,13 +281,25 @@ export default class GameplayHudKitOverlay {
       </section>
 
       <section class="ghuk-card ghuk-controls ghuk-hidden" data-ref="controls">
-        <div class="ghuk-controls-title">Weather Controls (Host)</div>
+        <div class="ghuk-controls-title">Host Controls (Test)</div>
+        <div class="ghuk-controls-group-title">Clima / Mapa</div>
         <div class="ghuk-controls-grid">
-          <button class="ghuk-btn" data-weather-action="rain" data-tone="rain">Rain</button>
-          <button class="ghuk-btn" data-weather-action="sunny" data-tone="sunny">Sunny</button>
-          <button class="ghuk-btn" data-weather-action="night" data-tone="night">Night</button>
+          <button class="ghuk-btn" data-weather-action="rain" data-tone="rain">Lluvia</button>
+          <button class="ghuk-btn" data-weather-action="sunny" data-tone="sunny">Soleado</button>
+          <button class="ghuk-btn" data-weather-action="night" data-tone="night">Noche</button>
           <button class="ghuk-btn" data-weather-action="clear" data-tone="clear">Clear</button>
-          <button class="ghuk-btn" data-weather-action="train" data-tone="train">Train Event</button>
+          <button class="ghuk-btn" data-weather-action="train" data-tone="train">Train</button>
+          <button class="ghuk-btn" data-weather-action="spectator" data-tone="spectator">Espectador</button>
+          <button class="ghuk-btn" data-weather-action="finish_self" data-tone="finish">Llegar meta</button>
+        </div>
+        <div class="ghuk-controls-group-title">Items / Boost</div>
+        <div class="ghuk-controls-grid">
+          <button class="ghuk-btn" data-weather-action="grant_turbo" data-tone="turbo">+ Nitro</button>
+          <button class="ghuk-btn" data-weather-action="grant_oil" data-tone="oil">+ Aceite</button>
+          <button class="ghuk-btn" data-weather-action="grant_wall" data-tone="wall">+ Muro</button>
+          <button class="ghuk-btn" data-weather-action="grant_emp" data-tone="emp">+ EMP</button>
+          <button class="ghuk-btn" data-weather-action="grant_shield" data-tone="shield">+ Escudo</button>
+          <button class="ghuk-btn" data-weather-action="grant_ghost" data-tone="ghost">+ Fantasma</button>
         </div>
       </section>
 
@@ -264,6 +335,23 @@ export default class GameplayHudKitOverlay {
       timerText: query("timerText"),
       banner: query("banner"),
       weatherEventText: query("weatherEventText"),
+      spectatorRoot: query("spectatorRoot"),
+      spectatorPrev: query("spectatorPrev"),
+      spectatorNext: query("spectatorNext"),
+      spectatorName: query("spectatorName"),
+      spectatorStatus: query("spectatorStatus"),
+      settingsModal: query("settingsModal"),
+      settingsBackdrop: query("settingsBackdrop"),
+      settingsClose: query("settingsClose"),
+      sfxMuteButton: query("sfxMuteButton"),
+      sfxMuteIcon: query("sfxMuteIcon"),
+      sfxVolumeValue: query("sfxVolumeValue"),
+      sfxSlider: query("sfxSlider"),
+      musicMuteButton: query("musicMuteButton"),
+      musicMuteIcon: query("musicMuteIcon"),
+      musicVolumeValue: query("musicVolumeValue"),
+      musicSlider: query("musicSlider"),
+      leaveMatchButton: query("leaveMatchButton"),
       minimapCanvas: query("minimapCanvas"),
       gameTrackLabel: query("gameTrackLabel"),
       heatCard: query("heatCard"),
@@ -292,6 +380,9 @@ export default class GameplayHudKitOverlay {
       slot2: query("slot2"),
       turboDots: query("turboDots"),
       controls: query("controls"),
+      hostSpectatorButton: this.root.querySelector(
+        '[data-weather-action="spectator"]'
+      ),
       countdown: query("countdown"),
       countdownValue: query("countdownValue"),
       resultsRoot: query("resultsRoot"),
@@ -348,6 +439,53 @@ export default class GameplayHudKitOverlay {
     };
     this.refs.replayButton.addEventListener("click", this.replayButtonHandler);
 
+    this.spectatorPrevHandler = () => {
+      this.scene.selectNextSpectatorTarget?.(-1);
+    };
+    this.refs.spectatorPrev.addEventListener("click", this.spectatorPrevHandler);
+    this.spectatorNextHandler = () => {
+      this.scene.selectNextSpectatorTarget?.(1);
+    };
+    this.refs.spectatorNext.addEventListener("click", this.spectatorNextHandler);
+
+    this.settingsBackdropHandler = () => this.closeSettingsMenu();
+    this.refs.settingsBackdrop.addEventListener("click", this.settingsBackdropHandler);
+    this.settingsCloseHandler = () => this.closeSettingsMenu();
+    this.refs.settingsClose.addEventListener("click", this.settingsCloseHandler);
+    this.settingsSfxMuteHandler = () => {
+      appAudioManager.toggleSfxMuted();
+      this.syncSettingsAudioUi();
+    };
+    this.refs.sfxMuteButton.addEventListener("click", this.settingsSfxMuteHandler);
+    this.settingsMusicMuteHandler = () => {
+      appAudioManager.toggleMusicMuted();
+      this.syncSettingsAudioUi();
+    };
+    this.refs.musicMuteButton.addEventListener("click", this.settingsMusicMuteHandler);
+    this.settingsSfxSliderHandler = () => {
+      const nextVolume = clamp01(Number(this.refs.sfxSlider.value || 0) / 100);
+      appAudioManager.setSfxVolume(nextVolume);
+      if (nextVolume > 0 && appAudioManager.getSfxMuted()) {
+        appAudioManager.setSfxMuted(false);
+      }
+      this.syncSettingsAudioUi();
+    };
+    this.refs.sfxSlider.addEventListener("input", this.settingsSfxSliderHandler);
+    this.settingsMusicSliderHandler = () => {
+      const nextVolume = clamp01(Number(this.refs.musicSlider.value || 0) / 100);
+      appAudioManager.setMusicVolume(nextVolume);
+      if (nextVolume > 0 && appAudioManager.getMusicMuted()) {
+        appAudioManager.setMusicMuted(false);
+      }
+      this.syncSettingsAudioUi();
+    };
+    this.refs.musicSlider.addEventListener("input", this.settingsMusicSliderHandler);
+    this.settingsLeaveMatchHandler = () => {
+      this.closeSettingsMenu({ silent: true });
+      this.scene.leaveCurrentRoom?.({ allowInMatch: true });
+    };
+    this.refs.leaveMatchButton.addEventListener("click", this.settingsLeaveMatchHandler);
+
     const savedMode =
       window.localStorage.getItem(DASHBOARD_MODE_STORAGE_KEY) ||
       window.localStorage.getItem(LEGACY_DASHBOARD_MODE_STORAGE_KEY);
@@ -357,6 +495,90 @@ export default class GameplayHudKitOverlay {
     this.dashboardModeButtonHandler = () => this.cycleDashboardMode();
     this.refs.dashModeBtn.addEventListener("click", this.dashboardModeButtonHandler);
     this.applyDashboardMode();
+    this.syncSettingsAudioUi();
+    this.closeSettingsMenu({ silent: true });
+  }
+
+  syncSettingsAudioUi() {
+    const sfxVolume = clamp01(appAudioManager.getSfxVolume());
+    const musicVolume = clamp01(appAudioManager.getMusicVolume());
+    const sfxMuted = appAudioManager.getSfxMuted();
+    const musicMuted = appAudioManager.getMusicMuted();
+
+    this.refs.sfxSlider.value = String(Math.round(sfxVolume * 100));
+    this.refs.musicSlider.value = String(Math.round(musicVolume * 100));
+    this.refs.sfxVolumeValue.textContent = formatPercent(sfxVolume);
+    this.refs.musicVolumeValue.textContent = formatPercent(musicVolume);
+    this.syncSettingsMuteButton(this.refs.sfxMuteButton, this.refs.sfxMuteIcon, sfxMuted, {
+      muted: "Activar efectos",
+      unmuted: "Silenciar efectos",
+    });
+    this.syncSettingsMuteButton(
+      this.refs.musicMuteButton,
+      this.refs.musicMuteIcon,
+      musicMuted,
+      {
+        muted: "Activar musica",
+        unmuted: "Silenciar musica",
+      }
+    );
+  }
+
+  syncSettingsMuteButton(button, _iconNode, muted, labels = {}) {
+    if (!button) return;
+    const isMuted = Boolean(muted);
+    button.classList.toggle("is-muted", isMuted);
+    button.setAttribute("aria-pressed", isMuted ? "true" : "false");
+    button.setAttribute(
+      "aria-label",
+      isMuted ? labels.muted || "Activar" : labels.unmuted || "Silenciar"
+    );
+  }
+
+  toggleSettingsMenu(forceOpen = null) {
+    const nextOpen =
+      typeof forceOpen === "boolean" ? forceOpen : !Boolean(this.settingsMenuOpen);
+    if (!nextOpen) {
+      this.closeSettingsMenu();
+      return;
+    }
+    if (!this.scene.matchRunning || this.scene.matchEnded) return;
+    this.syncSettingsAudioUi();
+    this.settingsMenuOpen = true;
+    this.refs.settingsModal.classList.remove("ghuk-hidden");
+    this.refs.settingsModal.setAttribute("aria-hidden", "false");
+    this.scene.syncKeyboardCaptureState?.();
+  }
+
+  closeSettingsMenu(_options = {}) {
+    this.settingsMenuOpen = false;
+    if (!this.refs?.settingsModal) return;
+    this.refs.settingsModal.classList.add("ghuk-hidden");
+    this.refs.settingsModal.setAttribute("aria-hidden", "true");
+    const activeElement =
+      typeof document !== "undefined" ? document.activeElement : null;
+    if (
+      activeElement instanceof HTMLElement &&
+      this.refs.settingsModal.contains(activeElement)
+    ) {
+      activeElement.blur();
+    }
+    this.scene.syncKeyboardCaptureState?.();
+  }
+
+  isSettingsMenuOpen() {
+    return Boolean(this.settingsMenuOpen);
+  }
+
+  updateSettingsAvailability(matchInfo = {}) {
+    const canOpen = Boolean(matchInfo.running && !matchInfo.ended);
+    if (!canOpen) {
+      this.closeSettingsMenu({ silent: true });
+    }
+  }
+
+  showSystemNotice(message, durationMs = 1500) {
+    this.queueBanner(message, "leave", durationMs);
   }
 
   getCurrentRoomType() {
@@ -391,15 +613,43 @@ export default class GameplayHudKitOverlay {
     if (!this.scene.matchRunning || this.scene.matchEnded) return;
     if (!this.scene.isLocalHost?.()) return;
 
-    if (action === "clear") {
-      this.scene.multiplayer?.emitClearWeatherEvent?.();
+    if (action === "clear") return this.scene.multiplayer?.emitClearWeatherEvent?.();
+    if (action === "train") return this.scene.multiplayer?.emitStartTrainEvent?.();
+    if (action === "spectator") return this.scene.toggleHostSpectatorMode?.();
+    if (action === "finish_self") {
+      const triggered = this.scene.forceHostDebugReachMeta?.();
+      if (triggered) {
+        this.queueBanner("Meta forzada (host)", "info", 820);
+      }
       return;
     }
-    if (action === "train") {
-      this.scene.multiplayer?.emitStartTrainEvent?.();
+    if (action === "grant_turbo") {
+      const granted = this.scene.grantHostDebugTurbo?.();
+      if (granted) {
+        this.queueBanner("Nitro +1", "turbo", 760);
+      }
       return;
     }
-    this.scene.multiplayer?.emitQueueWeatherEvent?.(action);
+
+    if (
+      action === WEATHER_EVENT_TYPES.RAIN ||
+      action === WEATHER_EVENT_TYPES.SUNNY ||
+      action === WEATHER_EVENT_TYPES.NIGHT
+    ) {
+      this.scene.multiplayer?.emitQueueWeatherEvent?.(action);
+      return;
+    }
+
+    const grantMap = {
+      grant_oil: ITEM_TYPES.OIL,
+      grant_wall: ITEM_TYPES.WALL,
+      grant_emp: ITEM_TYPES.EMP,
+      grant_shield: ITEM_TYPES.SHIELD,
+      grant_ghost: ITEM_TYPES.GHOST,
+    };
+    const grantType = grantMap[action];
+    if (!grantType) return;
+    this.scene.multiplayer?.emitGrantItem?.(grantType);
   }
 
   handleResize(gameSize) {
@@ -817,8 +1067,24 @@ export default class GameplayHudKitOverlay {
   }
 
   updateHostControls(matchInfo = {}) {
-    const hostVisible = Boolean(matchInfo.isHost && matchInfo.running && !matchInfo.ended);
+    const hostVisible = Boolean(
+      matchInfo.isHost &&
+        matchInfo.running &&
+        !matchInfo.ended
+    );
     this.refs.controls.classList.toggle("ghuk-hidden", !hostVisible);
+
+    if (!this.refs.hostSpectatorButton) return;
+    const spectatorDebugActive = Boolean(
+      this.scene.spectatorModeActive && this.scene.spectatorDebugOverride
+    );
+    this.refs.hostSpectatorButton.classList.toggle(
+      "is-active",
+      spectatorDebugActive
+    );
+    this.refs.hostSpectatorButton.textContent = spectatorDebugActive
+      ? "Salir esp."
+      : "Espectador";
   }
 
   updateReturnPanel(matchInfo = {}) {
@@ -847,6 +1113,54 @@ export default class GameplayHudKitOverlay {
         : "Regreso al lobby en curso...";
   }
 
+  resetTransientSignals() {
+    this.lastOrderCount = 0;
+    this.lastPackageHealth = 100;
+    this.lastTurboActive = false;
+    this.lastHeatCooling = false;
+    this.lastWeatherType = WEATHER_EVENT_TYPES.NONE;
+    this.lastCountdownLabel = "";
+    this.lastFinishCallSecond = -1;
+  }
+
+  updateSpectatorPanel(spectatorInfo = {}, matchInfo = {}) {
+    const spectatorActive = Boolean(
+      spectatorInfo.active && matchInfo.running && !matchInfo.ended
+    );
+    this.refs.spectatorRoot.classList.toggle("ghuk-hidden", !spectatorActive);
+    this.root.classList.toggle(
+      "ghuk-root--spectator-finished",
+      spectatorActive && Boolean(spectatorInfo.targetFinished)
+    );
+
+    if (!spectatorActive) {
+      this.lastSpectatorTargetId = "";
+      this.refs.spectatorStatus.classList.add("ghuk-hidden");
+      this.refs.spectatorPrev.disabled = false;
+      this.refs.spectatorNext.disabled = false;
+      return;
+    }
+
+    const targetId = String(spectatorInfo.targetId || "");
+    if (targetId && targetId !== this.lastSpectatorTargetId) {
+      this.lastSpectatorTargetId = targetId;
+      this.resetTransientSignals();
+      this.refs.banner.classList.add("ghuk-hidden");
+    }
+
+    this.refs.spectatorName.textContent = String(
+      spectatorInfo.targetName || "Jugador"
+    );
+    this.refs.spectatorStatus.classList.toggle(
+      "ghuk-hidden",
+      !Boolean(spectatorInfo.targetFinished)
+    );
+
+    const canNavigate = Boolean(spectatorInfo.canNavigate);
+    this.refs.spectatorPrev.disabled = !canNavigate;
+    this.refs.spectatorNext.disabled = !canNavigate;
+  }
+
   update(moto, _delta, info = {}) {
     if (!this.visible) return;
 
@@ -858,25 +1172,48 @@ export default class GameplayHudKitOverlay {
     const stockState = info.stock || {};
     const minimapState = info.minimap || {};
     const matchInfo = info.match || {};
+    const spectatorInfo = info.spectator || {};
+    const spectatorFinishedTarget = Boolean(
+      spectatorInfo.active && spectatorInfo.targetFinished
+    );
 
-    this.updateRaceStatus(deliveryData, timing);
-    this.updatePackage(deliveryData);
-    this.updateDashboard(moto, motoInfo);
-    this.updateHeat(motoInfo.heat || {}, motoInfo.weatherEventType);
-    this.updateInventory(inventoryState);
-    this.updateTurbo(stockState);
-    this.updateCountdown(timing);
-    this.updateWeatherPresentation(motoInfo, weatherEvent);
+    this.updateSpectatorPanel(spectatorInfo, matchInfo);
+
+    if (!spectatorFinishedTarget) {
+      this.updateRaceStatus(deliveryData, timing);
+      this.updatePackage(deliveryData);
+      this.updateDashboard(moto, motoInfo);
+      this.updateHeat(motoInfo.heat || {}, motoInfo.weatherEventType);
+      this.updateInventory(inventoryState);
+      this.updateTurbo(stockState);
+      this.updateCountdown(timing);
+      this.updateWeatherPresentation(motoInfo, weatherEvent);
+    } else {
+      this.refs.countdown.classList.add("ghuk-hidden");
+      this.refs.weatherEventText.classList.add("ghuk-hidden");
+      this.refs.banner.classList.add("ghuk-hidden");
+    }
+
+    this.updateSettingsAvailability(matchInfo);
     this.updateHostControls(matchInfo);
     this.updateReturnPanel(matchInfo);
-    this.updateCallouts(deliveryData, timing, motoInfo);
+
+    if (!spectatorFinishedTarget) {
+      this.updateCallouts(deliveryData, timing, motoInfo);
+    }
+
     this.updateBanner();
-    this.redrawMinimap(minimapState);
+
+    if (!spectatorFinishedTarget) {
+      this.redrawMinimap(minimapState);
+    }
   }
 
   showResults(results = [], winnerId = null, selfId = null) {
     const rows = Array.isArray(results) ? results : [];
     const selfWinner = Boolean(winnerId && selfId && winnerId === selfId);
+    this.root.classList.remove("ghuk-root--spectator-finished");
+    this.refs.spectatorRoot.classList.add("ghuk-hidden");
 
     this.refs.resultsTitle.textContent = selfWinner ? "Victory" : "Final Results";
     this.refs.resultsTitle.style.color = selfWinner ? "#a9f2c4" : "#ffd5ae";
@@ -926,10 +1263,14 @@ export default class GameplayHudKitOverlay {
 
   hideResults() {
     this.refs.resultsRoot.classList.add("ghuk-hidden");
+    this.root.classList.remove("ghuk-root--spectator-finished");
   }
 
   setVisible(visible) {
     this.visible = Boolean(visible);
+    if (!this.visible) {
+      this.closeSettingsMenu({ silent: true });
+    }
     this.root.style.display = this.visible ? "block" : "none";
   }
 
@@ -940,15 +1281,38 @@ export default class GameplayHudKitOverlay {
   destroy() {
     this.scene.scale.off("resize", this.handleResize, this);
     appAudioManager.setGameTrackLabelListener(null);
+    this.closeSettingsMenu({ silent: true });
     this.weatherButtonHandlers.forEach(({ button, handler }) => {
       button.removeEventListener("click", handler);
     });
     this.weatherButtonHandlers = [];
 
+    this.refs.settingsBackdrop.removeEventListener("click", this.settingsBackdropHandler);
+    this.settingsBackdropHandler = null;
+    this.refs.settingsClose.removeEventListener("click", this.settingsCloseHandler);
+    this.settingsCloseHandler = null;
+    this.refs.sfxMuteButton.removeEventListener("click", this.settingsSfxMuteHandler);
+    this.settingsSfxMuteHandler = null;
+    this.refs.musicMuteButton.removeEventListener("click", this.settingsMusicMuteHandler);
+    this.settingsMusicMuteHandler = null;
+    this.refs.sfxSlider.removeEventListener("input", this.settingsSfxSliderHandler);
+    this.settingsSfxSliderHandler = null;
+    this.refs.musicSlider.removeEventListener("input", this.settingsMusicSliderHandler);
+    this.settingsMusicSliderHandler = null;
+    this.refs.leaveMatchButton.removeEventListener(
+      "click",
+      this.settingsLeaveMatchHandler
+    );
+    this.settingsLeaveMatchHandler = null;
+
     this.refs.returnButton.removeEventListener("click", this.returnButtonHandler);
     this.returnButtonHandler = null;
     this.refs.replayButton.removeEventListener("click", this.replayButtonHandler);
     this.replayButtonHandler = null;
+    this.refs.spectatorPrev.removeEventListener("click", this.spectatorPrevHandler);
+    this.spectatorPrevHandler = null;
+    this.refs.spectatorNext.removeEventListener("click", this.spectatorNextHandler);
+    this.spectatorNextHandler = null;
     this.refs.dashModeBtn.removeEventListener("click", this.dashboardModeButtonHandler);
     this.dashboardModeButtonHandler = null;
 

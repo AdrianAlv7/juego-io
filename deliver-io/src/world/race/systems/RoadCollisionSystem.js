@@ -153,6 +153,20 @@ export default class RoadCollisionSystem {
         impact: 0,
         penetration: 0,
         speedKmh,
+        ghostBypassed: false,
+      };
+    }
+
+    const nowMs = Number(moto?.scene?.time?.now || Date.now());
+    if (moto?.shouldBypassCollision?.(nowMs)) {
+      return {
+        collided: false,
+        justCollided: false,
+        damageEvent: false,
+        impact: 0,
+        penetration: 0,
+        speedKmh,
+        ghostBypassed: true,
       };
     }
 
@@ -218,6 +232,7 @@ export default class RoadCollisionSystem {
       impact: speedIntoWall + penetration * 0.03,
       penetration,
       speedKmh,
+      ghostBypassed: false,
     };
   }
 }

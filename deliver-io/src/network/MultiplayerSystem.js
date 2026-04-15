@@ -10,6 +10,7 @@ export default class MultiplayerSystem {
     this.playersGroup = options.playersGroup;
     this.callbacks = options.callbacks || {};
     this.getLocalProgress = options.getLocalProgress || null;
+    this.getLocalHudSnapshot = options.getLocalHudSnapshot || null;
 
     this.socket = null;
     this.selfId = null;
@@ -28,6 +29,7 @@ export default class MultiplayerSystem {
     this.handleGameStarted = this.handleGameStarted.bind(this);
     this.handlePlayerMoved = this.handlePlayerMoved.bind(this);
     this.handlePlayerDisconnected = this.handlePlayerDisconnected.bind(this);
+    this.handleRoomPlayerLeft = this.handleRoomPlayerLeft.bind(this);
     this.handleFinishWindowStarted = this.handleFinishWindowStarted.bind(this);
     this.handleMatchFinished = this.handleMatchFinished.bind(this);
     this.handleLobbyRestarted = this.handleLobbyRestarted.bind(this);
@@ -60,6 +62,7 @@ export default class MultiplayerSystem {
     this.socket.on("gameStarted", this.handleGameStarted);
     this.socket.on("playerMoved", this.handlePlayerMoved);
     this.socket.on("playerDisconnected", this.handlePlayerDisconnected);
+    this.socket.on("roomPlayerLeft", this.handleRoomPlayerLeft);
     this.socket.on("finishWindowStarted", this.handleFinishWindowStarted);
     this.socket.on("matchFinished", this.handleMatchFinished);
     this.socket.on("lobbyRestarted", this.handleLobbyRestarted);
@@ -152,6 +155,10 @@ export default class MultiplayerSystem {
     remote.destroy();
     this.remotePlayers.delete(id);
     this.callbacks.onPlayerDisconnected?.(id);
+  }
+
+  handleRoomPlayerLeft(payload = {}) {
+    this.callbacks.onRoomPlayerLeft?.(payload);
   }
 
   handleFinishWindowStarted(payload = {}) {
@@ -250,9 +257,32 @@ export default class MultiplayerSystem {
     }));
   }
 
+  getRemotePlayerSnapshot(id) {
+    if (!id) return null;
+    const remote = this.remotePlayers.get(id);
+    if (!remote) return null;
+    return remote.getSnapshot?.() || null;
+  }
+
+  getRemotePlayerSprite(id) {
+    if (!id) return null;
+    return this.remotePlayers.get(id)?.sprite || null;
+  }
+
+  getRemotePlayerSnapshots() {
+    return Array.from(this.remotePlayers.values(), (remote) =>
+      remote.getSnapshot?.()
+    ).filter(Boolean);
+  }
+
   emitStartGame(preferredSpawn) {
     if (!this.socket?.connected) return;
     this.socket.emit("startGame", { preferredSpawn });
+  }
+
+  emitCancelStartGame() {
+    if (!this.socket?.connected) return;
+    this.socket.emit("cancelStartGame");
   }
 
   emitSetLobbyReady(ready) {
@@ -338,6 +368,10 @@ export default class MultiplayerSystem {
     if (progress) {
       nextState.progress = progress;
     }
+    const hud = this.getLocalHudSnapshot?.() || null;
+    if (hud && typeof hud === "object") {
+      nextState.hud = hud;
+    }
 
     const unchanged =
       this.lastSentState &&
@@ -345,7 +379,9 @@ export default class MultiplayerSystem {
       this.lastSentState.y === nextState.y &&
       this.lastSentState.angle === nextState.angle &&
       JSON.stringify(this.lastSentState.progress || null) ===
-        JSON.stringify(nextState.progress || null);
+        JSON.stringify(nextState.progress || null) &&
+      JSON.stringify(this.lastSentState.hud || null) ===
+        JSON.stringify(nextState.hud || null);
     if (unchanged) return;
 
     this.lastSentState = nextState;
@@ -381,6 +417,7 @@ export default class MultiplayerSystem {
     this.socket.off("gameStarted", this.handleGameStarted);
     this.socket.off("playerMoved", this.handlePlayerMoved);
     this.socket.off("playerDisconnected", this.handlePlayerDisconnected);
+    this.socket.off("roomPlayerLeft", this.handleRoomPlayerLeft);
     this.socket.off("finishWindowStarted", this.handleFinishWindowStarted);
     this.socket.off("matchFinished", this.handleMatchFinished);
     this.socket.off("lobbyRestarted", this.handleLobbyRestarted);

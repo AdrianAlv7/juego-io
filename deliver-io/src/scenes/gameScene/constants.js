@@ -57,6 +57,7 @@ export const USERNAME_MAX_LENGTH = 16;
 export const HUD_FILTER_REFRESH_MS = 250;
 export const WEATHER_OVERLAY_DAMPING = 7;
 export const WEATHER_UI_MARGIN = 18;
+export const SPECTATOR_START_DELAY_MS = 2000;
 
 export function damp(current, target, dampingPerSecond, deltaMs) {
   const t = 1 - Math.exp((-dampingPerSecond * deltaMs) / 1000);

@@ -7,6 +7,7 @@ export default class CountdownSystem {
     this.goVisibleMs = options.goVisibleMs;
     this.startMs = scene.time.now;
     this.currentLabel = "";
+    this.suppressed = false;
 
     this.text = scene.add.text(scene.scale.width / 2, scene.scale.height * 0.2, "", {
       fontFamily: "Consolas",
@@ -39,7 +40,19 @@ export default class CountdownSystem {
     return this.currentLabel;
   }
 
+  setSuppressed(suppressed) {
+    this.suppressed = Boolean(suppressed);
+    if (this.suppressed) {
+      this.text.setVisible(false);
+    }
+  }
+
   update() {
+    if (this.suppressed) {
+      this.text.setVisible(false);
+      return;
+    }
+
     const elapsed = this.scene.time.now - this.startMs;
     let nextLabel = "";
 

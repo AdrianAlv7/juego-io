@@ -146,6 +146,10 @@ export default class CityRaceMap {
     this.lastHasPackage = riderState.hasPackage;
 
     const collisionInfo = this.collision.enforce(moto);
+    const hasGhostCollisionContact = Boolean(
+      collisionInfo?.collided || collisionInfo?.ghostBypassed
+    );
+    moto.updateGhostCollisionContact?.(hasGhostCollisionContact, nowMs);
     this.health.applyCollision(collisionInfo, nowMs);
     this.motoHealth.applyCollision(collisionInfo, nowMs);
     this.motoHealth.update(nowMs, moto);
@@ -235,6 +239,10 @@ export default class CityRaceMap {
 
   getCollisionGroup() {
     return this.collisionGroup;
+  }
+
+  setCountdownSuppressed(suppressed) {
+    this.countdown?.setSuppressed?.(Boolean(suppressed));
   }
 
   isMatchFinished() {

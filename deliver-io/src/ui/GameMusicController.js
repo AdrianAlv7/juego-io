@@ -1,13 +1,13 @@
 import { distancePxToKm } from "../world/race/utils/telemetry.js";
+import {
+  DEFAULT_GAME_MUSIC_PRESET_ID,
+  getGameMusicPreset,
+} from "./music/gamePresets.js";
 
 function clamp01(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(1, number));
-}
-
-function encodeGameSource(fileName) {
-  return encodeURI(`/assets/sound/game/${fileName}`);
 }
 
 function decodeAudioBuffer(context, arrayBuffer) {
@@ -30,84 +30,16 @@ function disconnectNode(node) {
   }
 }
 
-const GAME_TRACKS = Object.freeze({
-  start: encodeGameSource("start.ogg"),
-  "drop1-1": encodeGameSource("drop1-1.ogg"),
-  "drop1-2": encodeGameSource("drop1-2.ogg"),
-  "drop1-3": encodeGameSource("drop1-3.ogg"),
-  "drop1-4": encodeGameSource("drop1-4.ogg"),
-  "drop1-final4": encodeGameSource("drop1-final4.ogg"),
-  "drop1-final2loop": encodeGameSource("drop1-final2loop.ogg"),
-  "drop1-final2": encodeGameSource("drop1-final2.ogg"),
-  "antes-del-drop2": encodeGameSource("antes del drop2.ogg"),
-  "drop2-1": encodeGameSource("drop2-1.ogg"),
-  "drop2-2": encodeGameSource("drop2-2.ogg"),
-  "drop2-3": encodeGameSource("drop2-3.ogg"),
-  "drop2-4": encodeGameSource("drop2-4.ogg"),
-  "drop2-5": encodeGameSource("drop2-5.ogg"),
-  "drop2-6": encodeGameSource("drop2-6.ogg"),
-  "drop2-7": encodeGameSource("drop2-7.ogg"),
-  "antes-del-drop3-1": encodeGameSource("antes del drop3-1.ogg"),
-  "antes-del-drop3-2": encodeGameSource("antes del drop3-2.ogg"),
-  "antes-del-drop3-3": encodeGameSource("antes del drop3-3.ogg"),
-  "loop-antes-del-drop3-1": encodeGameSource("loop antes del drop 3-1.ogg"),
-  "loop-antes-del-drop3-2": encodeGameSource("loop antes del drop 3-2.ogg"),
-  "inicio-drop3": encodeGameSource("inicio drop 3.ogg"),
-  "drop3-1-1": encodeGameSource("drop3-1-1.ogg"),
-  "drop3-1-2": encodeGameSource("drop3-1-2.ogg"),
-  "drop3-2-1": encodeGameSource("drop3-2-1.ogg"),
-  "drop3-2-2": encodeGameSource("drop3-2-2.ogg"),
-  "drop3-3-1": encodeGameSource("drop3-3-1.ogg"),
-  "drop3-3-2": encodeGameSource("drop3-3-2.ogg"),
-  "drop3-4-1": encodeGameSource("drop3-4-1.ogg"),
-  "drop3-4-2": encodeGameSource("drop3-4-2.ogg"),
-  final: encodeGameSource("final.ogg"),
-  chill1: encodeGameSource("chill1.ogg"),
-  chill2: encodeGameSource("chill2.ogg"),
-  subida1: encodeGameSource("subida1.ogg"),
-  subida2: encodeGameSource("subida2.ogg"),
+const DEFAULT_GAME_PRESET = getGameMusicPreset(DEFAULT_GAME_MUSIC_PRESET_ID);
+export const POST_FINISH_TRACKS = Object.freeze({
+  intro: String(DEFAULT_GAME_PRESET?.outro?.intro || "chill1"),
+  loop: String(DEFAULT_GAME_PRESET?.outro?.loop || "chill2"),
+  labels: Object.freeze(
+    Array.isArray(DEFAULT_GAME_PRESET?.outro?.labels)
+      ? DEFAULT_GAME_PRESET.outro.labels.map((entry) => String(entry || ""))
+      : ["chill1", "chill2"]
+  ),
 });
-
-const DROP1_MAIN_LOOP = Object.freeze(["drop1-1", "drop1-2", "drop1-3", "drop1-4"]);
-const DROP1_WAIT_LOOP = Object.freeze([
-  "drop1-final4",
-  "drop1-final2loop",
-  "drop1-final2",
-  "drop1-4",
-]);
-const DROP2_LOOP = Object.freeze([
-  "drop2-1",
-  "drop2-2",
-  "drop2-3",
-  "drop2-4",
-  "drop2-5",
-  "drop2-6",
-  "drop2-7",
-]);
-const DROP3_LOOP = Object.freeze([
-  "drop3-1-1",
-  "drop3-1-2",
-  "drop3-2-1",
-  "drop3-2-2",
-  "drop3-3-1",
-  "drop3-3-2",
-  "drop3-4-1",
-  "drop3-4-2",
-]);
-const BEFORE_DROP3_CHAIN = Object.freeze([
-  "antes-del-drop3-1",
-  "antes-del-drop3-2",
-  "antes-del-drop3-3",
-]);
-const BEFORE_DROP3_WAIT_LOOP = Object.freeze([
-  "loop-antes-del-drop3-1",
-  "loop-antes-del-drop3-2",
-]);
-const SHORT_BEFORE_DROP3_DISTANCE_KM_THRESHOLD = 0.27;
-
-function canAdvanceFromDrop1Label(label) {
-  return label !== "drop1-final2loop";
-}
 
 export default class GameMusicController {
   // Guia rapida para retocar la musica de partida:
@@ -117,10 +49,12 @@ export default class GameMusicController {
   // - pendingDrop1Advance / pendingDrop2Advance: eventos ya cumplidos que esperan fin de pista.
   // - hasStartedOrder3Pickup: se activa apenas empieza el cronometro del pickup 3.
   constructor(options = {}) {
+    this.applyPresetById(options.presetId || DEFAULT_GAME_MUSIC_PRESET_ID);
+
     this.masterVolume = clamp01(options.masterVolume ?? 0.1);
     // Este gain usa el mismo slider global de musica del manager.
     // Solo define el peso interno de las pistas de carrera para igualarlas con lobby.
-    this.trackGain = clamp01(options.trackGain ?? 0.5);
+    this.trackGain = clamp01(options.trackGain ?? this.preset?.trackGain ?? 0.5);
     this.decodeLeadMs = Math.max(250, Number(options.decodeLeadMs ?? 2200));
     this.scheduleLeadMs = Math.max(25, Number(options.scheduleLeadMs ?? 140));
     this.startFadeInMs = Math.max(0, Number(options.startFadeInMs ?? 160));
@@ -129,7 +63,11 @@ export default class GameMusicController {
     this.visibilityFadeInMs = Math.max(0, Number(options.visibilityFadeInMs ?? 220));
     this.beforeDrop3ShortRouteKmThreshold = Math.max(
       0,
-      Number(options.beforeDrop3ShortRouteKmThreshold ?? SHORT_BEFORE_DROP3_DISTANCE_KM_THRESHOLD)
+      Number(
+        options.beforeDrop3ShortRouteKmThreshold ??
+          this.sequenceConfig?.shortBeforeDrop3DistanceKmThreshold ??
+          0.27
+      )
     );
     this.onTrackLabelChange =
       typeof options.onTrackLabelChange === "function" ? options.onTrackLabelChange : null;
@@ -140,6 +78,7 @@ export default class GameMusicController {
     this.bufferWarmupStarted = false;
     this.monitorTimerId = 0;
     this.playbackIdCounter = 0;
+    this.forcePostFinishTimerId = 0;
 
     this.shouldPlay = false;
     this.awaitingUnlock = false;
@@ -150,9 +89,77 @@ export default class GameMusicController {
     this.currentPlayback = null;
     this.queuedPlayback = null;
     this.resumeState = null;
+    this.forcePostFinishPending = false;
+    this.forcePostFinishArmed = false;
+    this.forcePostFinishEndsAtMs = 0;
+    this.forcePostFinishFadeLeadMs = Math.max(
+      0,
+      Number(this.preset?.forcePostFinishFadeLeadMs ?? 3000)
+    );
 
     this.resetSequenceState();
     this.emitTrackLabelChange();
+  }
+
+  applyPresetById(presetId) {
+    const nextPreset = getGameMusicPreset(presetId);
+    this.presetId = nextPreset?.id || DEFAULT_GAME_MUSIC_PRESET_ID;
+    this.preset = nextPreset;
+    this.trackMap = this.preset?.tracks || {};
+    this.sequenceConfig = this.preset?.sequence || {};
+    this.postFinishConfig = this.preset?.outro || {};
+    this.presetVisualProfile = this.preset?.visualProfile || {};
+    return this.preset;
+  }
+
+  setPreset(presetId, options = {}) {
+    const nextPreset = getGameMusicPreset(presetId);
+    if (nextPreset?.id === this.preset?.id) return false;
+
+    const shouldResume = Boolean(options.resumePlayback ?? this.shouldPlay);
+    this.stop({ fadeOutMs: 0 });
+    this.applyPresetById(nextPreset.id);
+    this.trackGain = clamp01(options.trackGain ?? nextPreset?.trackGain ?? this.trackGain ?? 0.5);
+    this.beforeDrop3ShortRouteKmThreshold = Math.max(
+      0,
+      Number(
+        options.beforeDrop3ShortRouteKmThreshold ??
+          this.sequenceConfig?.shortBeforeDrop3DistanceKmThreshold ??
+          0.27
+      )
+    );
+    this.forcePostFinishFadeLeadMs = Math.max(
+      0,
+      Number(this.preset?.forcePostFinishFadeLeadMs ?? 3000)
+    );
+    this.bufferCache.clear();
+    this.bufferWarmupStarted = false;
+
+    if (shouldResume && options.restartMatch !== false) {
+      this.startMatch();
+    }
+    return true;
+  }
+
+  getPresetInfo() {
+    return {
+      id: this.preset?.id || DEFAULT_GAME_MUSIC_PRESET_ID,
+      label: this.preset?.label || "Game Music",
+      visualProfile: this.presetVisualProfile || {},
+    };
+  }
+
+  getPostFinishTrackLabels() {
+    const labels = this.postFinishConfig?.labels;
+    if (!Array.isArray(labels)) return [];
+    return labels.map((entry) => String(entry || "")).filter(Boolean);
+  }
+
+  canAdvanceFromDrop1Label(label) {
+    const blocked = Array.isArray(this.sequenceConfig?.drop1AdvanceBlockedLabels)
+      ? this.sequenceConfig.drop1AdvanceBlockedLabels
+      : [];
+    return !blocked.includes(String(label || ""));
   }
 
   getAudioContext() {
@@ -198,7 +205,7 @@ export default class GameMusicController {
   }
 
   loadBuffer(label) {
-    const source = GAME_TRACKS[label];
+    const source = this.trackMap[label];
     if (!source) {
       return Promise.resolve(null);
     }
@@ -228,7 +235,7 @@ export default class GameMusicController {
   warmAllBuffers() {
     if (this.bufferWarmupStarted) return;
     this.bufferWarmupStarted = true;
-    Object.keys(GAME_TRACKS).forEach((label) => {
+    Object.keys(this.trackMap || {}).forEach((label) => {
       this.loadBuffer(label).catch(() => {
         // Si una pista falla, la volveremos a intentar cuando realmente se necesite.
       });
@@ -252,6 +259,16 @@ export default class GameMusicController {
     this.hasStartedOrder3Pickup = false;
     this.useShortBeforeDrop3Route = false;
     this.hasReachedFinish = false;
+    this.clearForcePostFinishTimer();
+    this.forcePostFinishPending = false;
+    this.forcePostFinishArmed = false;
+    this.forcePostFinishEndsAtMs = 0;
+  }
+
+  clearForcePostFinishTimer() {
+    if (!this.forcePostFinishTimerId) return;
+    window.clearTimeout(this.forcePostFinishTimerId);
+    this.forcePostFinishTimerId = 0;
   }
 
   getSequenceSnapshot() {
@@ -295,7 +312,7 @@ export default class GameMusicController {
   setCurrentTrack(label) {
     this.currentTrackLabel = String(label || "");
     this.currentTrackSource = this.currentTrackLabel
-      ? GAME_TRACKS[this.currentTrackLabel] || ""
+      ? this.trackMap[this.currentTrackLabel] || ""
       : "";
     this.emitTrackLabelChange();
   }
@@ -323,6 +340,7 @@ export default class GameMusicController {
       this.clearMonitor();
       return;
     }
+    if (this.forcePostFinishPending) return;
 
     const context = this.getAudioContext();
     const current = this.currentPlayback;
@@ -420,6 +438,27 @@ export default class GameMusicController {
   // - pedido 3: antes del drop3-1/2/3 y luego loop 3-1/3-2 hasta que arranca el pickup 3
   // - meta: cualquier drop3-* cierra con final al terminar la pista actual
   computeNextTrack(snapshot = {}, endedLabel = "") {
+    const drop1MainLoop = Array.isArray(this.sequenceConfig?.drop1MainLoop)
+      ? this.sequenceConfig.drop1MainLoop
+      : [];
+    const drop1WaitLoop = Array.isArray(this.sequenceConfig?.drop1WaitLoop)
+      ? this.sequenceConfig.drop1WaitLoop
+      : [];
+    const drop2Loop = Array.isArray(this.sequenceConfig?.drop2Loop)
+      ? this.sequenceConfig.drop2Loop
+      : [];
+    const drop3Loop = Array.isArray(this.sequenceConfig?.drop3Loop)
+      ? this.sequenceConfig.drop3Loop
+      : [];
+    const beforeDrop3Chain = Array.isArray(this.sequenceConfig?.beforeDrop3Chain)
+      ? this.sequenceConfig.beforeDrop3Chain
+      : [];
+    const beforeDrop3WaitLoop = Array.isArray(this.sequenceConfig?.beforeDrop3WaitLoop)
+      ? this.sequenceConfig.beforeDrop3WaitLoop
+      : [];
+    const postFinishIntro = String(this.postFinishConfig?.intro || "chill1");
+    const postFinishLoop = String(this.postFinishConfig?.loop || "chill2");
+
     const nextState = {
       phase: String(snapshot.phase || "idle"),
       drop1MainIndex: Number(snapshot.drop1MainIndex ?? -1),
@@ -435,63 +474,79 @@ export default class GameMusicController {
       hasReachedFinish: Boolean(snapshot.hasReachedFinish),
     };
 
+    if (
+      nextState.phase !== "final" &&
+      nextState.phase !== "chill-intro" &&
+      nextState.phase !== "chill-loop" &&
+      nextState.hasReachedFinish
+    ) {
+      nextState.phase = "chill-intro";
+      return { nextLabel: postFinishIntro, nextState };
+    }
+
     switch (nextState.phase) {
       case "start":
         nextState.phase = "drop1-main";
         nextState.drop1MainIndex = 0;
-        return { nextLabel: DROP1_MAIN_LOOP[nextState.drop1MainIndex], nextState };
+        return { nextLabel: drop1MainLoop[nextState.drop1MainIndex] || "", nextState };
 
       case "drop1-main":
-        if (nextState.pendingDrop1Advance && canAdvanceFromDrop1Label(endedLabel)) {
+        if (nextState.pendingDrop1Advance && this.canAdvanceFromDrop1Label(endedLabel)) {
           nextState.phase = "before-drop2";
           nextState.pendingDrop1Advance = false;
           return { nextLabel: "antes-del-drop2", nextState };
         }
-        if (nextState.drop1MainIndex < DROP1_MAIN_LOOP.length - 1) {
+        if (nextState.drop1MainIndex < drop1MainLoop.length - 1) {
           nextState.drop1MainIndex += 1;
-          return { nextLabel: DROP1_MAIN_LOOP[nextState.drop1MainIndex], nextState };
+          return { nextLabel: drop1MainLoop[nextState.drop1MainIndex] || "", nextState };
         }
         nextState.phase = "drop1-wait";
         nextState.drop1WaitIndex = 0;
-        return { nextLabel: DROP1_WAIT_LOOP[nextState.drop1WaitIndex], nextState };
+        return { nextLabel: drop1WaitLoop[nextState.drop1WaitIndex] || "", nextState };
 
       case "drop1-wait":
-        if (nextState.pendingDrop1Advance && canAdvanceFromDrop1Label(endedLabel)) {
+        if (nextState.pendingDrop1Advance && this.canAdvanceFromDrop1Label(endedLabel)) {
           nextState.phase = "before-drop2";
           nextState.pendingDrop1Advance = false;
           return { nextLabel: "antes-del-drop2", nextState };
         }
-        nextState.drop1WaitIndex = (nextState.drop1WaitIndex + 1) % DROP1_WAIT_LOOP.length;
-        return { nextLabel: DROP1_WAIT_LOOP[nextState.drop1WaitIndex], nextState };
+        nextState.drop1WaitIndex = (nextState.drop1WaitIndex + 1) % Math.max(1, drop1WaitLoop.length);
+        return { nextLabel: drop1WaitLoop[nextState.drop1WaitIndex] || "", nextState };
 
       case "before-drop2":
         nextState.phase = "drop2-loop";
         nextState.drop2LoopIndex = 0;
-        return { nextLabel: DROP2_LOOP[nextState.drop2LoopIndex], nextState };
+        return { nextLabel: drop2Loop[nextState.drop2LoopIndex] || "", nextState };
 
       case "drop2-loop":
         if (nextState.pendingDrop2Advance) {
           nextState.phase = "before-drop3-chain";
           nextState.beforeDrop3ChainIndex = 0;
           nextState.pendingDrop2Advance = false;
-          return { nextLabel: BEFORE_DROP3_CHAIN[nextState.beforeDrop3ChainIndex], nextState };
+          return {
+            nextLabel: beforeDrop3Chain[nextState.beforeDrop3ChainIndex] || "",
+            nextState,
+          };
         }
-        if (nextState.drop2LoopIndex < DROP2_LOOP.length - 1) {
+        if (nextState.drop2LoopIndex < drop2Loop.length - 1) {
           nextState.drop2LoopIndex += 1;
         } else {
           // El loop del bloque 2 vuelve a drop2-2 para no resetear toda la subida.
-          nextState.drop2LoopIndex = 1;
+          nextState.drop2LoopIndex = Math.min(1, Math.max(0, drop2Loop.length - 1));
         }
-        return { nextLabel: DROP2_LOOP[nextState.drop2LoopIndex], nextState };
+        return { nextLabel: drop2Loop[nextState.drop2LoopIndex] || "", nextState };
 
       case "before-drop3-chain":
-        if (nextState.beforeDrop3ChainIndex < BEFORE_DROP3_CHAIN.length - 1) {
+        if (nextState.beforeDrop3ChainIndex < beforeDrop3Chain.length - 1) {
           if (nextState.useShortBeforeDrop3Route && nextState.beforeDrop3ChainIndex === 0) {
             nextState.beforeDrop3ChainIndex = 2;
           } else {
             nextState.beforeDrop3ChainIndex += 1;
           }
-          return { nextLabel: BEFORE_DROP3_CHAIN[nextState.beforeDrop3ChainIndex], nextState };
+          return {
+            nextLabel: beforeDrop3Chain[nextState.beforeDrop3ChainIndex] || "",
+            nextState,
+          };
         }
         if (nextState.hasStartedOrder3Pickup) {
           nextState.phase = "drop3-intro";
@@ -499,7 +554,10 @@ export default class GameMusicController {
         }
         nextState.phase = "before-drop3-loop";
         nextState.beforeDrop3LoopIndex = 0;
-        return { nextLabel: BEFORE_DROP3_WAIT_LOOP[nextState.beforeDrop3LoopIndex], nextState };
+        return {
+          nextLabel: beforeDrop3WaitLoop[nextState.beforeDrop3LoopIndex] || "",
+          nextState,
+        };
 
       case "before-drop3-loop":
         if (nextState.hasStartedOrder3Pickup) {
@@ -507,37 +565,40 @@ export default class GameMusicController {
           return { nextLabel: "inicio-drop3", nextState };
         }
         nextState.beforeDrop3LoopIndex =
-          (nextState.beforeDrop3LoopIndex + 1) % BEFORE_DROP3_WAIT_LOOP.length;
-        return { nextLabel: BEFORE_DROP3_WAIT_LOOP[nextState.beforeDrop3LoopIndex], nextState };
+          (nextState.beforeDrop3LoopIndex + 1) % Math.max(1, beforeDrop3WaitLoop.length);
+        return {
+          nextLabel: beforeDrop3WaitLoop[nextState.beforeDrop3LoopIndex] || "",
+          nextState,
+        };
 
       case "drop3-intro":
         nextState.phase = "drop3-loop";
         nextState.drop3LoopIndex = 0;
-        return { nextLabel: DROP3_LOOP[nextState.drop3LoopIndex], nextState };
+        return { nextLabel: drop3Loop[nextState.drop3LoopIndex] || "", nextState };
 
       case "drop3-loop":
         if (nextState.hasReachedFinish) {
           nextState.phase = "final";
           return { nextLabel: "final", nextState };
         }
-        if (nextState.drop3LoopIndex >= DROP3_LOOP.length - 1) {
+        if (nextState.drop3LoopIndex >= drop3Loop.length - 1) {
           // drop3-4-2 no embona con drop3-1-1; el loop vuelve a drop3-2-1.
-          nextState.drop3LoopIndex = 2;
+          nextState.drop3LoopIndex = Math.min(2, Math.max(0, drop3Loop.length - 1));
         } else {
           nextState.drop3LoopIndex += 1;
         }
-        return { nextLabel: DROP3_LOOP[nextState.drop3LoopIndex], nextState };
+        return { nextLabel: drop3Loop[nextState.drop3LoopIndex] || "", nextState };
 
       case "final":
         nextState.phase = "chill-intro";
-        return { nextLabel: "chill1", nextState };
+        return { nextLabel: postFinishIntro, nextState };
 
       case "chill-intro":
         nextState.phase = "chill-loop";
-        return { nextLabel: "chill2", nextState };
+        return { nextLabel: postFinishLoop, nextState };
 
       case "chill-loop":
-        return { nextLabel: "chill2", nextState };
+        return { nextLabel: postFinishLoop, nextState };
 
       default:
         return { nextLabel: "", nextState };
@@ -607,6 +668,7 @@ export default class GameMusicController {
   }
 
   scheduleUpcomingTrack(forceReschedule = false) {
+    if (this.forcePostFinishPending) return false;
     const sessionId = this.sessionId;
     const context = this.getAudioContext();
     const current = this.currentPlayback;
@@ -719,6 +781,12 @@ export default class GameMusicController {
       return;
     }
 
+    if (this.forcePostFinishPending) {
+      this.currentPlayback = null;
+      this.setCurrentTrack("");
+      return;
+    }
+
     if (this.promoteQueuedPlayback()) {
       return;
     }
@@ -786,11 +854,88 @@ export default class GameMusicController {
     }
   }
 
-  handleLocalFinish() {
+  handleLocalFinish(options = {}) {
+    const immediatePostFinish = Boolean(options.immediatePostFinish);
+    const postFinishIntroLabel = String(this.postFinishConfig?.intro || "chill1");
+    this.clearForcePostFinishTimer();
+    this.forcePostFinishPending = false;
+    this.forcePostFinishArmed = false;
+    this.forcePostFinishEndsAtMs = 0;
     this.hasReachedFinish = true;
+
+    if (immediatePostFinish) {
+      this.cancelQueuedPlayback();
+      this.phase = "chill-intro";
+      if (this.currentPlayback) {
+        this.stopPlaybackImmediately(this.currentPlayback);
+        this.currentPlayback = null;
+      }
+      this.startTrackNow(postFinishIntroLabel, { fadeInMs: 80 });
+      return;
+    }
+
     if (this.currentPlayback) {
       this.scheduleUpcomingTrack(Boolean(this.queuedPlayback));
     }
+  }
+
+  handleFinishWindowCountdown(payload = {}) {
+    if (!this.shouldPlay) return;
+    if (this.hasReachedFinish) return;
+
+    const postFinishIntroLabel = String(this.postFinishConfig?.intro || "chill1");
+
+    const localFinished = Boolean(payload.localFinished);
+    if (localFinished) {
+      this.clearForcePostFinishTimer();
+      this.forcePostFinishPending = false;
+      this.forcePostFinishArmed = false;
+      this.forcePostFinishEndsAtMs = 0;
+      return;
+    }
+
+    const endsAtMs = Math.max(0, Number(payload.endsAtMs || 0));
+    if (endsAtMs > 0) {
+      this.forcePostFinishEndsAtMs = endsAtMs;
+    }
+    if (this.forcePostFinishArmed || this.forcePostFinishPending) return;
+
+    const remainingMs = Math.max(0, Number(payload.remainingMs || 0));
+    if (remainingMs > this.forcePostFinishFadeLeadMs) return;
+
+    this.forcePostFinishArmed = true;
+    this.forcePostFinishPending = true;
+
+    const safeDelayMs = Math.max(0, Math.round(remainingMs));
+    const current = this.currentPlayback;
+    const context = this.getAudioContext();
+    if (current && context) {
+      current.gainNode.gain.cancelScheduledValues(context.currentTime);
+      current.gainNode.gain.setValueAtTime(
+        current.gainNode.gain.value,
+        context.currentTime
+      );
+      current.gainNode.gain.linearRampToValueAtTime(
+        0,
+        context.currentTime + safeDelayMs / 1000
+      );
+    }
+    this.cancelQueuedPlayback();
+
+    const expectedSessionId = this.sessionId;
+    this.forcePostFinishTimerId = window.setTimeout(() => {
+      this.forcePostFinishTimerId = 0;
+      if (!this.shouldPlay || this.sessionId !== expectedSessionId) return;
+      this.forcePostFinishPending = false;
+      this.forcePostFinishArmed = false;
+      this.hasReachedFinish = true;
+      this.phase = "chill-intro";
+      if (this.currentPlayback) {
+        this.stopPlaybackImmediately(this.currentPlayback);
+        this.currentPlayback = null;
+      }
+      this.startTrackNow(postFinishIntroLabel, { fadeInMs: 120 });
+    }, safeDelayMs + 6);
   }
 
   ensurePlayback() {
@@ -905,6 +1050,7 @@ export default class GameMusicController {
     this.stop({ fadeOutMs: 0 });
     this.clearMonitor();
     this.cancelQueuedPlayback();
+    this.clearForcePostFinishTimer();
     if (this.currentPlayback) {
       this.stopPlaybackImmediately(this.currentPlayback);
       this.currentPlayback = null;

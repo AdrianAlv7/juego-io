@@ -22,11 +22,35 @@ import {
   MAX_CATCH_UP_STEPS,
   OFFSET_DAMPING,
   RESUME_STABILIZE_FRAMES,
+  SPECTATOR_START_DELAY_MS,
   TOP_SPEED_SCREEN_FX,
   WEATHER_OVERLAY_DAMPING,
   ZOOM_DAMPING,
   damp,
 } from "./constants.js";
+
+function isProgressFinished(progress = null) {
+  if (!progress || typeof progress !== "object") return false;
+  if (progress.finished === true) return true;
+
+  const totalObjectives = Number(progress.totalObjectives || 0);
+  const objectiveIndex = Number(progress.objectiveIndex || 0);
+  const progressValue = Number(progress.progressValue || 0);
+
+  if (Number.isFinite(totalObjectives) && totalObjectives > 0) {
+    if (Number.isFinite(objectiveIndex) && objectiveIndex >= totalObjectives) {
+      return true;
+    }
+    if (
+      Number.isFinite(progressValue) &&
+      progressValue >= totalObjectives * 1000000
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 export const gameSceneGameplayMethods = {
   onWeatherEventQueued(payload = {}) {
@@ -72,12 +96,28 @@ export const gameSceneGameplayMethods = {
 
   onInventoryItemActivated(payload = {}) {
     if (!this.matchRunning) return;
-    if (payload.type !== ITEM_TYPES.SHIELD) return;
-    if (this.shieldEffectSystem?.activate(this.map?.getMotoMaxHealth?.())) {
-      if (!this.usingGameplayHudKit) {
-        this.statusBanner.setText("Escudo activo");
-        this.statusBanner.setColor("#7fe7ff");
-        this.statusBanner.setVisible(true);
+    if (payload.type === ITEM_TYPES.SHIELD) {
+      if (
+        this.shieldEffectSystem?.activate(
+          this.map?.getMotoMaxHealth?.(),
+          this.time.now
+        )
+      ) {
+        if (!this.usingGameplayHudKit) {
+          this.statusBanner.setText("Escudo activo");
+          this.statusBanner.setColor("#7fe7ff");
+          this.statusBanner.setVisible(true);
+        }
+      }
+      return;
+    }
+
+    if (payload.type === ITEM_TYPES.GHOST) {
+      const ghostDurationMs = Number(
+        ITEM_CONFIG[ITEM_TYPES.GHOST]?.effectDurationMs || 2000
+      );
+      if (this.moto?.activateGhost?.({ durationMs: ghostDurationMs })) {
+        this.hud?.queueBanner?.("Ghost activo", "info", 820);
       }
     }
   },
@@ -130,6 +170,9 @@ export const gameSceneGameplayMethods = {
   },
 
   applyEmpHudSuppression(suppressed) {
+    if (suppressed) {
+      this.hud?.closeSettingsMenu?.({ silent: true });
+    }
     this.hud?.setVisible?.(!suppressed);
     this.statusBanner?.setVisible(
       suppressed ? false : Boolean(this.statusBannerVisibleBeforeEmp)
@@ -279,6 +322,520 @@ export const gameSceneGameplayMethods = {
     this.refreshWeatherUi();
   },
 
+  isSpectatorControlBlocked() {
+    return Boolean(this.spectatorModeActive || this.spectatorPendingStartAtMs > 0);
+  },
+
+  getPlayerNameById(playerId) {
+    if (!playerId) return "Jugador";
+    const lobbyPlayers = Array.isArray(this.currentLobbyState?.players)
+      ? this.currentLobbyState.players
+      : [];
+    const match = lobbyPlayers.find((player) => player.id === playerId);
+    if (match?.name) return match.name;
+    if (playerId === this.multiplayer?.selfId) return "Tu";
+    return "Jugador";
+  },
+
+  getSpectatorPlayerIds() {
+    const orderedIds = [];
+    const pushUnique = (candidateId) => {
+      if (!candidateId || orderedIds.includes(candidateId)) return;
+      orderedIds.push(candidateId);
+    };
+
+    const lobbyPlayers = Array.isArray(this.currentLobbyState?.players)
+      ? this.currentLobbyState.players
+      : [];
+    lobbyPlayers.forEach((player) => pushUnique(player.id));
+    pushUnique(this.multiplayer?.selfId || "");
+    (this.multiplayer?.getRemotePlayerStates?.() || []).forEach((player) =>
+      pushUnique(player.id)
+    );
+
+    return orderedIds;
+  },
+
+  isPlayerFinishedById(playerId) {
+    if (!playerId) return false;
+    if (playerId === this.multiplayer?.selfId) {
+      return Boolean(this.finishSent || this.map?.isMatchFinished?.());
+    }
+
+    const remoteSnapshot = this.multiplayer?.getRemotePlayerSnapshot?.(playerId);
+    if (remoteSnapshot?.finished === true) return true;
+    return isProgressFinished(remoteSnapshot?.progress);
+  },
+
+  getFallbackSpectatorTargetId(options = {}) {
+    const { preferUnfinished = true, excludeId = "" } = options;
+    const ids = this.getSpectatorPlayerIds();
+    if (!ids.length) return "";
+
+    const filtered = ids.filter((id) => id !== excludeId);
+    if (!filtered.length) return "";
+
+    if (preferUnfinished) {
+      const unfinished = filtered.find((id) => !this.isPlayerFinishedById(id));
+      if (unfinished) return unfinished;
+    }
+
+    const selfId = this.multiplayer?.selfId || "";
+    if (selfId && filtered.includes(selfId)) return selfId;
+    return filtered[0];
+  },
+
+  setSpectatorTarget(playerId, options = {}) {
+    const { preferUnfinished = false, excludeId = "" } = options;
+    const ids = this.getSpectatorPlayerIds();
+    if (!ids.length) {
+      this.spectatorTargetId = "";
+      return "";
+    }
+
+    let nextTargetId = ids.includes(playerId) ? playerId : "";
+    if (!nextTargetId) {
+      nextTargetId = this.getFallbackSpectatorTargetId({
+        preferUnfinished,
+        excludeId,
+      });
+    }
+    if (!nextTargetId) {
+      nextTargetId = ids[0];
+    }
+
+    if (this.spectatorTargetId !== nextTargetId) {
+      this.spectatorCameraTargetId = "";
+    }
+    this.spectatorTargetId = nextTargetId;
+    this.spectatorTargetFinished = this.isPlayerFinishedById(nextTargetId);
+    return nextTargetId;
+  },
+
+  selectNextSpectatorTarget(direction = 1) {
+    if (!this.spectatorModeActive) return;
+
+    const ids = this.getSpectatorPlayerIds();
+    if (!ids.length) return;
+    if (ids.length === 1) {
+      this.setSpectatorTarget(ids[0]);
+      return;
+    }
+
+    const step = direction >= 0 ? 1 : -1;
+    const currentIndex = Math.max(0, ids.indexOf(this.spectatorTargetId));
+    const nextIndex = (currentIndex + step + ids.length) % ids.length;
+    this.setSpectatorTarget(ids[nextIndex]);
+  },
+
+  startSpectatorMode(options = {}) {
+    const force = Boolean(options.force);
+    if (!this.matchRunning || this.matchEnded) return false;
+    if (!force && !this.finishSent) return false;
+    if (this.spectatorModeActive) return true;
+
+    const selfId = this.multiplayer?.selfId || "";
+    const initialTargetId =
+      this.getFallbackSpectatorTargetId({
+        preferUnfinished: !force,
+        excludeId: force ? "" : selfId,
+      }) || this.getFallbackSpectatorTargetId({ preferUnfinished: false });
+
+    if (!initialTargetId) return false;
+
+    this.spectatorModeActive = true;
+    this.spectatorPendingStartAtMs = 0;
+    this.spectatorCameraTargetId = "";
+    this.spectatorDebugOverride = force;
+    this.setSpectatorTarget(initialTargetId);
+    this.hud?.queueBanner?.("Modo espectador", "info", 900);
+    return true;
+  },
+
+  stopSpectatorMode(options = {}) {
+    const { restoreLocalCamera = false } = options;
+    this.spectatorModeActive = false;
+    this.spectatorPendingStartAtMs = 0;
+    this.spectatorTargetId = "";
+    this.spectatorCameraTargetId = "";
+    this.spectatorTargetFinished = false;
+    this.spectatorDebugOverride = false;
+
+    if (restoreLocalCamera && this.moto?.sprite) {
+      const cam = this.cameras.main;
+      cam?.startFollow(this.moto.sprite, false, 1, 1);
+      cam?.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
+    }
+  },
+
+  handleSpectatorPlayerLeft(playerId) {
+    if (!playerId) return;
+    if (!this.spectatorModeActive) return;
+    if (this.spectatorTargetId !== playerId) return;
+
+    const replacement =
+      this.getFallbackSpectatorTargetId({
+        preferUnfinished: true,
+        excludeId: playerId,
+      }) ||
+      this.getFallbackSpectatorTargetId({
+        preferUnfinished: false,
+        excludeId: playerId,
+      });
+
+    if (!replacement) {
+      this.stopSpectatorMode({ restoreLocalCamera: true });
+      return;
+    }
+
+    this.setSpectatorTarget(replacement);
+  },
+
+  toggleHostSpectatorMode() {
+    if (!this.matchRunning || this.matchEnded) return;
+    if (!this.isLocalHost?.()) return;
+
+    if (this.spectatorModeActive && this.spectatorDebugOverride) {
+      this.stopSpectatorMode({ restoreLocalCamera: true });
+      this.hud?.queueBanner?.("Espectador test desactivado", "warning", 850);
+      return;
+    }
+
+    if (this.startSpectatorMode({ force: true })) {
+      this.hud?.queueBanner?.("Espectador test activado", "info", 850);
+    }
+  },
+
+  grantHostDebugTurbo() {
+    if (!this.matchRunning || this.matchEnded) return false;
+    if (!this.isLocalHost?.()) return false;
+    if (!this.positiveStockSystem?.grantDebugTurbo?.()) return false;
+    this.refreshPositiveStockUi();
+    return true;
+  },
+
+  forceHostDebugReachMeta() {
+    if (!this.matchRunning || this.matchEnded) return false;
+    if (!this.isLocalHost?.()) return false;
+    if (this.finishSent) return false;
+
+    const selfId = this.multiplayer?.selfId || "";
+    if (!selfId) return false;
+
+    const elapsedMs = Math.max(0, Number(this.map?.getElapsedRaceTimeMs?.() || 0));
+    const elapsedSeconds = Math.max(0.1, elapsedMs / 1000);
+
+    this.finishSent = true;
+    this.spectatorModeActive = false;
+    this.spectatorPendingStartAtMs = this.time.now + SPECTATOR_START_DELAY_MS;
+    this.spectatorTargetId = "";
+    this.spectatorCameraTargetId = "";
+    this.spectatorTargetFinished = false;
+    this.spectatorDebugOverride = false;
+
+    appAudioManager.handleGameLocalFinish({ immediatePostFinish: true });
+    this.multiplayer?.emitDebugSetFinishReport?.({
+      playerId: selfId,
+      qualityPercent: 100,
+      elapsedSeconds,
+      finalizeNow: false,
+    });
+
+    if (!this.usingGameplayHudKit) {
+      this.statusBanner?.setText("Debug: meta forzada (host)");
+      this.statusBanner?.setColor("#7fe7ff");
+      this.statusBanner?.setVisible(true);
+    }
+    return true;
+  },
+
+  refreshSpectatorMode(nowMs = this.time.now) {
+    if (!this.matchRunning || this.matchEnded) {
+      if (this.spectatorModeActive || this.spectatorPendingStartAtMs > 0) {
+        this.stopSpectatorMode({ restoreLocalCamera: true });
+      }
+      return;
+    }
+
+    const debugMode = Boolean(this.spectatorDebugOverride);
+    if (!debugMode && !this.finishSent) {
+      this.spectatorPendingStartAtMs = 0;
+      return;
+    }
+
+    if (!this.spectatorModeActive) {
+      if (debugMode) {
+        this.startSpectatorMode({ force: true });
+        return;
+      }
+      if (this.spectatorPendingStartAtMs <= 0) {
+        this.spectatorPendingStartAtMs = nowMs + SPECTATOR_START_DELAY_MS;
+      }
+      if (nowMs >= this.spectatorPendingStartAtMs) {
+        this.startSpectatorMode();
+      }
+      return;
+    }
+
+    if (!this.spectatorTargetId) {
+      this.setSpectatorTarget(
+        this.getFallbackSpectatorTargetId({ preferUnfinished: true })
+      );
+      return;
+    }
+
+    const isRemoteTarget = this.spectatorTargetId !== this.multiplayer?.selfId;
+    if (
+      isRemoteTarget &&
+      !this.multiplayer?.getRemotePlayerSprite?.(this.spectatorTargetId)
+    ) {
+      this.handleSpectatorPlayerLeft(this.spectatorTargetId);
+      return;
+    }
+
+    const targetFinished = this.isPlayerFinishedById(this.spectatorTargetId);
+    const transitionedToFinished =
+      targetFinished && this.spectatorTargetFinished === false;
+    this.spectatorTargetFinished = targetFinished;
+    if (!transitionedToFinished) return;
+
+    const nextUnfinishedTarget = this.getFallbackSpectatorTargetId({
+      preferUnfinished: true,
+      excludeId: this.spectatorTargetId,
+    });
+    if (nextUnfinishedTarget && nextUnfinishedTarget !== this.spectatorTargetId) {
+      this.setSpectatorTarget(nextUnfinishedTarget);
+    }
+  },
+
+  buildHudSnapshotPayload(payload = {}) {
+    const delivery = payload.delivery || {};
+    const timing = payload.timing || {};
+    const moto = payload.moto || {};
+    const inventory = payload.inventory || {};
+    const stock = payload.stock || {};
+
+    const inventoryItems = Array.isArray(inventory.items)
+      ? inventory.items.slice(0, 2).map((item, index) => ({
+          slot: Number.isFinite(item?.slot) ? item.slot : index,
+          type: item?.type || "",
+          label: item?.label || "",
+        }))
+      : [];
+
+    return {
+      speedPxPerSec: Math.max(0, Number(payload.speedPxPerSec || 0)),
+      maxSpeedPxPerSec: Math.max(0, Number(payload.maxSpeedPxPerSec || 0)),
+      delivery: {
+        currentOrder: Math.max(0, Number(delivery.currentOrder || 0)),
+        totalOrders: Math.max(0, Number(delivery.totalOrders || 0)),
+        destination: String(delivery.destination || ""),
+        packageHealthPercent: Math.max(
+          0,
+          Math.min(100, Number(delivery.packageHealthPercent ?? 100))
+        ),
+        packageHealthColor: String(delivery.packageHealthColor || "#58d48f"),
+        qualityPercent: Math.max(
+          0,
+          Math.min(100, Number(delivery.qualityPercent ?? 100))
+        ),
+        qualityColor: String(delivery.qualityColor || "#d6eaff"),
+        deliveredCount: Math.max(0, Number(delivery.deliveredCount || 0)),
+      },
+      timing: {
+        elapsedMs: Math.max(0, Number(timing.elapsedMs || 0)),
+        countdownLabel: String(timing.countdownLabel || ""),
+      },
+      moto: {
+        weatherEventType: String(moto.weatherEventType || WEATHER_EVENT_TYPES.NONE),
+        healthPercent: Math.max(0, Math.min(100, Number(moto.healthPercent ?? 100))),
+        healthColor: String(moto.healthColor || "#58d48f"),
+        repairing: Boolean(moto.repairing),
+        repairRemainingMs: Math.max(0, Number(moto.repairRemainingMs || 0)),
+        turbo: {
+          active: Boolean(moto.turbo?.active),
+        },
+        ghost: {
+          active: Boolean(moto.ghost?.active),
+        },
+        heat: {
+          active: Boolean(moto.heat?.active),
+          percent: Phaser.Math.Clamp(Number(moto.heat?.percent || 0), 0, 1),
+          cooling: Boolean(moto.heat?.cooling),
+        },
+      },
+      inventory: {
+        items: inventoryItems,
+        maxItems: Math.max(0, Number(inventory.maxItems ?? 2)),
+      },
+      stock: {
+        turboCharges: Math.max(0, Number(stock.turboCharges || 0)),
+        turboMaxCharges: Math.max(1, Number(stock.turboMaxCharges || 3)),
+      },
+    };
+  },
+
+  getRemoteHudSnapshot(playerId) {
+    const remoteSnapshot = this.multiplayer?.getRemotePlayerSnapshot?.(playerId);
+    const remoteHud = remoteSnapshot?.hud || {};
+    return this.buildHudSnapshotPayload({
+      speedPxPerSec: remoteHud.speedPxPerSec,
+      maxSpeedPxPerSec: remoteHud.maxSpeedPxPerSec,
+      delivery: remoteHud.delivery,
+      timing: remoteHud.timing,
+      moto: remoteHud.moto,
+      inventory: remoteHud.inventory,
+      stock: remoteHud.stock,
+    });
+  },
+
+  updateSpectatorCameraAndHud(deltaMs) {
+    if (!this.moto || !this.hud || !this.map || !this.spectatorModeActive) return;
+
+    const selfId = this.multiplayer?.selfId || "";
+    let targetId =
+      this.spectatorTargetId ||
+      this.getFallbackSpectatorTargetId({ preferUnfinished: true });
+    if (!targetId) {
+      targetId = this.getFallbackSpectatorTargetId({ preferUnfinished: false });
+    }
+    if (!targetId) {
+      this.stopSpectatorMode({ restoreLocalCamera: true });
+      return;
+    }
+
+    this.setSpectatorTarget(targetId);
+    const isLocalTarget = targetId === selfId;
+    let targetSprite = isLocalTarget
+      ? this.moto?.sprite
+      : this.multiplayer?.getRemotePlayerSprite?.(targetId) || null;
+
+    if (!targetSprite) {
+      this.handleSpectatorPlayerLeft(targetId);
+      return;
+    }
+
+    const cam = this.cameras.main;
+    if (cam) {
+      if (this.spectatorCameraTargetId !== targetId) {
+        cam.startFollow(targetSprite, false, 1, 1);
+        this.spectatorCameraTargetId = targetId;
+      }
+      cam.setFollowOffset(0, 0);
+      this.cameraOffsetX = 0;
+      this.cameraOffsetY = 0;
+      cam.setZoom(
+        damp(cam.zoom, CAMERA_ZOOM_SETTINGS.baseZoom, ZOOM_DAMPING, deltaMs)
+      );
+    }
+
+    if (this.hudCamera) {
+      this.hudCamera.setZoom(
+        damp(
+          this.hudCamera.zoom,
+          CAMERA_ZOOM_SETTINGS.hudBaseZoom,
+          CAMERA_ZOOM_SETTINGS.hudDamping,
+          deltaMs
+        )
+      );
+    }
+
+    this.syncNightVisionFocus(targetSprite);
+
+    let hudSnapshot = null;
+    if (isLocalTarget) {
+      const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
+      const motoHudInfo = {
+        ...(mapHudInfo.moto || {}),
+        ...(this.moto.getHudState?.() || {}),
+      };
+      this.refreshPositiveStockUi();
+      hudSnapshot = this.buildHudSnapshotPayload({
+        speedPxPerSec: this.moto.speedPxPerSec,
+        maxSpeedPxPerSec: this.moto.maxSpeedPxPerSec,
+        delivery: mapHudInfo.delivery,
+        timing: mapHudInfo.timing,
+        moto: motoHudInfo,
+        inventory: this.itemInventoryState,
+        stock: this.positiveStockSystem?.getHudState?.() || {},
+      });
+      this.latestLocalHudSnapshot = hudSnapshot;
+    } else {
+      hudSnapshot = this.getRemoteHudSnapshot(targetId);
+    }
+
+    const finishWindowRemainingMs = this.finishWindowEndsAtMs
+      ? Math.max(0, this.finishWindowEndsAtMs - Date.now())
+      : 0;
+
+    const remotePlayers = this.multiplayer?.getRemotePlayerStates?.() || [];
+    const minimapRemotePlayers = remotePlayers.filter(
+      (player) => player.id && player.id !== targetId
+    );
+    if (!isLocalTarget && selfId && this.moto?.sprite) {
+      minimapRemotePlayers.push({
+        id: selfId,
+        x: this.moto.sprite.x,
+        y: this.moto.sprite.y,
+        angle: this.moto.direction,
+        motoId: this.selectedGarageMotoId,
+      });
+    }
+
+    const hudMotoReference = isLocalTarget
+      ? this.moto
+      : {
+          speedPxPerSec: Number(hudSnapshot.speedPxPerSec || 0),
+          maxSpeedPxPerSec: Math.max(
+            1,
+            Number(hudSnapshot.maxSpeedPxPerSec || 0)
+          ),
+        };
+
+    const targetFinished = this.isPlayerFinishedById(targetId);
+    this.spectatorTargetFinished = targetFinished;
+    const spectatorIds = this.getSpectatorPlayerIds();
+
+    this.hud.update(hudMotoReference, deltaMs, {
+      delivery: hudSnapshot.delivery,
+      timing: {
+        ...hudSnapshot.timing,
+        countdownLabel: "",
+        finishWindowRemainingMs,
+      },
+      moto: hudSnapshot.moto,
+      inventory: hudSnapshot.inventory,
+      stock: hudSnapshot.stock,
+      weatherEvent: {
+        ...(this.weatherEvent || {}),
+      },
+      minimap: {
+        localPlayer: {
+          x: targetSprite.x,
+          y: targetSprite.y,
+          angle: isLocalTarget ? this.moto.direction : targetSprite.rotation,
+        },
+        remotePlayers: minimapRemotePlayers,
+        objective: this.map?.getMinimapTarget?.() || null,
+      },
+      match: {
+        running: this.matchRunning,
+        ended: this.matchEnded,
+        lobbyReturnAtMs: this.lobbyReturnAtMs,
+        isHost: this.isLocalHost(),
+        spectatorActive: true,
+      },
+      resultText: this.matchResultText,
+      spectator: {
+        active: true,
+        targetId,
+        targetName: this.getPlayerNameById(targetId),
+        targetFinished,
+        canNavigate: spectatorIds.length > 1,
+      },
+    });
+  },
+
   updateWeatherEvent(deltaMs) {
     if (
       this.weatherEvent.phase === "active" &&
@@ -325,8 +882,10 @@ export const gameSceneGameplayMethods = {
     this.refreshWeatherUi();
   },
 
-  syncNightVisionFocus() {
-    if (!this.nightVisionOverlay || !this.moto) return;
+  syncNightVisionFocus(focusSprite = null) {
+    if (!this.nightVisionOverlay) return;
+    const targetSprite = focusSprite || this.moto?.sprite;
+    if (!targetSprite) return;
 
     const cam = this.cameras.main;
     if (!cam) return;
@@ -334,11 +893,11 @@ export const gameSceneGameplayMethods = {
     cam.preRender();
     const worldView = cam.worldView;
     const screenX =
-      ((this.moto.sprite.x - worldView.x) / Math.max(1, worldView.width)) *
+      ((targetSprite.x - worldView.x) / Math.max(1, worldView.width)) *
         cam.width +
       cam.x;
     const screenY =
-      ((this.moto.sprite.y - worldView.y) / Math.max(1, worldView.height)) *
+      ((targetSprite.y - worldView.y) / Math.max(1, worldView.height)) *
         cam.height +
       cam.y;
     this.nightVisionOverlay.setFocus(screenX, screenY);
@@ -346,6 +905,11 @@ export const gameSceneGameplayMethods = {
 
   updateCameraAndHud(deltaMs) {
     if (!this.moto || !this.hud || !this.map) return;
+    this.map?.setCountdownSuppressed?.(Boolean(this.spectatorModeActive));
+    if (this.spectatorModeActive) {
+      this.updateSpectatorCameraAndHud(deltaMs);
+      return;
+    }
 
     const cam = this.cameras.main;
     const speedRatio = Phaser.Math.Clamp(
@@ -459,7 +1023,7 @@ export const gameSceneGameplayMethods = {
       deltaMs
     );
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
-    this.syncNightVisionFocus();
+    this.syncNightVisionFocus(this.moto?.sprite);
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
     this.refreshPositiveStockUi();
     const finishWindowRemainingMs = this.finishWindowEndsAtMs
@@ -469,15 +1033,26 @@ export const gameSceneGameplayMethods = {
       ...(mapHudInfo.moto || {}),
       ...(this.moto.getHudState?.() || {}),
     };
-    this.hud.update(this.moto, deltaMs, {
-      ...mapHudInfo,
+    const localHudSnapshot = this.buildHudSnapshotPayload({
+      speedPxPerSec: this.moto.speedPxPerSec,
+      maxSpeedPxPerSec: this.moto.maxSpeedPxPerSec,
+      delivery: mapHudInfo.delivery,
+      timing: mapHudInfo.timing,
       moto: motoHudInfo,
-      timing: {
-        ...(mapHudInfo.timing || {}),
-        finishWindowRemainingMs,
-      },
       inventory: this.itemInventoryState,
       stock: this.positiveStockSystem?.getHudState?.() || {},
+    });
+    this.latestLocalHudSnapshot = localHudSnapshot;
+
+    this.hud.update(this.moto, deltaMs, {
+      delivery: localHudSnapshot.delivery,
+      moto: localHudSnapshot.moto,
+      timing: {
+        ...localHudSnapshot.timing,
+        finishWindowRemainingMs,
+      },
+      inventory: localHudSnapshot.inventory,
+      stock: localHudSnapshot.stock,
       weatherEvent: {
         ...(this.weatherEvent || {}),
       },
@@ -495,8 +1070,12 @@ export const gameSceneGameplayMethods = {
         ended: this.matchEnded,
         lobbyReturnAtMs: this.lobbyReturnAtMs,
         isHost: this.isLocalHost(),
+        spectatorActive: false,
       },
       resultText: this.matchResultText,
+      spectator: {
+        active: false,
+      },
     });
   },
 
@@ -522,81 +1101,117 @@ export const gameSceneGameplayMethods = {
       return;
     }
     const keyboardActive = this.input?.keyboard?.enabled !== false;
+    let settingsMenuOpen = Boolean(this.hud?.isSettingsMenuOpen?.());
+    if (
+      keyboardActive &&
+      this.settingsMenuKey &&
+      Phaser.Input.Keyboard.JustDown(this.settingsMenuKey)
+    ) {
+      this.hud?.toggleSettingsMenu?.();
+      settingsMenuOpen = Boolean(this.hud?.isSettingsMenuOpen?.());
+    }
+    this.refreshSpectatorMode(this.time.now);
+    const shouldSyncFinishMusic =
+      Number(this.finishWindowEndsAtMs || 0) > 0 || this.matchEnded;
+    if (shouldSyncFinishMusic) {
+      const finishWindowRemainingMs = this.finishWindowEndsAtMs
+        ? Math.max(0, this.finishWindowEndsAtMs - Date.now())
+        : 0;
+      appAudioManager.handleGameFinishWindowCountdown?.({
+        remainingMs: finishWindowRemainingMs,
+        endsAtMs: this.finishWindowEndsAtMs,
+        localFinished: Boolean(
+          this.matchEnded || this.finishSent || this.map?.isMatchFinished?.()
+        ),
+      });
+    }
+    const gameplayInputBlocked =
+      settingsMenuOpen || this.isSpectatorControlBlocked();
 
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      Phaser.Input.Keyboard.JustDown(this.rainEventKey)
-    ) {
-      this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.RAIN);
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      Phaser.Input.Keyboard.JustDown(this.sunnyEventKey)
-    ) {
-      this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.SUNNY);
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      Phaser.Input.Keyboard.JustDown(this.nightEventKey)
-    ) {
-      this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.NIGHT);
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      Phaser.Input.Keyboard.JustDown(this.clearWeatherEventKey)
-    ) {
-      this.multiplayer?.emitClearWeatherEvent();
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      Phaser.Input.Keyboard.JustDown(this.trainEventKey)
-    ) {
-      this.multiplayer?.emitStartTrainEvent();
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      (Phaser.Input.Keyboard.JustDown(this.grantOilKey) ||
-        Phaser.Input.Keyboard.JustDown(this.grantOilNumpadKey))
-    ) {
-      this.multiplayer?.emitGrantItem(ITEM_TYPES.OIL);
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      (Phaser.Input.Keyboard.JustDown(this.grantWallKey) ||
-        Phaser.Input.Keyboard.JustDown(this.grantWallNumpadKey))
-    ) {
-      this.multiplayer?.emitGrantItem(ITEM_TYPES.WALL);
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      (Phaser.Input.Keyboard.JustDown(this.grantEmpKey) ||
-        Phaser.Input.Keyboard.JustDown(this.grantEmpNumpadKey))
-    ) {
-      this.multiplayer?.emitGrantItem(ITEM_TYPES.EMP);
-    }
-    if (
-      keyboardActive &&
-      this.isLocalHost() &&
-      (Phaser.Input.Keyboard.JustDown(this.grantShieldKey) ||
-        Phaser.Input.Keyboard.JustDown(this.grantShieldNumpadKey))
-    ) {
-      this.multiplayer?.emitGrantItem(ITEM_TYPES.SHIELD);
-    }
-    if (keyboardActive && Phaser.Input.Keyboard.JustDown(this.dropItemKey)) {
-      this.multiplayer?.emitDropItem();
-    }
-    if (keyboardActive && Phaser.Input.Keyboard.JustDown(this.turboKey)) {
-      if (this.positiveStockSystem?.useTurbo(this.moto)) {
-        this.refreshPositiveStockUi();
-        this.cameras.main.shake(140, 0.0022);
+    if (!gameplayInputBlocked) {
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        Phaser.Input.Keyboard.JustDown(this.rainEventKey)
+      ) {
+        this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.RAIN);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        Phaser.Input.Keyboard.JustDown(this.sunnyEventKey)
+      ) {
+        this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.SUNNY);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        Phaser.Input.Keyboard.JustDown(this.nightEventKey)
+      ) {
+        this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.NIGHT);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        Phaser.Input.Keyboard.JustDown(this.clearWeatherEventKey)
+      ) {
+        this.multiplayer?.emitClearWeatherEvent();
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        Phaser.Input.Keyboard.JustDown(this.trainEventKey)
+      ) {
+        this.multiplayer?.emitStartTrainEvent();
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        (Phaser.Input.Keyboard.JustDown(this.grantOilKey) ||
+          Phaser.Input.Keyboard.JustDown(this.grantOilNumpadKey))
+      ) {
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.OIL);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        (Phaser.Input.Keyboard.JustDown(this.grantWallKey) ||
+          Phaser.Input.Keyboard.JustDown(this.grantWallNumpadKey))
+      ) {
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.WALL);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        (Phaser.Input.Keyboard.JustDown(this.grantEmpKey) ||
+          Phaser.Input.Keyboard.JustDown(this.grantEmpNumpadKey))
+      ) {
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.EMP);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        (Phaser.Input.Keyboard.JustDown(this.grantShieldKey) ||
+          Phaser.Input.Keyboard.JustDown(this.grantShieldNumpadKey))
+      ) {
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.SHIELD);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        (Phaser.Input.Keyboard.JustDown(this.grantGhostKey) ||
+          Phaser.Input.Keyboard.JustDown(this.grantGhostNumpadKey))
+      ) {
+        this.multiplayer?.emitGrantItem(ITEM_TYPES.GHOST);
+      }
+      if (keyboardActive && this.inputSystem?.isDropItemJustPressed?.()) {
+        this.multiplayer?.emitDropItem();
+      }
+      if (keyboardActive && this.inputSystem?.isTurboJustPressed?.()) {
+        if (this.positiveStockSystem?.useTurbo(this.moto)) {
+          this.refreshPositiveStockUi();
+          this.cameras.main.shake(140, 0.0022);
+        }
       }
     }
 
@@ -618,6 +1233,7 @@ export const gameSceneGameplayMethods = {
     }
 
       if (
+        !settingsMenuOpen &&
         this.matchEnded &&
         keyboardActive &&
         Phaser.Input.Keyboard.JustDown(this.restartLevelKey) &&
@@ -667,6 +1283,12 @@ export const gameSceneGameplayMethods = {
 
     if (!this.finishSent && !this.matchEnded && this.map?.isMatchFinished?.()) {
       this.finishSent = true;
+      this.spectatorModeActive = false;
+      this.spectatorPendingStartAtMs = this.time.now + SPECTATOR_START_DELAY_MS;
+      this.spectatorTargetId = "";
+      this.spectatorCameraTargetId = "";
+      this.spectatorTargetFinished = false;
+      this.spectatorDebugOverride = false;
       appAudioManager.handleGameLocalFinish();
       const stats = this.map?.getMatchStats?.(this.moto) || {};
       this.multiplayer?.emitFinishMatch(stats);

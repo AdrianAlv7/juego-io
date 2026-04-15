@@ -10,17 +10,23 @@ export const NEGATIVE_ITEM_TYPES = Object.freeze([
   ITEM_TYPES.EMP,
 ]);
 
-export const POSITIVE_ITEM_TYPES = Object.freeze([
+export const POSITIVE_INVENTORY_ITEM_TYPES = Object.freeze([
   ITEM_TYPES.SHIELD,
+  ITEM_TYPES.GHOST,
+]);
+
+// Nitro/Turbo es positivo, pero vive en stock (cargas), no en inventario normal.
+export const POSITIVE_SPECIAL_STOCK_ITEM_TYPES = Object.freeze([
   STOCK_ITEM_TYPES.TURBO,
 ]);
 
-export const POSITIVE_INVENTORY_ITEM_TYPES = Object.freeze([
-  ITEM_TYPES.SHIELD,
+export const POSITIVE_ITEM_TYPES = Object.freeze([
+  ...POSITIVE_INVENTORY_ITEM_TYPES,
+  ...POSITIVE_SPECIAL_STOCK_ITEM_TYPES,
 ]);
 
 export const POSITIVE_STOCK_TYPES = Object.freeze([
-  STOCK_ITEM_TYPES.TURBO,
+  ...POSITIVE_SPECIAL_STOCK_ITEM_TYPES,
 ]);
 
 export const ROUTE_REWARD_ITEM_POOL = Object.freeze([
@@ -42,4 +48,8 @@ export function isPositiveInventoryItemType(type) {
 
 export function isPositiveStockType(type) {
   return POSITIVE_STOCK_TYPES.includes(type);
+}
+
+export function isPositiveSpecialStockItemType(type) {
+  return POSITIVE_SPECIAL_STOCK_ITEM_TYPES.includes(type);
 }

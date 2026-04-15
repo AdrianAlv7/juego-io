@@ -159,19 +159,31 @@ function createEmptyProgressState() {
     distanceToObjectivePx: 0,
     progressValue: 0,
     liveQualityPercent: 0,
+    finished: false,
   };
 }
 
 function sanitizeProgressPayload(payload = {}, fallback = {}) {
+  const objectiveIndex = Math.max(
+    0,
+    Math.round(toFiniteNumber(payload.objectiveIndex, fallback.objectiveIndex ?? 0))
+  );
+  const totalObjectives = Math.max(
+    1,
+    Math.round(toFiniteNumber(payload.totalObjectives, fallback.totalObjectives ?? 1))
+  );
+  const progressValue = Math.max(
+    0,
+    Math.round(toFiniteNumber(payload.progressValue, fallback.progressValue ?? 0))
+  );
+  const finished =
+    Boolean(payload.finished) ||
+    objectiveIndex >= totalObjectives ||
+    progressValue >= totalObjectives * 1000000;
+
   return {
-    objectiveIndex: Math.max(
-      0,
-      Math.round(toFiniteNumber(payload.objectiveIndex, fallback.objectiveIndex ?? 0))
-    ),
-    totalObjectives: Math.max(
-      1,
-      Math.round(toFiniteNumber(payload.totalObjectives, fallback.totalObjectives ?? 1))
-    ),
+    objectiveIndex,
+    totalObjectives,
     serviceProgress: Math.max(
       0,
       Math.min(1, toFiniteNumber(payload.serviceProgress, fallback.serviceProgress ?? 0))
@@ -185,10 +197,7 @@ function sanitizeProgressPayload(payload = {}, fallback = {}) {
         )
       )
     ),
-    progressValue: Math.max(
-      0,
-      Math.round(toFiniteNumber(payload.progressValue, fallback.progressValue ?? 0))
-    ),
+    progressValue,
     liveQualityPercent: Math.max(
       0,
       Math.min(
@@ -198,6 +207,314 @@ function sanitizeProgressPayload(payload = {}, fallback = {}) {
         )
       )
     ),
+    finished,
+  };
+}
+
+function sanitizeHudText(value, fallback = "", maxLength = 72) {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : fallback;
+}
+
+function sanitizeHudColor(value, fallback = "#d6eaff") {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim().slice(0, 24);
+  return trimmed || fallback;
+}
+
+function createEmptyHudSnapshot() {
+  return {
+    speedPxPerSec: 0,
+    maxSpeedPxPerSec: 0,
+    delivery: {
+      currentOrder: 0,
+      totalOrders: 0,
+      destination: "",
+      packageHealthPercent: 100,
+      packageHealthColor: "#58d48f",
+      qualityPercent: 100,
+      qualityColor: "#d6eaff",
+      deliveredCount: 0,
+    },
+    timing: {
+      elapsedMs: 0,
+      countdownLabel: "",
+    },
+    moto: {
+      weatherEventType: "none",
+      healthPercent: 100,
+      healthColor: "#58d48f",
+      repairing: false,
+      repairRemainingMs: 0,
+      turbo: {
+        active: false,
+      },
+      ghost: {
+        active: false,
+      },
+      heat: {
+        active: false,
+        percent: 0,
+        cooling: false,
+      },
+    },
+    inventory: {
+      items: [],
+      maxItems: 2,
+    },
+    stock: {
+      turboCharges: 0,
+      turboMaxCharges: 3,
+    },
+  };
+}
+
+function sanitizeHudInventoryItems(items, fallbackItems = []) {
+  const source = Array.isArray(items)
+    ? items
+    : Array.isArray(fallbackItems)
+      ? fallbackItems
+      : [];
+  return source.slice(0, 2).map((entry, index) => {
+    const slot = Math.max(
+      0,
+      Math.round(toFiniteNumber(entry?.slot, toFiniteNumber(index, 0)))
+    );
+    const type =
+      typeof entry?.type === "string" ? entry.type.trim().slice(0, 16) : "";
+    const label = sanitizeHudText(entry?.label, "", 24);
+    return {
+      slot,
+      type,
+      label,
+    };
+  });
+}
+
+function sanitizeHudPayload(payload = {}, fallback = {}) {
+  const base = createEmptyHudSnapshot();
+  const source = payload && typeof payload === "object" ? payload : {};
+  const previous = fallback && typeof fallback === "object" ? fallback : {};
+
+  const sourceDelivery =
+    source.delivery && typeof source.delivery === "object" ? source.delivery : {};
+  const fallbackDelivery =
+    previous.delivery && typeof previous.delivery === "object"
+      ? previous.delivery
+      : base.delivery;
+
+  const sourceTiming =
+    source.timing && typeof source.timing === "object" ? source.timing : {};
+  const fallbackTiming =
+    previous.timing && typeof previous.timing === "object"
+      ? previous.timing
+      : base.timing;
+
+  const sourceMoto =
+    source.moto && typeof source.moto === "object" ? source.moto : {};
+  const fallbackMoto =
+    previous.moto && typeof previous.moto === "object" ? previous.moto : base.moto;
+
+  const sourceMotoTurbo =
+    sourceMoto.turbo && typeof sourceMoto.turbo === "object" ? sourceMoto.turbo : {};
+  const fallbackMotoTurbo =
+    fallbackMoto.turbo && typeof fallbackMoto.turbo === "object"
+      ? fallbackMoto.turbo
+      : base.moto.turbo;
+
+  const sourceMotoGhost =
+    sourceMoto.ghost && typeof sourceMoto.ghost === "object" ? sourceMoto.ghost : {};
+  const fallbackMotoGhost =
+    fallbackMoto.ghost && typeof fallbackMoto.ghost === "object"
+      ? fallbackMoto.ghost
+      : base.moto.ghost;
+
+  const sourceMotoHeat =
+    sourceMoto.heat && typeof sourceMoto.heat === "object" ? sourceMoto.heat : {};
+  const fallbackMotoHeat =
+    fallbackMoto.heat && typeof fallbackMoto.heat === "object"
+      ? fallbackMoto.heat
+      : base.moto.heat;
+
+  const sourceInventory =
+    source.inventory && typeof source.inventory === "object" ? source.inventory : {};
+  const fallbackInventory =
+    previous.inventory && typeof previous.inventory === "object"
+      ? previous.inventory
+      : base.inventory;
+
+  const sourceStock =
+    source.stock && typeof source.stock === "object" ? source.stock : {};
+  const fallbackStock =
+    previous.stock && typeof previous.stock === "object"
+      ? previous.stock
+      : base.stock;
+
+  return {
+    speedPxPerSec: Math.max(
+      0,
+      toFiniteNumber(source.speedPxPerSec, toFiniteNumber(previous.speedPxPerSec, 0))
+    ),
+    maxSpeedPxPerSec: Math.max(
+      0,
+      toFiniteNumber(
+        source.maxSpeedPxPerSec,
+        toFiniteNumber(previous.maxSpeedPxPerSec, 0)
+      )
+    ),
+    delivery: {
+      currentOrder: Math.max(
+        0,
+        Math.round(
+          toFiniteNumber(
+            sourceDelivery.currentOrder,
+            toFiniteNumber(fallbackDelivery.currentOrder, 0)
+          )
+        )
+      ),
+      totalOrders: Math.max(
+        0,
+        Math.round(
+          toFiniteNumber(
+            sourceDelivery.totalOrders,
+            toFiniteNumber(fallbackDelivery.totalOrders, 0)
+          )
+        )
+      ),
+      destination: sanitizeHudText(
+        sourceDelivery.destination,
+        sanitizeHudText(fallbackDelivery.destination, "", 72),
+        72
+      ),
+      packageHealthPercent: Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            toFiniteNumber(
+              sourceDelivery.packageHealthPercent,
+              toFiniteNumber(fallbackDelivery.packageHealthPercent, 100)
+            )
+          )
+        )
+      ),
+      packageHealthColor: sanitizeHudColor(
+        sourceDelivery.packageHealthColor,
+        sanitizeHudColor(fallbackDelivery.packageHealthColor, base.delivery.packageHealthColor)
+      ),
+      qualityPercent: Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            toFiniteNumber(
+              sourceDelivery.qualityPercent,
+              toFiniteNumber(fallbackDelivery.qualityPercent, 100)
+            )
+          )
+        )
+      ),
+      qualityColor: sanitizeHudColor(
+        sourceDelivery.qualityColor,
+        sanitizeHudColor(fallbackDelivery.qualityColor, base.delivery.qualityColor)
+      ),
+      deliveredCount: Math.max(
+        0,
+        Math.round(
+          toFiniteNumber(
+            sourceDelivery.deliveredCount,
+            toFiniteNumber(fallbackDelivery.deliveredCount, 0)
+          )
+        )
+      ),
+    },
+    timing: {
+      elapsedMs: Math.max(
+        0,
+        Math.round(
+          toFiniteNumber(sourceTiming.elapsedMs, toFiniteNumber(fallbackTiming.elapsedMs, 0))
+        )
+      ),
+      countdownLabel: sanitizeHudText(
+        sourceTiming.countdownLabel,
+        sanitizeHudText(fallbackTiming.countdownLabel, "", 8),
+        8
+      ),
+    },
+    moto: {
+      weatherEventType: sanitizeHudText(
+        sourceMoto.weatherEventType,
+        sanitizeHudText(fallbackMoto.weatherEventType, "none", 16),
+        16
+      ).toLowerCase(),
+      healthPercent: Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            toFiniteNumber(sourceMoto.healthPercent, toFiniteNumber(fallbackMoto.healthPercent, 100))
+          )
+        )
+      ),
+      healthColor: sanitizeHudColor(
+        sourceMoto.healthColor,
+        sanitizeHudColor(fallbackMoto.healthColor, base.moto.healthColor)
+      ),
+      repairing: Boolean(sourceMoto.repairing ?? fallbackMoto.repairing),
+      repairRemainingMs: Math.max(
+        0,
+        Math.round(
+          toFiniteNumber(
+            sourceMoto.repairRemainingMs,
+            toFiniteNumber(fallbackMoto.repairRemainingMs, 0)
+          )
+        )
+      ),
+      turbo: {
+        active: Boolean(sourceMotoTurbo.active ?? fallbackMotoTurbo.active),
+      },
+      ghost: {
+        active: Boolean(sourceMotoGhost.active ?? fallbackMotoGhost.active),
+      },
+      heat: {
+        active: Boolean(sourceMotoHeat.active ?? fallbackMotoHeat.active),
+        percent: Math.max(
+          0,
+          Math.min(
+            1,
+            toFiniteNumber(sourceMotoHeat.percent, toFiniteNumber(fallbackMotoHeat.percent, 0))
+          )
+        ),
+        cooling: Boolean(sourceMotoHeat.cooling ?? fallbackMotoHeat.cooling),
+      },
+    },
+    inventory: {
+      items: sanitizeHudInventoryItems(sourceInventory.items, fallbackInventory.items),
+      maxItems: Math.max(
+        0,
+        Math.round(
+          toFiniteNumber(sourceInventory.maxItems, toFiniteNumber(fallbackInventory.maxItems, 2))
+        )
+      ),
+    },
+    stock: {
+      turboCharges: Math.max(
+        0,
+        Math.round(
+          toFiniteNumber(sourceStock.turboCharges, toFiniteNumber(fallbackStock.turboCharges, 0))
+        )
+      ),
+      turboMaxCharges: Math.max(
+        1,
+        Math.round(
+          toFiniteNumber(
+            sourceStock.turboMaxCharges,
+            toFiniteNumber(fallbackStock.turboMaxCharges, 3)
+          )
+        )
+      ),
+    },
   };
 }
 
@@ -543,6 +860,7 @@ function launchGame(room, preferredSpawn = null) {
   for (const player of room.players.values()) {
     player.inventory = [];
     player.progress = createEmptyProgressState();
+    player.hud = createEmptyHudSnapshot();
     player.claimedRouteRewards = new Set();
   }
 
@@ -818,6 +1136,18 @@ function dropInventoryItem(room, playerId) {
     return activationPayload;
   }
 
+  if (type === ITEM_TYPES.GHOST) {
+    const activationPayload = {
+      id: makeTrackItemId(room),
+      type,
+      ownerId: playerId,
+      createdAt: Date.now(),
+    };
+    io.to(playerId).emit("inventoryItemActivated", activationPayload);
+    emitInventoryState(room, playerId);
+    return activationPayload;
+  }
+
   const payload = buildDroppedItemPayload(
     type,
     playerId,
@@ -983,6 +1313,7 @@ function resetMatchState(room) {
     player.state = { x: 0, y: 0, angle: 0 };
     player.ready = false;
     player.progress = createEmptyProgressState();
+    player.hud = createEmptyHudSnapshot();
     player.inventory = [];
     player.claimedRouteRewards = new Set();
   }
@@ -1354,6 +1685,7 @@ function buildPlayerRecord(
     ready: false,
     state: { x: 0, y: 0, angle: 0 },
     progress: createEmptyProgressState(),
+    hud: createEmptyHudSnapshot(),
     inventory: [],
     claimedRouteRewards: new Set(),
   };
@@ -1536,6 +1868,16 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("cancelStartGame", () => {
+    const room = getRoomBySocketId(socket.id);
+    if (!room || room.started || room.finished) return;
+    if (room.type !== ROOM_TYPE_PRIVATE) return;
+    if (socket.id !== room.hostId) return;
+
+    clearLobbyCountdown(room);
+    emitLobbyState(room);
+  });
+
   socket.on("updatePosition", (payload = {}) => {
     const room = getRoomBySocketId(socket.id);
     if (!room || !room.started || room.finished) return;
@@ -1545,13 +1887,17 @@ io.on("connection", (socket) => {
 
     const next = sanitizeState(payload, player.state);
     const nextProgress = sanitizeProgressPayload(payload.progress, player.progress);
+    const nextHud = sanitizeHudPayload(payload.hud, player.hud);
     player.state = next;
     player.progress = nextProgress;
+    player.hud = nextHud;
 
     socket.to(getRoomChannel(room.id)).emit("playerMoved", {
       id: socket.id,
       motoId: sanitizeMotoId(player.motoId),
       ...next,
+      progress: nextProgress,
+      hud: nextHud,
     });
   });
 
@@ -1642,6 +1988,7 @@ io.on("connection", (socket) => {
     if (!room || socket.id !== room.hostId) return;
     if (!room.started || room.finished) return;
     clearCurrentWeatherEvent(room, "host_clear");
+    clearCurrentTrainEvent(room, "host_clear");
   });
 
   socket.on("startTrainEvent", (payload = {}) => {
@@ -1698,6 +2045,11 @@ io.on("connection", (socket) => {
     const room = getRoomBySocketId(socket.id);
     if (!room) return;
 
+    const disconnectedPlayer = room.players.get(socket.id);
+    const disconnectedPlayerName =
+      typeof disconnectedPlayer?.name === "string" && disconnectedPlayer.name.trim()
+        ? disconnectedPlayer.name.trim()
+        : "Jugador";
     const hadPlayer = room.players.delete(socket.id);
     if (!hadPlayer) {
       playerRoomIds.delete(socket.id);
@@ -1709,6 +2061,12 @@ io.on("connection", (socket) => {
     ensureHost(room);
     socket.to(getRoomChannel(room.id)).emit("playerDisconnected", {
       id: socket.id,
+    });
+    socket.to(getRoomChannel(room.id)).emit("roomPlayerLeft", {
+      id: socket.id,
+      name: disconnectedPlayerName,
+      message: `${disconnectedPlayerName} abandono la sala`,
+      leftAt: Date.now(),
     });
 
     if (room.players.size === 0) {

@@ -30,6 +30,7 @@ const LEGACY_PLAYER_NAME_STORAGE_KEY = "repartidor_player_name";
 
 function registerInputKeys(scene) {
   scene.inputSystem = new InputSystem(scene);
+  scene.controlPresetId = scene.inputSystem.getControlPresetId?.() || "flechitas";
   scene.restartLevelKey = scene.input.keyboard.addKey(
     Phaser.Input.Keyboard.KeyCodes.R
   );
@@ -72,10 +73,19 @@ function registerInputKeys(scene) {
   scene.grantShieldNumpadKey = scene.input.keyboard.addKey(
     Phaser.Input.Keyboard.KeyCodes.NUMPAD_NINE
   );
+  scene.grantGhostKey = scene.input.keyboard.addKey(
+    Phaser.Input.Keyboard.KeyCodes.ZERO
+  );
+  scene.grantGhostNumpadKey = scene.input.keyboard.addKey(
+    Phaser.Input.Keyboard.KeyCodes.NUMPAD_ZERO
+  );
   scene.dropItemKey = scene.input.keyboard.addKey(
     Phaser.Input.Keyboard.KeyCodes.Z
   );
   scene.turboKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+  scene.settingsMenuKey = scene.input.keyboard.addKey(
+    Phaser.Input.Keyboard.KeyCodes.ESC
+  );
 }
 
 function buildRouteRewardSystem(scene) {
@@ -104,6 +114,7 @@ function buildMultiplayerCallbacks(scene) {
     onRoomError: (payload) => scene.onRoomError(payload),
     onConnectError: (error) => scene.onConnectError(error),
     onLobbyRestarted: () => scene.onLobbyRestarted(),
+    onRoomPlayerLeft: (payload) => scene.onRoomPlayerLeft(payload),
     onWeatherEventQueued: (payload) => scene.onWeatherEventQueued(payload),
     onWeatherEventStarted: (payload) => scene.onWeatherEventStarted(payload),
     onWeatherEventEnded: (payload) => scene.onWeatherEventEnded(payload),
@@ -193,6 +204,7 @@ export const gameSceneLifecycleMethods = {
     this.multiplayer = new MultiplayerSystem(this, {
       spriteKey: "moto",
       getLocalProgress: () => this.map?.getRaceProgress?.(this.moto) || null,
+      getLocalHudSnapshot: () => this.latestLocalHudSnapshot || null,
       callbacks: buildMultiplayerCallbacks(this),
     });
 
@@ -292,6 +304,13 @@ export const gameSceneLifecycleMethods = {
     this.matchEnded = false;
     this.finishSent = false;
     this.finishWindowEndsAtMs = 0;
+    this.latestLocalHudSnapshot = null;
+    this.spectatorModeActive = false;
+    this.spectatorPendingStartAtMs = 0;
+    this.spectatorTargetId = "";
+    this.spectatorCameraTargetId = "";
+    this.spectatorTargetFinished = false;
+    this.spectatorDebugOverride = false;
     this.lobbyReturnAtMs = 0;
     this.matchResultText = "";
     this.cameraOffsetX = 0;
@@ -364,10 +383,17 @@ export const gameSceneLifecycleMethods = {
   runSimulationStep(stepMs) {
     if (!this.moto || !this.map) return;
 
-    this.moto.setShieldVisualActive?.(
-      Boolean(this.shieldEffectSystem?.getState?.().active)
-    );
+    this.shieldEffectSystem?.update?.(this.time.now);
+    const shieldState = this.shieldEffectSystem?.getState?.(this.time.now) || {};
+    this.moto.setShieldVisualActive?.(Boolean(shieldState.active), {
+      remainingMs: Number(shieldState.remainingMs || 0),
+    });
+    const settingsOpen = Boolean(this.hud?.isSettingsMenuOpen?.());
+    const spectatorInputLocked =
+      this.spectatorModeActive || this.spectatorPendingStartAtMs > 0;
     const playerLocked =
+      settingsOpen ||
+      spectatorInputLocked ||
       this.matchEnded ||
       (this.map.isPlayerLocked?.() ?? false) ||
       (this.map.isRiderRepairing?.() ?? false);
@@ -377,9 +403,11 @@ export const gameSceneLifecycleMethods = {
       this.moto.update(stepMs);
     }
     this.map.enforcePlayer(this.moto, stepMs);
-    this.moto.setShieldVisualActive?.(
-      Boolean(this.shieldEffectSystem?.getState?.().active)
-    );
+    const postCollisionShieldState =
+      this.shieldEffectSystem?.getState?.(this.time.now) || {};
+    this.moto.setShieldVisualActive?.(Boolean(postCollisionShieldState.active), {
+      remainingMs: Number(postCollisionShieldState.remainingMs || 0),
+    });
   },
 
   isLocalHost() {

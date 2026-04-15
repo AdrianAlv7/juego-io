@@ -72,18 +72,23 @@ class AppAudioManager {
     this.musicVolume = loadStoredVolume(MUSIC_VOLUME_STORAGE_KEY, DEFAULT_MUSIC_VOLUME);
     this.sfxMuted = loadStoredMuted(SFX_MUTED_STORAGE_KEY, false);
     this.musicMuted = loadStoredMuted(MUSIC_MUTED_STORAGE_KEY, false);
+    this.lobbyMusicPresetId = "lobbyMusic1";
+    this.gameMusicPresetId = "gameMusic1";
     this.lobbyMusicController = new LobbyMusicController({
+      presetId: this.lobbyMusicPresetId,
       masterVolume: this.musicMuted ? 0 : this.musicVolume,
       onTrackLabelChange: this.handleLobbyTrackLabelChange,
       onTrackStateChange: this.handleLobbyTrackStateChange,
     });
     this.gameMusicController = new GameMusicController({
+      presetId: this.gameMusicPresetId,
       masterVolume: this.musicMuted ? 0 : this.musicVolume,
       onTrackLabelChange: this.handleGameTrackLabelChange,
     });
 
     this.handleUserUnlock = this.handleUserUnlock.bind(this);
     this.handleWindowActivityChange = this.handleWindowActivityChange.bind(this);
+    this.hasProcessedInitialFocus = false;
     this.unlockListenersAttached = false;
     this.activityListenersAttached = false;
   }
@@ -195,6 +200,14 @@ class AppAudioManager {
       return;
     }
 
+    if (!this.hasProcessedInitialFocus) {
+      this.hasProcessedInitialFocus = true;
+      // Primer foco: intentamos arrancar audio sin click manual.
+      // Si el navegador lo bloquea por politicas de autoplay, se reintentara
+      // con cualquier gesto posterior (pointer/keydown).
+      this.getActiveMusicController()?.ensureContextRunning?.();
+    }
+
     if (this.musicMuted) return;
     const activeController = this.getActiveMusicController();
     if (!activeController?.resumePlayback?.()) {
@@ -302,6 +315,14 @@ class AppAudioManager {
     return this.lobbyTrackLabel;
   }
 
+  getLobbyTrackPreviewLabels() {
+    return this.lobbyMusicController.getPreviewLabels?.() || [];
+  }
+
+  getLobbyMusicPresetInfo() {
+    return this.lobbyMusicController.getPresetInfo?.() || null;
+  }
+
   setLobbyTrackLabelListener(listener) {
     this.lobbyTrackLabelListener = typeof listener === "function" ? listener : null;
     this.lobbyTrackLabelListener?.(this.lobbyTrackLabel);
@@ -313,6 +334,30 @@ class AppAudioManager {
 
   getGameTrackLabel() {
     return this.gameTrackLabel;
+  }
+
+  getGamePostFinishTrackLabels() {
+    return this.gameMusicController.getPostFinishTrackLabels?.() || [];
+  }
+
+  getGameMusicPresetInfo() {
+    return this.gameMusicController.getPresetInfo?.() || null;
+  }
+
+  setLobbyMusicPreset(presetId, options = {}) {
+    const changed = this.lobbyMusicController.setPreset?.(presetId, options);
+    if (!changed) return false;
+    this.lobbyMusicPresetId = this.lobbyMusicController.getPresetInfo?.()?.id || presetId;
+    this.applyMusicState();
+    return true;
+  }
+
+  setGameMusicPreset(presetId, options = {}) {
+    const changed = this.gameMusicController.setPreset?.(presetId, options);
+    if (!changed) return false;
+    this.gameMusicPresetId = this.gameMusicController.getPresetInfo?.()?.id || presetId;
+    this.applyMusicState();
+    return true;
   }
 
   setGameTrackLabelListener(listener) {
@@ -392,8 +437,12 @@ class AppAudioManager {
     this.gameMusicController.handleObjectiveServiceStarted(started);
   }
 
-  handleGameLocalFinish() {
-    this.gameMusicController.handleLocalFinish();
+  handleGameLocalFinish(options = {}) {
+    this.gameMusicController.handleLocalFinish(options);
+  }
+
+  handleGameFinishWindowCountdown(payload = {}) {
+    this.gameMusicController.handleFinishWindowCountdown(payload);
   }
 
   stopGameMusic(options = {}) {

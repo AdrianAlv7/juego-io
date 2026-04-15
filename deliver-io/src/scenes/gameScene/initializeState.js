@@ -20,6 +20,13 @@ export function initializeGameSceneState(scene) {
   scene.matchRunning = false;
   scene.matchEnded = false;
   scene.finishSent = false;
+  scene.latestLocalHudSnapshot = null;
+  scene.spectatorModeActive = false;
+  scene.spectatorPendingStartAtMs = 0;
+  scene.spectatorTargetId = "";
+  scene.spectatorCameraTargetId = "";
+  scene.spectatorTargetFinished = false;
+  scene.spectatorDebugOverride = false;
   scene.currentLobbyState = null;
   scene.isRegistered = false;
   scene.pendingRoomMode = "public";
@@ -28,6 +35,7 @@ export function initializeGameSceneState(scene) {
   scene.selectedGarageMotoTextureKey = "moto";
   scene.garageWorkingMotoId = null;
   scene.garageSelectionWasManual = false;
+  scene.controlPresetId = "flechitas";
 
   scene.cameraOffsetX = 0;
   scene.cameraOffsetY = 0;
@@ -92,6 +100,22 @@ export function initializeGameSceneState(scene) {
   scene.settingsSfxValue = null;
   scene.settingsMusicSlider = null;
   scene.settingsMusicValue = null;
+  scene.settingsActiveSection = "volume";
+  scene.settingsSectionsRoot = null;
+  scene.settingsVolumeSectionButton = null;
+  scene.settingsControlsSectionButton = null;
+  scene.settingsLanguageSectionButton = null;
+  scene.settingsVolumePanel = null;
+  scene.settingsControlsPanel = null;
+  scene.settingsLanguagePanel = null;
+  scene.settingsControlPresetButtons = null;
+  scene.settingsLanguageButtons = null;
+  scene.settingsControlGuideGrid = null;
+  scene.settingsControlGuideTitle = null;
+  scene.settingsEyebrowText = null;
+  scene.settingsTitleText = null;
+  scene.settingsSubtitleText = null;
+  scene.settingsTextNodes = null;
   scene.audioDockRoot = null;
   scene.musicMuteToggleButton = null;
   scene.sfxMuteToggleButton = null;
@@ -137,7 +161,10 @@ export function initializeGameSceneState(scene) {
   scene.grantEmpNumpadKey = null;
   scene.grantShieldKey = null;
   scene.grantShieldNumpadKey = null;
+  scene.grantGhostKey = null;
+  scene.grantGhostNumpadKey = null;
   scene.turboKey = null;
+  scene.settingsMenuKey = null;
   scene.lobbyReturnAtMs = 0;
   scene.lobbyReturnRoot = null;
   scene.lobbyReturnText = null;
@@ -151,6 +178,8 @@ export function initializeGameSceneState(scene) {
   scene.roomShareCodeValue = null;
   scene.roomShareHint = null;
   scene.roomShareButton = null;
+  scene.roomShareCopyCooldownUntilMs = 0;
+  scene.roomShareCopyResetTimer = null;
   scene.autoReconnectLobby = false;
   scene.lobbyCountdownLastSecond = -1;
 

@@ -440,6 +440,7 @@ export default class ObjectiveSystem {
       serviceProgress: Number(serviceProgress.toFixed(3)),
       distanceToObjectivePx,
       progressValue,
+      finished: this.finished,
     };
   }
 

@@ -6,6 +6,7 @@ import { createInventoryState } from "../../items/catalog.js";
 import appAudioManager from "../../ui/AppAudioManager.js";
 import { ACTIVE_MAP } from "../../world/activeMap.js";
 import GameplayHudKitOverlay from "../../ui/GameplayHudKitOverlay.js";
+import { t } from "../../i18n/index.js";
 import {
   CAMERA_ZOOM_SETTINGS,
   DEFAULT_WORLD_HEIGHT,
@@ -73,15 +74,50 @@ export const gameSceneMatchMethods = {
     this.setDebugFinishUiVisible(this.matchRunning && !this.matchEnded);
   },
 
+  onRoomPlayerLeft(payload = {}) {
+    const playerId = typeof payload.id === "string" ? payload.id : "";
+    if (!playerId || playerId === this.multiplayer?.selfId) return;
+    if (typeof this.handleSpectatorPlayerLeft === "function") {
+      this.handleSpectatorPlayerLeft(playerId);
+    }
+    const playerName =
+      typeof payload.name === "string" && payload.name.trim()
+        ? payload.name.trim()
+        : "Jugador";
+    const noticeText = t(
+      "messages.playerLeftRoom",
+      { playerName },
+      `${playerName} abandono la sala`
+    );
+
+    if (this.matchRunning && !this.matchEnded) {
+      if (this.usingGameplayHudKit && typeof this.hud?.showSystemNotice === "function") {
+        this.hud.showSystemNotice(noticeText, 1800);
+      } else {
+        this.statusBanner?.setText(noticeText);
+        this.statusBanner?.setColor("#ffb1b1");
+        this.statusBanner?.setVisible(true);
+      }
+      return;
+    }
+
+    if (this.isRegistered) {
+      this.setLobbyMessage(noticeText, "#ffb1b1");
+    }
+  },
+
   onRoomError(payload = {}) {
     this.isRegistered = false;
     this.currentLobbyState = null;
     this.lobbyPlayersPanel?.setVisible(false);
     this.setNameEntryBusy(null);
-    this.setLobbyMessage(payload.message || "Error de sala.", "#ff9f9f");
+    this.setLobbyMessage(
+      payload.message || t("errors.roomGeneric", {}, "Error de sala."),
+      "#ff9f9f"
+    );
     this.playersListText.setText([
-      "No se pudo entrar a la sala.",
-      "Revisa el backend y vuelve a intentar.",
+      t("errors.roomJoinFailed", {}, "No se pudo entrar a la sala."),
+      t("errors.retryBackend", {}, "Revisa el backend y vuelve a intentar."),
     ]);
     if (this.nameInput && this.nameEntryRoot) {
       this.nameInput.disabled = false;
@@ -109,12 +145,20 @@ export const gameSceneMatchMethods = {
     this.lobbyPlayersPanel?.setVisible(false);
     this.setNameEntryBusy(null);
     this.setLobbyMessage(
-      "No se pudo conectar al servidor. Revisa la URL del backend.",
+      t(
+        "errors.connectBackend",
+        {},
+        "No se pudo conectar al servidor. Revisa la URL del backend."
+      ),
       "#ff9f9f"
     );
     this.playersListText.setText([
-      "Fallo la conexion al socket.",
-      "Revisa VITE_SOCKET_SERVER_URL o el tunel del puerto 3000.",
+      t("errors.socketFailed", {}, "Fallo la conexion al socket."),
+      t(
+        "errors.checkSocketUrl",
+        {},
+        "Revisa VITE_SOCKET_SERVER_URL o el tunel del puerto 3000."
+      ),
     ]);
 
     if (this.nameInput && this.nameEntryRoot) {
@@ -139,12 +183,16 @@ export const gameSceneMatchMethods = {
     if (!this.currentLobbyState) {
       this.lobbyCardNode?.classList.remove("is-private-room", "is-public-room");
       this.lobbyPlayersPanel?.setVisible(false);
-      this.lobbyTitle.setText("Sala Deliver.io");
-      this.lobbySubtitle.setText("Publica o privada | Maximo 6 jugadores");
+      this.lobbyTitle.setText(t("labels.lobbyTitle", {}, "Sala Deliver.io"));
+      this.lobbySubtitle.setText(
+        t("labels.lobbySubtitle", {}, "Publica o privada | Maximo 6 jugadores")
+      );
       this.playersListText.setText([]);
       this.setGarageQuickUiVisible?.(false);
       this.refreshLobbyGaragePreview?.();
-      this.setLobbyMessage("Escribe username y elige publica o privada.");
+      this.setLobbyMessage(
+        t("messages.entryDefault", {}, "Escribe username y elige publica o privada.")
+      );
       this.readyButtonRect?.setVisible(false);
       this.readyButtonLabel?.setVisible(false);
       this.readyButtonRect?.disableInteractive();
@@ -192,13 +240,32 @@ export const gameSceneMatchMethods = {
     this.setGarageQuickUiVisible?.(this.isRegistered);
     this.lobbyTitle.setText(
       roomType === "private"
-        ? `Sala privada ${roomCode || ""}`.trim()
-        : "Sala publica"
+        ? t("labels.privateRoomTitle", { roomCode: roomCode || "" }, `Sala privada ${roomCode || ""}`).trim()
+        : t("labels.publicRoomTitle", {}, "Sala publica")
     );
     this.lobbySubtitle.setText(
       roomType === "private"
-        ? `Codigo ${roomCode || "AUTO"} | Conectados: ${players.length}/${maxPlayers} | Listos: ${readyCount}/${players.length || 0}`
-        : `Emparejamiento publico | Conectados: ${players.length}/${maxPlayers} | Listos: ${readyCount}/${players.length || 0}`
+        ? t(
+            "labels.privateRoomSubtitle",
+            {
+              roomCode: roomCode || "AUTO",
+              connected: players.length,
+              maxPlayers,
+              readyCount,
+              totalPlayers: players.length || 0,
+            },
+            `Codigo ${roomCode || "AUTO"} | Conectados: ${players.length}/${maxPlayers} | Listos: ${readyCount}/${players.length || 0}`
+          )
+        : t(
+            "labels.publicRoomSubtitle",
+            {
+              connected: players.length,
+              maxPlayers,
+              readyCount,
+              totalPlayers: players.length || 0,
+            },
+            `Emparejamiento publico | Conectados: ${players.length}/${maxPlayers} | Listos: ${readyCount}/${players.length || 0}`
+          )
     );
     this.setLeaveRoomUiVisible(this.isRegistered && !this.matchRunning);
     this.updateRoomShareUi();
@@ -216,18 +283,21 @@ export const gameSceneMatchMethods = {
       this.startButtonLabel.setVisible(false);
       this.startButtonRect.disableInteractive();
       this.setLobbyMessage(
-        "Escribe username y elige publica o privada."
+        t("messages.entryDefault", {}, "Escribe username y elige publica o privada.")
       );
       return;
     }
 
     const lines = players.length
       ? players.map((player, index) => {
-          const hostTag = player.id === hostId ? " (Creador)" : "";
-          const readyTag = player.ready ? " [Listo]" : " [Esperando]";
+          const hostTag =
+            player.id === hostId ? ` (${t("labels.host", {}, "Creador")})` : "";
+          const readyTag = player.ready
+            ? ` [${t("buttons.ready", {}, "Listo")}]`
+            : ` [${t("labels.waiting", {}, "Esperando")}]`;
           return `${index + 1}. ${player.name}${hostTag}${readyTag}`;
         })
-      : ["Sin jugadores"];
+      : [t("labels.noPlayers", {}, "Sin jugadores")];
     this.lobbyPlayersPanel?.setVisible(true);
     this.playersListText.setText(lines);
     this.refreshLobbyGaragePreview?.();
@@ -236,7 +306,11 @@ export const gameSceneMatchMethods = {
     const canToggleReady =
       !this.currentLobbyState.started && !this.matchRunning && players.length > 0;
     if (this.readyButtonNode) {
-      this.readyButtonLabel?.setText(localReady ? "No listo" : "Listo");
+      this.readyButtonLabel?.setText(
+        localReady
+          ? t("buttons.notReady", {}, "No listo")
+          : t("buttons.ready", {}, "Listo")
+      );
       this.readyButtonNode.classList.toggle("lhl-btn-ready--active", localReady);
     }
     this.readyButtonRect?.setVisible(canToggleReady);
@@ -251,6 +325,18 @@ export const gameSceneMatchMethods = {
       isHost &&
       !this.currentLobbyState.started &&
       players.length > 0;
+    const canCancelPrivateCountdown = Boolean(canStart && roomType === "private" && countdownActive);
+    if (this.startButtonNode) {
+      this.startButtonNode.classList.toggle(
+        "lhl-btn-start--cancel",
+        canCancelPrivateCountdown
+      );
+      this.startButtonLabel?.setText(
+        canCancelPrivateCountdown
+          ? t("buttons.cancel", {}, "Cancelar")
+          : t("buttons.start", {}, "Empezar")
+      );
+    }
     this.startButtonRect.setVisible(canStart);
     this.startButtonLabel.setVisible(canStart);
     this.startButtonRect.disableInteractive();
@@ -261,36 +347,70 @@ export const gameSceneMatchMethods = {
     if (countdownActive) {
       this.setLobbyMessage(
         roomType === "private"
-          ? `Cuenta regresiva activa: ${countdownSeconds}s para iniciar partida.`
-          : `Sala publica llena. Inicio automatico en ${countdownSeconds}s.`,
+          ? t(
+              "messages.countdownPrivate",
+              {
+                seconds: countdownSeconds,
+                cancelLabel: t("buttons.cancel", {}, "Cancelar"),
+              },
+              `Cuenta regresiva activa: ${countdownSeconds}s para iniciar partida. Pulsa Cancelar para detenerla.`
+            )
+          : t(
+              "messages.countdownPublic",
+              { seconds: countdownSeconds },
+              `Sala publica llena. Inicio automatico en ${countdownSeconds}s.`
+            ),
         countdownSeconds <= 3 ? "#95f5c8" : "#ffd27d"
       );
     } else if (roomType === "public") {
       const missingPlayers = Math.max(0, maxPlayers - players.length);
       if (missingPlayers > 0) {
         this.setLobbyMessage(
-          `Faltan ${missingPlayers} jugador(es) para llenar la sala. Al llenarse inicia cuenta de 10s.`,
+          t(
+            "messages.publicMissingPlayers",
+            { missingPlayers },
+            `Faltan ${missingPlayers} jugador(es) para llenar la sala. Al llenarse inicia cuenta de 10s.`
+          ),
           "#8ad6ff"
         );
       } else if (!allReady) {
         this.setLobbyMessage(
-          "Sala llena. Marca Listo para reducir la cuenta a 3 segundos.",
+          t(
+            "messages.publicNotAllReady",
+            {},
+            "Sala llena. Marca Listo para reducir la cuenta a 3 segundos."
+          ),
           "#ffd27d"
         );
       } else {
         this.setLobbyMessage(
-          "Todos listos. El inicio se redujo a 3 segundos.",
+          t(
+            "messages.publicAllReady",
+            {},
+            "Todos listos. El inicio se redujo a 3 segundos."
+          ),
           "#95f5c8"
         );
       }
     } else if (canStart) {
       this.setLobbyMessage(
-        `Eres creador. Comparte codigo ${roomCode || "AUTO"} y presiona Empezar.`,
+        t(
+          "messages.hostShareAndStart",
+          {
+            roomCode: roomCode || "AUTO",
+            startLabel: t("buttons.start", {}, "Empezar"),
+          },
+          `Eres creador. Comparte codigo ${roomCode || "AUTO"} y presiona Empezar.`
+        ),
         "#95f5c8"
       );
     } else {
       this.setLobbyMessage(
-        "Sala privada: espera al creador o marquense Listo para acelerar la cuenta.",
+        t(
+          "messages.privateWaitHost",
+          {},
+          "Sala privada: espera al creador o marquense Listo para acelerar la cuenta."
+        ),
         "#8ad6ff"
       );
     }
@@ -339,6 +459,13 @@ export const gameSceneMatchMethods = {
     this.matchRunning = true;
     this.matchEnded = false;
     this.finishSent = false;
+    this.latestLocalHudSnapshot = null;
+    this.spectatorModeActive = false;
+    this.spectatorPendingStartAtMs = 0;
+    this.spectatorTargetId = "";
+    this.spectatorCameraTargetId = "";
+    this.spectatorTargetFinished = false;
+    this.spectatorDebugOverride = false;
     this.matchResultText = "";
     this.finishWindowEndsAtMs = 0;
     this.lobbyReturnAtMs = 0;
@@ -387,6 +514,8 @@ export const gameSceneMatchMethods = {
   onMatchFinished(payload = {}) {
     if (!this.matchRunning) return;
     this.matchEnded = true;
+    this.stopSpectatorMode?.({ restoreLocalCamera: true });
+    this.hud?.closeSettingsMenu?.({ silent: true });
     this.finishWindowEndsAtMs = 0;
     this.lobbyReturnAtMs = Number(payload.lobbyResetAt || 0);
     this.matchResultText = this.buildMatchResultText(payload);
@@ -429,13 +558,22 @@ export const gameSceneMatchMethods = {
     this.statusBannerVisibleBeforeEmp = true;
     this.applyEmpHudSuppression(false);
     this.syncKeyboardCaptureState();
+    appAudioManager.handleGameLocalFinish({ immediatePostFinish: true });
 
     const roomType =
       this.currentLobbyState?.roomType || this.multiplayer?.getRoomInfo?.()?.roomType;
     this.setLobbyMessage(
       roomType === "public"
-        ? "Partida publica finalizada. Puedes regresar al lobby o jugar otra publica."
-        : "Puedes volver al lobby o esperar el cierre automatico."
+        ? t(
+            "messages.publicMatchFinished",
+            {},
+            "Partida publica finalizada. Puedes regresar al lobby o jugar otra publica."
+          )
+        : t(
+            "messages.privateMatchFinished",
+            {},
+            "Puedes volver al lobby o esperar el cierre automatico."
+          )
     );
   },
 

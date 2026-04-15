@@ -47,6 +47,7 @@ const ITEM_VISUAL_COLORS = Object.freeze({
   empPrimary: 0x3dafff,
   empSecondary: 0x8addff,
   shield: 0xffffff,
+  ghost: 0x8dd0ff,
   turbo: 0xff9a31,
   drift: 0x00ccff,
   brake: 0xff4444,
@@ -86,6 +87,17 @@ function createTurboState() {
     handling: {
       ...DEFAULT_EVENT_HANDLING,
     },
+  };
+}
+
+function createGhostEffectState() {
+  return {
+    active: false,
+    untilMs: 0,
+    triggered: false,
+    passingThrough: false,
+    lastCollisionAtMs: 0,
+    collisionContact: false,
   };
 }
 
@@ -183,7 +195,10 @@ export default class Moto {
     this.trackItemEffect = createTrackItemEffectState();
     this.empEffect = createEmpEffectState();
     this.turboState = createTurboState();
+    this.ghostEffect = createGhostEffectState();
     this.shieldVisualActive = false;
+    this.shieldVisualRemainingMs = 0;
+    this.shieldVisualBlinkThresholdMs = 2000;
     this.itemImpactVisual = createItemImpactVisualState();
   }
 
@@ -194,6 +209,7 @@ export default class Moto {
     this.updateTrackItemEffect(nowMs);
     this.updateEmpEffect(nowMs);
     this.updateTurboState(nowMs);
+    this.updateGhostEffect(nowMs);
     this.updateItemImpactVisual(nowMs);
 
     // Lee estado de teclas de aceleracion/frenado/giro.
@@ -612,6 +628,7 @@ export default class Moto {
   }
 
   activateTurbo(turboConfig = {}) {
+    if (this.turboState.active) return false;
     const nowMs = this.scene.time.now;
     const durationMs = Math.max(120, Number(turboConfig.durationMs || 950));
     const impulse = Math.max(0, Number(turboConfig.forwardImpulse || 0));
@@ -637,6 +654,84 @@ export default class Moto {
     };
     this.applyVisualFeedback(nowMs);
     return true;
+  }
+
+  activateGhost(ghostConfig = {}) {
+    const nowMs = this.scene.time.now;
+    const durationMs = Math.max(300, Number(ghostConfig.durationMs || 2000));
+    this.ghostEffect = {
+      active: true,
+      untilMs: nowMs + durationMs,
+      triggered: true,
+      passingThrough: true,
+      lastCollisionAtMs: 0,
+      collisionContact: false,
+    };
+    if (this.sprite?.body?.checkCollision) {
+      this.sprite.body.checkCollision.none = true;
+    }
+    this.applyVisualFeedback(nowMs);
+    return true;
+  }
+
+  clearGhostEffect() {
+    if (this.sprite?.body?.checkCollision) {
+      this.sprite.body.checkCollision.none = false;
+    }
+    this.ghostEffect = createGhostEffectState();
+    this.applyVisualFeedback(this.scene.time.now);
+  }
+
+  updateGhostEffect(nowMs) {
+    if (!this.ghostEffect.active) return;
+    if (
+      this.ghostEffect.untilMs > 0 &&
+      nowMs >= this.ghostEffect.untilMs &&
+      !this.ghostEffect.collisionContact
+    ) {
+      this.clearGhostEffect();
+    }
+  }
+
+  shouldBypassCollision(nowMs = this.scene.time.now) {
+    if (!this.ghostEffect.active) return false;
+    if (
+      this.ghostEffect.untilMs > 0 &&
+      nowMs >= this.ghostEffect.untilMs &&
+      !this.ghostEffect.collisionContact
+    ) {
+      this.clearGhostEffect();
+      return false;
+    }
+
+    this.ghostEffect.triggered = true;
+    this.ghostEffect.passingThrough = true;
+    this.ghostEffect.lastCollisionAtMs = nowMs;
+    this.ghostEffect.collisionContact = true;
+    this.applyVisualFeedback(nowMs);
+    return true;
+  }
+
+  updateGhostCollisionContact(colliding = false, nowMs = this.scene.time.now) {
+    if (!this.ghostEffect.active) return;
+    this.ghostEffect.collisionContact = Boolean(colliding);
+
+    if (colliding) {
+      this.ghostEffect.lastCollisionAtMs = nowMs;
+      if (!this.ghostEffect.triggered) {
+        this.ghostEffect.triggered = true;
+        this.ghostEffect.passingThrough = true;
+        this.applyVisualFeedback(nowMs);
+      }
+      return;
+    }
+
+    if (this.ghostEffect.untilMs > 0 && nowMs >= this.ghostEffect.untilMs) {
+      this.clearGhostEffect();
+      return;
+    }
+
+    this.updateGhostEffect(nowMs);
   }
 
   clearTurboState() {
@@ -693,11 +788,19 @@ export default class Moto {
       emp: {
         active: this.empEffect.active,
       },
+      ghost: {
+        active: this.ghostEffect.active,
+      },
     };
   }
 
-  setShieldVisualActive(active) {
+  setShieldVisualActive(active, options = {}) {
     this.shieldVisualActive = Boolean(active);
+    this.shieldVisualRemainingMs = Math.max(0, Number(options.remainingMs || 0));
+    this.shieldVisualBlinkThresholdMs = Math.max(
+      300,
+      Number(options.blinkThresholdMs || 2000)
+    );
     this.applyVisualFeedback(this.scene.time.now);
   }
 
@@ -737,6 +840,10 @@ export default class Moto {
     if (this.itemImpactVisual.active && this.itemImpactVisual.type === ITEM_TYPES.WALL) {
       tintColor = ITEM_VISUAL_COLORS.wall;
       useFill = true;
+    } else if (this.ghostEffect.active) {
+      tintColor = ITEM_VISUAL_COLORS.ghost;
+      useFill = true;
+      alpha = 0.34;
     } else if (this.empEffect.active) {
       const wave = 0.5 + 0.5 * Math.sin(nowMs * 0.085);
       tintColor =
@@ -746,9 +853,25 @@ export default class Moto {
       useFill = true;
       alpha = 0.78 + wave * 0.22;
     } else if (this.shieldVisualActive) {
-      tintColor = ITEM_VISUAL_COLORS.shield;
-      useFill = true;
-      alpha = 0.95;
+      const shouldBlink =
+        this.shieldVisualRemainingMs > 0 &&
+        this.shieldVisualRemainingMs <= this.shieldVisualBlinkThresholdMs;
+      if (shouldBlink) {
+        const wave = 0.5 + 0.5 * Math.sin(nowMs * 0.04);
+        const showShieldTint = wave > 0.34;
+        if (showShieldTint) {
+          tintColor = ITEM_VISUAL_COLORS.shield;
+          useFill = true;
+          alpha = 0.74 + wave * 0.26;
+        } else {
+          tintColor = null;
+          alpha = 1;
+        }
+      } else {
+        tintColor = ITEM_VISUAL_COLORS.shield;
+        useFill = true;
+        alpha = 0.95;
+      }
     } else if (
       this.trackItemEffect.active &&
       this.trackItemEffect.type === ITEM_TYPES.OIL

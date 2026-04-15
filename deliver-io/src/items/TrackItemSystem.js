@@ -127,6 +127,9 @@ export default class TrackItemSystem {
             clearOnCollision: ITEM_CONFIG[ITEM_TYPES.OIL].clearsOnCollision,
             handling: ITEM_CONFIG[ITEM_TYPES.OIL].handling,
           });
+          moto.velX *= 0.5;
+          moto.velY *= 0.5;
+          moto.sprite.body.setVelocity(moto.velX * 60, moto.velY * 60);
         }
 
         if (!item.triggeredAt) {
@@ -140,6 +143,11 @@ export default class TrackItemSystem {
 
         const collision = item.resolveCircleCollision(x, y, radius);
         if (!collision) continue;
+        if (moto?.shouldBypassCollision?.(nowMs)) {
+          return {
+            ghostBypassed: true,
+          };
+        }
 
         this.wallConsumedById.add(item.id);
         this.maybeReportTrigger(item, nowMs);
@@ -160,8 +168,10 @@ export default class TrackItemSystem {
             impact: 1.35,
             penetration: collision.penetration,
             speedKmh: 0,
+            ghostBypassed: false,
           },
           wallDamagePercent: ITEM_CONFIG[ITEM_TYPES.WALL].damagePercent,
+          ghostBypassed: false,
         };
         break;
       }
