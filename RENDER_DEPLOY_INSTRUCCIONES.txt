@@ -1,0 +1,45 @@
+INSTRUCCIONES DEPLOY EN RENDER (deliver-io)
+
+Fecha de referencia: 2026-04-17
+
+1) Tipo de servicio en Render
+- Crea un servicio tipo: Web Service
+- Runtime: Node
+
+2) Campos que te pide Render (valores exactos)
+- Root Directory: deliver-io
+- Build Command: npm run build
+- Start Command (Required): npm start
+
+3) Environment Variables (Render)
+Agrega estas variables:
+
+- NODE_ENV=production
+
+Opcional (solo si separas cliente y socket en dominios distintos):
+- VITE_SOCKET_SERVER_URL=https://TU-SERVIDOR-SOCKET.onrender.com
+
+Importante:
+- Si cliente y socket van en el mismo servicio (recomendado para este repo), NO pongas VITE_SOCKET_SERVER_URL.
+- NO agregues PORT. Render lo inyecta automaticamente.
+
+4) Comandos de desarrollo (sin romper dev)
+- npm run dev:server
+- npm run dev
+
+5) Flujo sugerido de deploy
+1. Push a tu rama principal.
+2. En Render, crea el servicio con los datos de arriba.
+3. Espera a que termine el build.
+4. Abre la URL publica de Render.
+5. Verifica healthcheck: https://TU-APP.onrender.com/health
+   Debe responder: {"ok":true}
+
+6) Si Render te muestra yarn por defecto
+- Cambia manualmente a:
+  Build Command: npm run build
+  Start Command: npm start
+
+7) Notas utiles
+- Este proyecto ya quedo preparado para que en produccion el cliente se conecte al mismo dominio automaticamente.
+- En local/dev sigue usando el socket en puerto 3000.

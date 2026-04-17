@@ -9,6 +9,10 @@ function getDefaultServerUrl() {
     return "http://localhost:3000";
   }
 
+  if (!import.meta.env.DEV) {
+    return window.location.origin;
+  }
+
   const protocol = window.location.protocol === "https:" ? "https" : "http";
   const host = window.location.hostname || "localhost";
   return `${protocol}://${host}:3000`;

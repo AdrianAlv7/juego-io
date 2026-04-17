@@ -1,4 +1,7 @@
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
   ITEM_CONFIG,
@@ -120,7 +123,131 @@ const ROUTE_REWARD_ITEM_MILESTONES = new Set([
   ROUTE_REWARD_KEYS.R3_ITEM,
 ]);
 
-const httpServer = createServer();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DIST_DIR = path.resolve(__dirname, "../dist");
+const INDEX_FILE = path.resolve(DIST_DIR, "index.html");
+const MIME_TYPES = {
+  ".css": "text/css; charset=utf-8",
+  ".gif": "image/gif",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".webp": "image/webp",
+};
+
+function isSocketIoPath(pathname = "") {
+  return pathname === "/socket.io" || pathname.startsWith("/socket.io/");
+}
+
+function getMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  return MIME_TYPES[extension] || "application/octet-stream";
+}
+
+function getSafeDistFilePath(pathname = "/") {
+  const relativePath = pathname.replace(/^\/+/, "");
+  const normalizedPath = path.normalize(relativePath);
+
+  if (
+    normalizedPath.startsWith("..") ||
+    path.isAbsolute(normalizedPath)
+  ) {
+    return null;
+  }
+
+  return path.resolve(DIST_DIR, normalizedPath);
+}
+
+async function sendFileResponse(response, filePath, method = "GET") {
+  try {
+    const fileBuffer = await readFile(filePath);
+    response.statusCode = 200;
+    response.setHeader("Content-Type", getMimeType(filePath));
+    if (method !== "HEAD") {
+      response.end(fileBuffer);
+      return true;
+    }
+    response.end();
+    return true;
+  } catch (error) {
+    if (
+      error?.code === "ENOENT" ||
+      error?.code === "EISDIR" ||
+      error?.code === "ENOTDIR"
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function handleHttpRequest(request, response) {
+  const method = String(request.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    response.statusCode = 405;
+    response.setHeader("Allow", "GET, HEAD");
+    response.setHeader("Content-Type", "text/plain; charset=utf-8");
+    response.end("Method Not Allowed");
+    return;
+  }
+
+  const parsedUrl = new URL(request.url || "/", "http://localhost");
+  const pathname = decodeURIComponent(parsedUrl.pathname || "/");
+
+  if (isSocketIoPath(pathname)) {
+    return;
+  }
+
+  if (pathname === "/health") {
+    response.statusCode = 200;
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    if (method === "HEAD") {
+      response.end();
+      return;
+    }
+    response.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  const pathnameForLookup = pathname === "/" ? "/index.html" : pathname;
+  const distFilePath = getSafeDistFilePath(pathnameForLookup);
+  if (distFilePath && (await sendFileResponse(response, distFilePath, method))) {
+    return;
+  }
+
+  if (path.extname(pathname) === "") {
+    const servedSpaFallback = await sendFileResponse(response, INDEX_FILE, method);
+    if (servedSpaFallback) {
+      return;
+    }
+  }
+
+  response.statusCode = 404;
+  response.setHeader("Content-Type", "text/plain; charset=utf-8");
+  response.end("Not Found");
+}
+
+const httpServer = createServer((request, response) => {
+  handleHttpRequest(request, response).catch((error) => {
+    console.error("[http-server] request error", error);
+    if (!response.headersSent) {
+      response.statusCode = 500;
+      response.setHeader("Content-Type", "text/plain; charset=utf-8");
+    }
+    if (!response.writableEnded) {
+      response.end("Internal Server Error");
+    }
+  });
+});
 const io = new Server(httpServer, {
   cors: {
     origin: "*",

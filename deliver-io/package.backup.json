@@ -8,8 +8,7 @@
     "dev:client": "vite",
     "dev:server": "node server/index.js",
     "build": "vite build",
-    "preview": "vite preview",
-    "start": "node server/index.js"
+    "preview": "vite preview"
   },
   "devDependencies": {
     "vite": "npm:rolldown-vite@7.2.5"
