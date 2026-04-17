@@ -2,16 +2,14 @@ import "./hud.css";
 import { WEATHER_EVENT_TYPES } from "../events/weather/catalog.js";
 import { getItemLabel, ITEM_TYPES } from "../items/catalog.js";
 import appAudioManager from "./AppAudioManager.js";
+import {
+  getDashboardModeMeta,
+  loadSelectedDashboardMode,
+} from "./dashboardModes.js";
 import { speedPxPerSecToKmh } from "../world/race/utils/telemetry.js";
 import { formatRaceTime } from "./hud/formatters.js";
 
 const FINISH_CALL_SECONDS = new Set([20, 15, 10, 5, 3, 2, 1]);
-const DASHBOARD_MODE_SEQUENCE = ["dual", "hybrid", "digital"];
-const DASHBOARD_MODE_LABEL = Object.freeze({
-  dual: "Dual Analog",
-  hybrid: "Hybrid",
-  digital: "Full Digital",
-});
 const SETTINGS_AUDIO_ICONS = Object.freeze({
   music:
     '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 3v12.55A4 4 0 1 1 14 12V7.2l-6 1.4v6.9A4 4 0 1 1 6 12V7l10-4z"/></svg>',
@@ -108,7 +106,7 @@ export default class GameplayHudKitOverlay {
     };
     this.minimapTextureKey = "";
     this.minimapTextureImage = null;
-    this.dashboardMode = "dual";
+    this.dashboardMode = loadSelectedDashboardMode();
     this.settingsMenuOpen = false;
 
     this.createDom();
@@ -216,7 +214,7 @@ export default class GameplayHudKitOverlay {
       <section class="ghuk-card ghuk-dashboard">
         <div class="ghuk-dashboard-top">
           <div class="header">Motorcycle Dashboard</div>
-          <button class="ghuk-dash-mode-btn" data-ref="dashModeBtn">Mode: Dual Analog</button>
+          <div class="ghuk-dash-mode-badge" data-ref="dashModeBadge">Analog</div>
         </div>
 
         <div class="ghuk-dash-mode ghuk-dash-mode-dual" data-ref="modeDual">
@@ -262,6 +260,23 @@ export default class GameplayHudKitOverlay {
           <div class="ghuk-rpm-text" data-ref="rpmDigitalValue">1000 RPM</div>
         </div>
 
+        <div class="ghuk-dash-mode ghuk-dash-mode-lcd ghuk-hidden" data-ref="modeLcd">
+          <div class="ghuk-lcd-screen">
+            <div class="ghuk-lcd-row ghuk-lcd-row-speed">
+              <span class="ghuk-lcd-tag">SPD</span>
+              <span class="ghuk-lcd-speed" data-ref="speedLcdValue">0</span>
+              <span class="ghuk-lcd-unit">km/h</span>
+            </div>
+            <div class="ghuk-lcd-row ghuk-lcd-row-rpm">
+              <span class="ghuk-lcd-tag">RPM</span>
+              <span class="ghuk-lcd-rpm" data-ref="rpmLcdValue">1000</span>
+            </div>
+            <div class="ghuk-lcd-bar-track">
+              <div class="ghuk-lcd-bar-fill" data-ref="rpmLcdFill"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="ghuk-dash-meta">
           <div class="label">Health</div><div class="value" data-ref="motoHealthValue">100%</div>
           <div class="label">Repair</div><div class="value" data-ref="repairValue">Ready</div>
@@ -294,7 +309,6 @@ export default class GameplayHudKitOverlay {
           <button class="ghuk-btn" data-weather-action="earthquake" data-tone="earthquake">Terremoto</button>
           <button class="ghuk-btn" data-weather-action="clear" data-tone="clear">Clear</button>
           <button class="ghuk-btn" data-weather-action="train" data-tone="train">Train</button>
-          <button class="ghuk-btn" data-weather-action="fake_depth_buildings" data-tone="debug">FakeDepth (P)</button>
           <button class="ghuk-btn" data-weather-action="spectator" data-tone="spectator">Espectador</button>
           <button class="ghuk-btn" data-weather-action="finish_self" data-tone="finish">Llegar meta</button>
         </div>
@@ -366,10 +380,11 @@ export default class GameplayHudKitOverlay {
       weatherIndicator: query("weatherIndicator"),
       integrityValue: query("integrityValue"),
       qualityValue: query("qualityValue"),
-      dashModeBtn: query("dashModeBtn"),
+      dashModeBadge: query("dashModeBadge"),
       modeDual: query("modeDual"),
       modeHybrid: query("modeHybrid"),
       modeDigital: query("modeDigital"),
+      modeLcd: query("modeLcd"),
       speedNeedle: query("speedNeedle"),
       rpmNeedle: query("rpmNeedle"),
       speedGaugeValue: query("speedGaugeValue"),
@@ -380,6 +395,9 @@ export default class GameplayHudKitOverlay {
       speedDigitalValue: query("speedDigitalValue"),
       rpmBarFill: query("rpmBarFill"),
       rpmDigitalValue: query("rpmDigitalValue"),
+      speedLcdValue: query("speedLcdValue"),
+      rpmLcdValue: query("rpmLcdValue"),
+      rpmLcdFill: query("rpmLcdFill"),
       motoHealthValue: query("motoHealthValue"),
       repairValue: query("repairValue"),
       slot1: query("slot1"),
@@ -492,14 +510,6 @@ export default class GameplayHudKitOverlay {
     };
     this.refs.leaveMatchButton.addEventListener("click", this.settingsLeaveMatchHandler);
 
-    const savedMode =
-      window.localStorage.getItem(DASHBOARD_MODE_STORAGE_KEY) ||
-      window.localStorage.getItem(LEGACY_DASHBOARD_MODE_STORAGE_KEY);
-    if (DASHBOARD_MODE_SEQUENCE.includes(savedMode)) {
-      this.dashboardMode = savedMode;
-    }
-    this.dashboardModeButtonHandler = () => this.cycleDashboardMode();
-    this.refs.dashModeBtn.addEventListener("click", this.dashboardModeButtonHandler);
     this.applyDashboardMode();
     this.syncSettingsAudioUi();
     this.closeSettingsMenu({ silent: true });
@@ -593,19 +603,14 @@ export default class GameplayHudKitOverlay {
     return this.scene?.multiplayer?.getRoomInfo?.()?.roomType || "public";
   }
 
-  cycleDashboardMode() {
-    const currentIndex = DASHBOARD_MODE_SEQUENCE.indexOf(this.dashboardMode);
-    const nextIndex = (Math.max(0, currentIndex) + 1) % DASHBOARD_MODE_SEQUENCE.length;
-    this.dashboardMode = DASHBOARD_MODE_SEQUENCE[nextIndex];
-    this.applyDashboardMode();
-    window.localStorage.setItem(DASHBOARD_MODE_STORAGE_KEY, this.dashboardMode);
-  }
-
   applyDashboardMode() {
+    const modeMeta = getDashboardModeMeta(this.dashboardMode);
+    this.dashboardMode = modeMeta.id;
     this.refs.modeDual.classList.toggle("ghuk-hidden", this.dashboardMode !== "dual");
     this.refs.modeHybrid.classList.toggle("ghuk-hidden", this.dashboardMode !== "hybrid");
     this.refs.modeDigital.classList.toggle("ghuk-hidden", this.dashboardMode !== "digital");
-    this.refs.dashModeBtn.textContent = `Mode: ${DASHBOARD_MODE_LABEL[this.dashboardMode] || "Dual Analog"}`;
+    this.refs.modeLcd.classList.toggle("ghuk-hidden", this.dashboardMode !== "lcd");
+    this.refs.dashModeBadge.textContent = modeMeta.label;
   }
 
   updateGaugeNeedle(node, ratio) {
@@ -621,10 +626,6 @@ export default class GameplayHudKitOverlay {
 
     if (action === "clear") return this.scene.multiplayer?.emitClearWeatherEvent?.();
     if (action === "train") return this.scene.multiplayer?.emitStartTrainEvent?.();
-    if (action === "fake_depth_buildings") {
-      this.scene.toggleFakeDepthBuildingsTest?.();
-      return;
-    }
     if (action === "spectator") return this.scene.toggleHostSpectatorMode?.();
     if (action === "finish_self") {
       const triggered = this.scene.forceHostDebugReachMeta?.();
@@ -1015,6 +1016,9 @@ export default class GameplayHudKitOverlay {
     this.refs.speedDigitalValue.textContent = `${speedKmh}`;
     this.refs.rpmDigitalValue.textContent = `${rpm} RPM`;
     this.refs.rpmBarFill.style.width = `${Math.max(4, clamp01((rpm - 1000) / 9000) * 100)}%`;
+    this.refs.speedLcdValue.textContent = `${speedKmh}`;
+    this.refs.rpmLcdValue.textContent = `${rpm}`;
+    this.refs.rpmLcdFill.style.width = `${Math.max(8, clamp01((rpm - 1000) / 9000) * 100)}%`;
 
     this.refs.motoHealthValue.textContent = `${Math.max(0, Math.round(healthPercent))}%`;
     this.refs.motoHealthValue.style.color =
@@ -1328,8 +1332,6 @@ export default class GameplayHudKitOverlay {
     this.spectatorPrevHandler = null;
     this.refs.spectatorNext.removeEventListener("click", this.spectatorNextHandler);
     this.spectatorNextHandler = null;
-    this.refs.dashModeBtn.removeEventListener("click", this.dashboardModeButtonHandler);
-    this.dashboardModeButtonHandler = null;
 
     this.root.remove();
     this.root = null;
@@ -1337,5 +1339,3 @@ export default class GameplayHudKitOverlay {
     this.minimapContext = null;
   }
 }
-const DASHBOARD_MODE_STORAGE_KEY = "deliver_hud_dashboard_mode";
-const LEGACY_DASHBOARD_MODE_STORAGE_KEY = "repartidor_hud_dashboard_mode";

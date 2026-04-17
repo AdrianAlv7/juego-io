@@ -55,33 +55,6 @@ function isProgressFinished(progress = null) {
 }
 
 export const gameSceneGameplayMethods = {
-  toggleFakeDepthBuildingsTest() {
-    const next = this.collisionBuildingFakeDepthTest?.toggle?.();
-    if (typeof next !== "boolean") return false;
-    const count = Number(
-      this.collisionBuildingFakeDepthTest?.getBuildingCount?.() || 0
-    );
-    const wallTextureReady = Boolean(this.textures?.exists?.("debug-wall-side"));
-    const roofTextureReady = Boolean(this.textures?.exists?.("debug-roof-top"));
-    const texStatus = `w:${wallTextureReady ? "ok" : "x"} r:${roofTextureReady ? "ok" : "x"}`;
-    const onLabel = `FakeDepth test: ON (P) [${count}] ${texStatus}`;
-    const offLabel = "FakeDepth test: OFF (P)";
-    if (!this.usingGameplayHudKit && this.statusBanner) {
-      this.statusBanner.setText(next ? onLabel : offLabel);
-      this.statusBanner.setColor(next ? "#9be6b5" : "#ffd27d");
-      this.statusBanner.setVisible(true);
-    } else {
-      this.hud?.queueBanner?.(
-        next
-          ? `FakeDepth ON [${count}] ${texStatus} (P)`
-          : "FakeDepth OFF (P)",
-        next ? "success" : "warning",
-        900
-      );
-    }
-    return next;
-  },
-
   onWeatherEventQueued(payload = {}) {
     this.applyWeatherEventPayload(payload, "countdown");
   },
@@ -775,7 +748,6 @@ export const gameSceneGameplayMethods = {
       cam.setZoom(
         damp(cam.zoom, CAMERA_ZOOM_SETTINGS.baseZoom, ZOOM_DAMPING, deltaMs)
       );
-      this.map?.updateCameraDrivenDecor?.(cam);
     }
 
     if (this.hudCamera) {
@@ -1260,15 +1232,10 @@ export const gameSceneGameplayMethods = {
       OFFSET_DAMPING,
       deltaMs
     );
-<<<<<<< HEAD
-    cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
-    this.map?.updateCameraDrivenDecor?.(cam);
-=======
     cam.setFollowOffset(
       this.cameraOffsetX + this.cameraEngineVibrationOffsetX,
       this.cameraOffsetY + this.cameraEngineVibrationOffsetY
     );
->>>>>>> 4327a8cc656b12958617cdc24b5c05e6d1d2a361
     this.syncNightVisionFocus(this.moto?.sprite);
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
     this.refreshPositiveStockUi();
@@ -1329,13 +1296,6 @@ export const gameSceneGameplayMethods = {
     this.multiplayer?.update(delta);
     this.empPulseVisual?.update();
     this.collisionDebugOverlay?.update?.();
-    this.collisionBuildingFakeDepthTest?.update?.();
-    if (
-      this.fakeDepthBuildingsToggleKey &&
-      Phaser.Input.Keyboard.JustDown(this.fakeDepthBuildingsToggleKey)
-    ) {
-      this.toggleFakeDepthBuildingsTest();
-    }
 
     if (!this.matchRunning) {
       const countdownEndsAt = Number(this.currentLobbyState?.lobbyCountdownEndsAt || 0);

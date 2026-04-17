@@ -432,7 +432,6 @@ export const gameSceneMatchMethods = {
     this.map = createMatchMap(this, objectiveSeed);
     this.moto = createLocalMoto(this, localState);
     this.collisionDebugOverlay?.attach?.(this.map, this.moto);
-    this.collisionBuildingFakeDepthTest?.attach?.(this.map, this.moto);
 
     this.playersGroup = this.physics.add.group();
     this.playersGroup.add(this.moto.sprite);

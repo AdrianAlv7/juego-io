@@ -11,7 +11,6 @@ export function initializeGameSceneState(scene) {
   scene.map = null;
   scene.moto = null;
   scene.collisionDebugOverlay = null;
-  scene.collisionBuildingFakeDepthTest = null;
   scene.hud = null;
   scene.usingGameplayHudKit = false;
   scene.effectCamera = null;
@@ -92,10 +91,13 @@ export function initializeGameSceneState(scene) {
   scene.garageOpenMode = "lobby";
   scene.garagePreviewImage = null;
   scene.garagePreviewName = null;
+  scene.garageDashboardPreview = null;
   scene.garageCloseButton = null;
   scene.garageRosterList = null;
   scene.garageApplyButton = null;
   scene.garageOptionButtons = [];
+  scene.garageDashboardOptionButtons = [];
+  scene.garageWorkingDashboardMode = "dual";
   scene.settingsRoot = null;
   scene.settingsOpenMode = "lobby";
   scene.settingsQuickButton = null;
@@ -104,8 +106,10 @@ export function initializeGameSceneState(scene) {
   scene.settingsTrackPreviewButtons = [];
   scene.settingsSfxSlider = null;
   scene.settingsSfxValue = null;
+  scene.settingsSfxMuteInlineButton = null;
   scene.settingsMusicSlider = null;
   scene.settingsMusicValue = null;
+  scene.settingsMusicMuteInlineButton = null;
   scene.settingsActiveSection = "volume";
   scene.settingsSectionsRoot = null;
   scene.settingsVolumeSectionButton = null;
@@ -123,8 +127,15 @@ export function initializeGameSceneState(scene) {
   scene.settingsSubtitleText = null;
   scene.settingsTextNodes = null;
   scene.audioDockRoot = null;
+  scene.roomUtilityDockRoot = null;
   scene.musicMuteToggleButton = null;
   scene.sfxMuteToggleButton = null;
+  scene.lobbyOverlayWindowKeydownHandler = null;
+  scene.lobbyOverlayWindowPopStateHandler = null;
+  scene.lobbyOverlayHistoryCounter = 0;
+  scene.lobbyOverlayHistoryToken = 0;
+  scene.lobbyOverlayHistoryType = "";
+  scene.lobbyOverlayHistoryNavigationPending = false;
   scene.lobbyTrackDebugNode = null;
   scene.lobbyMotoAmbientController = null;
   scene.nameEntryMode = "main";
@@ -173,7 +184,6 @@ export function initializeGameSceneState(scene) {
   scene.turboKey = null;
   scene.settingsMenuKey = null;
   scene.collisionDebugOverlayKey = null;
-  scene.fakeDepthBuildingsToggleKey = null;
   scene.lobbyReturnAtMs = 0;
   scene.lobbyReturnRoot = null;
   scene.lobbyReturnText = null;

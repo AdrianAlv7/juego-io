@@ -6,13 +6,10 @@ import PlayerHealthSystem from "../race/systems/PlayerHealthSystem.js";
 import RouteGuideSystem from "../race/systems/RouteGuideSystem.js";
 import MotoHealthSystem from "../race/systems/MotoHealthSystem.js";
 import TrackItemSystem from "../../items/TrackItemSystem.js";
-import BuildingFakeDepth from "../fakeDepth/BuildingFakeDepth.js";
-import { createFakeDepthCityLayout } from "../fakeDepth/fakeDepthCityLayout.js";
 import { formatKm, speedPxPerSecToKmh } from "../race/utils/telemetry.js";
 
 const TILED_PREVIEW_TEXTURE_KEY = "tiled-preview-map";
 const TILED_PREVIEW_SCALE = 11;
-const FAKE_DEPTH_RENDER_BASE_DEPTH = -36;
 
 const ROAD_COVERAGE_SAMPLE_RADIUS = 1.4;
 const ROAD_COVERAGE_THRESHOLD = 0.34;
@@ -389,7 +386,6 @@ export default class TiledPreviewMap {
     this.activeTrainEvent = null;
     this.trainGraphics = scene.add.graphics().setDepth(-15);
     this.trainShadowGraphics = scene.add.graphics().setDepth(-16);
-    this.fakeDepthBuildings = [];
     this.trackItems = new TrackItemSystem(scene, {
       localPlayerId: options.localPlayerId || "",
       onTrigger: options.onTrackItemTriggered,
@@ -420,20 +416,6 @@ export default class TiledPreviewMap {
       .setOrigin(0, 0)
       .setScale(TILED_PREVIEW_SCALE)
       .setDepth(-40);
-
-    const fakeDepthLayout = createFakeDepthCityLayout(sourceImage, {
-      scale: TILED_PREVIEW_SCALE,
-    });
-    this.fakeDepthBuildings = fakeDepthLayout.buildings.map((config) => {
-      const renderDepth =
-        FAKE_DEPTH_RENDER_BASE_DEPTH +
-        (Number(config.y || 0) + Number(config.height || 0)) * 0.001;
-      return new BuildingFakeDepth(scene, {
-        ...config,
-        depth: renderDepth,
-      });
-    });
-    this.updateCameraDrivenDecor();
 
     this.collisionMask = buildCollisionMask(sourceImage);
 
@@ -614,10 +596,6 @@ export default class TiledPreviewMap {
 
   setCountdownSuppressed(suppressed) {
     this.countdown?.setSuppressed?.(Boolean(suppressed));
-  }
-
-  updateCameraDrivenDecor(camera = this.scene.cameras.main) {
-    this.fakeDepthBuildings.forEach((building) => building.update(camera));
   }
 
   getMotoMaxHealth() {
@@ -1070,8 +1048,6 @@ export default class TiledPreviewMap {
     this.objectives?.destroy?.();
     this.countdown?.destroy?.();
     this.trackItems?.destroy?.();
-    this.fakeDepthBuildings.forEach((building) => building.destroy());
-    this.fakeDepthBuildings = [];
     this.trainGraphics?.destroy?.();
     this.trainShadowGraphics?.destroy?.();
     this.background?.destroy?.();

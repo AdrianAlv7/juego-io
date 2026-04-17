@@ -15,6 +15,12 @@ import {
   WEATHER_EVENT_TYPES,
 } from "../../events/weather/catalog.js";
 import appAudioManager from "../../ui/AppAudioManager.js";
+import {
+  GARAGE_DASHBOARD_MODE_SEQUENCE,
+  getDashboardModeMeta,
+  loadSelectedDashboardMode,
+  saveSelectedDashboardMode,
+} from "../../ui/dashboardModes.js";
 import LobbyMotoAmbientController from "../../ui/LobbyMotoAmbientController.js";
 import {
   CONTROL_PRESET_IDS,
@@ -52,6 +58,7 @@ const DEFAULT_LOBBY_TRACK_PREVIEW_LABELS = [
   "end",
   "intermedio",
 ];
+const LOBBY_OVERLAY_HISTORY_KEY = "__deliverLobbyOverlay";
 const SETTINGS_SECTION_IDS = Object.freeze({
   VOLUME: "volume",
   CONTROLS: "controls",
@@ -76,6 +83,82 @@ function getLocalizedControlPresetLabel(presetId) {
   const preset = getControlPreset(presetId);
   const key = CONTROL_PRESET_TRANSLATION_KEYS[preset.id] || "";
   return key ? t(key, {}, preset.label) : preset.label;
+}
+
+function getGarageDashboardVisualMarkup(modeId, compact = false) {
+  switch (modeId) {
+    case "digital":
+      return `
+        <div class="lhl-garage-dash-art lhl-garage-dash-art--digital ${compact ? "is-compact" : "is-large"}">
+          <div class="lhl-garage-dash-digit-stack">
+            <div class="lhl-garage-dash-number">128</div>
+            <div class="lhl-garage-dash-unit">km/h</div>
+          </div>
+          <div class="lhl-garage-dash-bar"><span></span></div>
+        </div>
+      `;
+    case "hybrid":
+      return `
+        <div class="lhl-garage-dash-art lhl-garage-dash-art--hybrid ${compact ? "is-compact" : "is-large"}">
+          <div class="lhl-garage-dash-hybrid-speed">
+            <div class="lhl-garage-dash-number">92</div>
+            <div class="lhl-garage-dash-unit">km/h</div>
+          </div>
+          <div class="lhl-garage-dash-gauge">
+            <span class="lhl-garage-dash-gauge-core"></span>
+            <span class="lhl-garage-dash-gauge-needle"></span>
+          </div>
+        </div>
+      `;
+    case "lcd":
+      return `
+        <div class="lhl-garage-dash-art lhl-garage-dash-art--lcd ${compact ? "is-compact" : "is-large"}">
+          <div class="lhl-garage-dash-lcd-row">
+            <span class="lhl-garage-dash-lcd-tag">SPD</span>
+            <span class="lhl-garage-dash-lcd-value">104</span>
+          </div>
+          <div class="lhl-garage-dash-lcd-row">
+            <span class="lhl-garage-dash-lcd-tag">RPM</span>
+            <span class="lhl-garage-dash-lcd-value lhl-garage-dash-lcd-value--small">6480</span>
+          </div>
+          <div class="lhl-garage-dash-lcd-bar"><span></span></div>
+        </div>
+      `;
+    case "dual":
+    default:
+      return `
+        <div class="lhl-garage-dash-art lhl-garage-dash-art--dual ${compact ? "is-compact" : "is-large"}">
+          <div class="lhl-garage-dash-gauge">
+            <span class="lhl-garage-dash-gauge-core"></span>
+            <span class="lhl-garage-dash-gauge-needle"></span>
+          </div>
+          <div class="lhl-garage-dash-gauge">
+            <span class="lhl-garage-dash-gauge-core"></span>
+            <span class="lhl-garage-dash-gauge-needle lhl-garage-dash-gauge-needle--rpm"></span>
+          </div>
+        </div>
+      `;
+  }
+}
+
+function buildGarageDashboardCardMarkup(modeId, options = {}) {
+  const { compact = false, selected = false } = options;
+  const dashboardMeta = getDashboardModeMeta(modeId);
+  const kicker = selected ? "Seleccion actual" : "Preset";
+  return `
+    <div class="lhl-garage-dash-card-shell is-${dashboardMeta.id} ${compact ? "is-compact" : "is-preview"}">
+      <div class="lhl-garage-dash-card-head">
+        <span class="lhl-garage-dash-card-kicker">${kicker}</span>
+        <span class="lhl-garage-dash-card-title">${dashboardMeta.garageLabel}</span>
+      </div>
+      ${getGarageDashboardVisualMarkup(dashboardMeta.id, compact)}
+      ${
+        compact
+          ? ""
+          : `<div class="lhl-garage-dash-card-caption">${dashboardMeta.garageDescription}</div>`
+      }
+    </div>
+  `;
 }
 
 function getLocalizedControlGuideRows(presetId) {
@@ -127,6 +210,20 @@ function clampVolumeSetting(value, fallback = 1) {
 
 function formatVolumePercent(value) {
   return `${Math.round(clampVolumeSetting(value) * 100)}%`;
+}
+
+function getNormalizedHistoryState(state) {
+  return state && typeof state === "object" ? { ...state } : {};
+}
+
+function getLobbyOverlayHistoryEntry(state) {
+  const normalizedState = state && typeof state === "object" ? state : null;
+  const rawEntry = normalizedState?.[LOBBY_OVERLAY_HISTORY_KEY];
+  if (!rawEntry || typeof rawEntry !== "object") return null;
+  return {
+    token: Number(rawEntry.token || 0),
+    type: String(rawEntry.type || ""),
+  };
 }
 
 function isTextEntryElement(node) {
@@ -190,7 +287,9 @@ const AUDIO_TOGGLE_ICONS = {
 function createAudioToggleButton(config) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `lhl-audio-toggle lhl-audio-toggle--${config.kind || "generic"}`;
+  button.className = `lhl-audio-toggle lhl-audio-toggle--${config.kind || "generic"} ${
+    config.compact ? "is-compact" : ""
+  }`.trim();
   button.innerHTML = `
     <span class="lhl-audio-toggle-icon" aria-hidden="true">${AUDIO_TOGGLE_ICONS[config.kind] || ""}</span>
     <span class="lhl-audio-toggle-meta">
@@ -498,9 +597,11 @@ export const gameSceneUiMethods = {
     }
 
     if (this.settingsQuickButton) {
-      if (this.lobbyGarageActionMount) {
-        if (this.settingsQuickButton.parentElement !== this.lobbyGarageActionMount) {
-          this.lobbyGarageActionMount.appendChild(this.settingsQuickButton);
+      const settingsButtonMount =
+        this.roomUtilityDockRoot || this.lobbyGarageActionMount || null;
+      if (settingsButtonMount) {
+        if (this.settingsQuickButton.parentElement !== settingsButtonMount) {
+          settingsButtonMount.appendChild(this.settingsQuickButton);
         }
       }
       this.settingsQuickButton.style.display = showSettingsButton ? "inline-flex" : "none";
@@ -508,8 +609,7 @@ export const gameSceneUiMethods = {
 
     this.roomShareRoot.style.display = showShareUi ? "flex" : "none";
     if (this.lobbyGarageActionMount) {
-      this.lobbyGarageActionMount.style.display =
-        showGarageButton || showSettingsButton ? "flex" : "none";
+      this.lobbyGarageActionMount.style.display = showGarageButton ? "flex" : "none";
     }
 
     if (!showShareUi) {
@@ -578,6 +678,124 @@ export const gameSceneUiMethods = {
     } else {
       keyboard.disableGlobalCapture?.();
     }
+  },
+
+  attachLobbyOverlayWindowEvents() {
+    if (typeof window === "undefined" || this.lobbyOverlayWindowKeydownHandler) return;
+
+    this.lobbyOverlayWindowKeydownHandler = (event) => {
+      const key = String(event?.key || "");
+      if (key !== "Escape" && key !== "Esc" && key !== "BrowserBack") return;
+
+      const settingsOpen = Boolean(this.settingsRoot?.classList.contains("is-open"));
+      const garageOpen = Boolean(this.garageRoot?.classList.contains("is-open"));
+      if (!settingsOpen && !garageOpen) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (settingsOpen) {
+        this.closeSettingsModal();
+        return;
+      }
+
+      if (garageOpen) {
+        this.closeGarageModal({ apply: false });
+      }
+    };
+
+    this.lobbyOverlayWindowPopStateHandler = (event) => {
+      const historyEntry = getLobbyOverlayHistoryEntry(event?.state);
+      const shouldIgnoreClose = Boolean(this.lobbyOverlayHistoryNavigationPending);
+      this.lobbyOverlayHistoryNavigationPending = false;
+      this.lobbyOverlayHistoryToken = Number(historyEntry?.token || 0);
+      this.lobbyOverlayHistoryType = String(historyEntry?.type || "");
+
+      if (shouldIgnoreClose) return;
+
+      if (this.settingsRoot?.classList.contains("is-open") && this.settingsOpenMode !== "entry") {
+        this.closeSettingsModal({ silent: true, skipHistory: true });
+        return;
+      }
+
+      if (this.garageRoot?.classList.contains("is-open") && this.garageOpenMode !== "entry") {
+        this.closeGarageModal({ apply: false, silent: true, skipHistory: true });
+      }
+    };
+
+    window.addEventListener("keydown", this.lobbyOverlayWindowKeydownHandler, true);
+    window.addEventListener("popstate", this.lobbyOverlayWindowPopStateHandler);
+
+    const historyEntry = getLobbyOverlayHistoryEntry(window.history.state);
+    this.lobbyOverlayHistoryToken = Number(historyEntry?.token || 0);
+    this.lobbyOverlayHistoryType = String(historyEntry?.type || "");
+  },
+
+  detachLobbyOverlayWindowEvents() {
+    if (typeof window !== "undefined") {
+      if (this.lobbyOverlayWindowKeydownHandler) {
+        window.removeEventListener("keydown", this.lobbyOverlayWindowKeydownHandler, true);
+      }
+      if (this.lobbyOverlayWindowPopStateHandler) {
+        window.removeEventListener("popstate", this.lobbyOverlayWindowPopStateHandler);
+      }
+    }
+
+    this.lobbyOverlayWindowKeydownHandler = null;
+    this.lobbyOverlayWindowPopStateHandler = null;
+    this.lobbyOverlayHistoryCounter = 0;
+    this.lobbyOverlayHistoryToken = 0;
+    this.lobbyOverlayHistoryType = "";
+    this.lobbyOverlayHistoryNavigationPending = false;
+  },
+
+  syncLobbyOverlayHistoryOnOpen(overlayType) {
+    if (typeof window === "undefined" || !overlayType) return;
+
+    const currentState = getNormalizedHistoryState(window.history.state);
+    const currentOverlay = getLobbyOverlayHistoryEntry(currentState);
+    const nextToken = Math.max(Date.now(), Number(this.lobbyOverlayHistoryCounter || 0) + 1);
+    const nextOverlay = {
+      token: nextToken,
+      type: String(overlayType || ""),
+    };
+    const nextState = {
+      ...currentState,
+      [LOBBY_OVERLAY_HISTORY_KEY]: nextOverlay,
+    };
+
+    if (currentOverlay) {
+      window.history.replaceState(nextState, document.title || "");
+    } else {
+      window.history.pushState(nextState, document.title || "");
+    }
+
+    this.lobbyOverlayHistoryCounter = nextToken;
+    this.lobbyOverlayHistoryToken = nextToken;
+    this.lobbyOverlayHistoryType = nextOverlay.type;
+    this.lobbyOverlayHistoryNavigationPending = false;
+  },
+
+  syncLobbyOverlayHistoryOnClose(options = {}) {
+    const { skipHistory = false } = options;
+
+    if (skipHistory || typeof window === "undefined") {
+      this.lobbyOverlayHistoryToken = 0;
+      this.lobbyOverlayHistoryType = "";
+      this.lobbyOverlayHistoryNavigationPending = false;
+      return;
+    }
+
+    const currentOverlay = getLobbyOverlayHistoryEntry(window.history.state);
+    if (currentOverlay?.token && currentOverlay.token === this.lobbyOverlayHistoryToken) {
+      this.lobbyOverlayHistoryNavigationPending = true;
+      window.history.back();
+      return;
+    }
+
+    this.lobbyOverlayHistoryToken = 0;
+    this.lobbyOverlayHistoryType = "";
+    this.lobbyOverlayHistoryNavigationPending = false;
   },
 
   createNameEntryUi() {
@@ -781,7 +999,7 @@ export const gameSceneUiMethods = {
 
   onSocketInit() {
     this.isRegistered = true;
-    this.closeGarageModal({ apply: false, silent: true });
+    this.closeGarageModal({ apply: false, silent: true, skipHistory: true });
     this.blurNameEntry();
     if (this.nameEntryRoot) {
       this.nameEntryRoot.style.display = "none";
@@ -821,6 +1039,7 @@ export const gameSceneUiMethods = {
     this.musicMuteToggleButton?.blur?.();
     this.sfxMuteToggleButton?.blur?.();
     this.garageOptionButtons?.forEach((button) => button?.blur?.());
+    this.garageDashboardOptionButtons?.forEach((button) => button?.blur?.());
     this.syncKeyboardCaptureState();
   },
 
@@ -1012,6 +1231,9 @@ export const gameSceneUiMethods = {
     if (!this.garageRoot) return;
     const selectedMoto = getGarageMotoById(this.garageWorkingMotoId || this.selectedGarageMotoId);
     this.garageWorkingMotoId = selectedMoto.id;
+    this.garageWorkingDashboardMode = getDashboardModeMeta(
+      this.garageWorkingDashboardMode || loadSelectedDashboardMode()
+    ).id;
 
     if (this.garagePreviewImage) {
       this.garagePreviewImage.src = selectedMoto.previewSrc;
@@ -1023,6 +1245,18 @@ export const gameSceneUiMethods = {
 
     this.garageOptionButtons?.forEach((button) => {
       const isSelected = button?.dataset?.motoId === selectedMoto.id;
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    });
+    if (this.garageDashboardPreview) {
+      this.garageDashboardPreview.innerHTML = buildGarageDashboardCardMarkup(
+        this.garageWorkingDashboardMode,
+        { selected: true }
+      );
+    }
+    this.garageDashboardOptionButtons?.forEach((button) => {
+      const isSelected =
+        button?.dataset?.dashboardMode === this.garageWorkingDashboardMode;
       button.classList.toggle("is-selected", isSelected);
       button.setAttribute("aria-pressed", isSelected ? "true" : "false");
     });
@@ -1045,12 +1279,30 @@ export const gameSceneUiMethods = {
       }
     };
 
+    const shouldHideFloatingDock = Boolean(
+      this.settingsRoot?.classList.contains("is-open") ||
+        this.garageRoot?.classList.contains("is-open")
+    );
+    if (this.audioDockRoot) {
+      this.audioDockRoot.style.display = shouldHideFloatingDock ? "none" : "";
+    }
+
     syncButton(this.musicMuteToggleButton, {
       isMuted: appAudioManager.getMusicMuted(),
       muteLabel: t("settings.muteMusic", {}, "Silenciar musica del lobby"),
       unmuteLabel: t("settings.unmuteMusic", {}, "Activar musica del lobby"),
     });
+    syncButton(this.settingsMusicMuteInlineButton, {
+      isMuted: appAudioManager.getMusicMuted(),
+      muteLabel: t("settings.muteMusic", {}, "Silenciar musica del lobby"),
+      unmuteLabel: t("settings.unmuteMusic", {}, "Activar musica del lobby"),
+    });
     syncButton(this.sfxMuteToggleButton, {
+      isMuted: appAudioManager.getSfxMuted(),
+      muteLabel: t("settings.muteSfx", {}, "Silenciar efectos"),
+      unmuteLabel: t("settings.unmuteSfx", {}, "Activar efectos"),
+    });
+    syncButton(this.settingsSfxMuteInlineButton, {
       isMuted: appAudioManager.getSfxMuted(),
       muteLabel: t("settings.muteSfx", {}, "Silenciar efectos"),
       unmuteLabel: t("settings.unmuteSfx", {}, "Activar efectos"),
@@ -1448,7 +1700,7 @@ export const gameSceneUiMethods = {
   openSettingsModal(options = {}) {
     if (!this.settingsRoot) return;
 
-    this.closeGarageModal({ apply: false, silent: true });
+    this.closeGarageModal({ apply: false, silent: true, skipHistory: true });
 
     const mode = options.mode === "entry" ? "entry" : "lobby";
     this.settingsOpenMode = mode;
@@ -1456,6 +1708,9 @@ export const gameSceneUiMethods = {
     this.lobbyCardNode?.classList.toggle("is-settings-screen", mode === "entry");
     this.settingsRoot.style.display = "flex";
     this.settingsRoot.classList.add("is-open");
+    if (mode !== "entry") {
+      this.syncLobbyOverlayHistoryOnOpen("settings");
+    }
     this.setSettingsSection(SETTINGS_SECTION_IDS.VOLUME);
     this.syncSettingsUi();
 
@@ -1482,7 +1737,7 @@ export const gameSceneUiMethods = {
   },
 
   closeSettingsModal(options = {}) {
-    const { silent = false } = options;
+    const { silent = false, skipHistory = false } = options;
     if (!this.settingsRoot) return;
 
     const openMode = this.settingsOpenMode || "lobby";
@@ -1510,20 +1765,28 @@ export const gameSceneUiMethods = {
     }
 
     this.settingsOpenMode = "lobby";
+    if (openMode !== "entry") {
+      this.syncLobbyOverlayHistoryOnClose({ skipHistory });
+    }
+    this.syncAudioToggleUi();
     this.syncKeyboardCaptureState();
   },
 
   openGarageModal(options = {}) {
     if (!this.garageRoot) return;
-    this.closeSettingsModal({ silent: true });
+    this.closeSettingsModal({ silent: true, skipHistory: true });
     const mode = options.mode === "entry" ? "entry" : "lobby";
     this.garageOpenMode = mode;
     this.garageWorkingMotoId = getGarageMotoById(this.selectedGarageMotoId).id;
+    this.garageWorkingDashboardMode = loadSelectedDashboardMode();
     this.garageRoot.classList.toggle("is-entry-mode", mode === "entry");
     this.lobbyCardNode?.classList.toggle("is-garage-screen", mode === "entry");
     this.syncGarageSelectionUi();
     this.garageRoot.style.display = "flex";
     this.garageRoot.classList.add("is-open");
+    if (mode !== "entry") {
+      this.syncLobbyOverlayHistoryOnOpen("garage");
+    }
     if (mode === "entry" && this.nameEntryRoot) {
       this.nameEntryRoot.style.display = "none";
     }
@@ -1542,11 +1805,12 @@ export const gameSceneUiMethods = {
       "#d8b7ff"
     );
     this.blurNameEntry();
+    this.syncAudioToggleUi();
     this.syncKeyboardCaptureState();
   },
 
   closeGarageModal(options = {}) {
-    const { apply = false, silent = false } = options;
+    const { apply = false, silent = false, skipHistory = false } = options;
     if (!this.garageRoot) return;
     const openMode = this.garageOpenMode || "lobby";
 
@@ -1555,6 +1819,9 @@ export const gameSceneUiMethods = {
       this.selectedGarageMotoId = saveSelectedGarageMotoId(selectedMoto.id);
       this.selectedGarageMotoTextureKey = selectedMoto.textureKey;
       this.garageSelectionWasManual = true;
+      this.garageWorkingDashboardMode = saveSelectedDashboardMode(
+        this.garageWorkingDashboardMode
+      );
       if (this.currentLobbyState && Array.isArray(this.currentLobbyState.players)) {
         this.currentLobbyState = {
           ...this.currentLobbyState,
@@ -1595,6 +1862,10 @@ export const gameSceneUiMethods = {
     }
     this.refreshLobbyGaragePreview();
     this.garageOpenMode = "lobby";
+    if (openMode !== "entry") {
+      this.syncLobbyOverlayHistoryOnClose({ skipHistory });
+    }
+    this.syncAudioToggleUi();
     this.syncKeyboardCaptureState();
   },
 
@@ -1688,6 +1959,9 @@ export const gameSceneUiMethods = {
     this.settingsSectionsRoot.appendChild(this.settingsControlsSectionButton);
     this.settingsSectionsRoot.appendChild(this.settingsLanguageSectionButton);
 
+    this.settingsPanelsViewport = document.createElement("div");
+    this.settingsPanelsViewport.className = "lhl-settings-panels";
+
     const createVolumeCard = (config) => {
       const card = document.createElement("section");
       card.className = `lhl-settings-card ${config.cardClass || ""}`.trim();
@@ -1721,15 +1995,40 @@ export const gameSceneUiMethods = {
       slider.step = "1";
       slider.className = "lhl-settings-slider";
 
+      const sliderRow = document.createElement("div");
+      sliderRow.className = "lhl-settings-slider-row";
+
+      const muteToggleButton = createAudioToggleButton({
+        kind: config.kind,
+        label: config.toggleLabel || "AUDIO",
+        compact: true,
+      });
+      muteToggleButton.classList.add("lhl-settings-inline-toggle");
+      muteToggleButton.addEventListener("click", () => {
+        config.onToggleMute?.();
+      });
+
       topRow.appendChild(label);
       topRow.appendChild(value);
       controlWrap.appendChild(topRow);
-      controlWrap.appendChild(slider);
+      sliderRow.appendChild(muteToggleButton);
+      sliderRow.appendChild(slider);
+      controlWrap.appendChild(sliderRow);
       card.appendChild(cardTitle);
       card.appendChild(cardDescription);
       card.appendChild(controlWrap);
 
-      return { card, slider, value, cardTitle, cardDescription, label };
+      bindDomInputNode(this, muteToggleButton);
+
+      return {
+        card,
+        slider,
+        value,
+        muteToggleButton,
+        cardTitle,
+        cardDescription,
+        label,
+      };
     };
 
     this.settingsVolumePanel = document.createElement("div");
@@ -1740,6 +2039,7 @@ export const gameSceneUiMethods = {
 
     const musicCard = createVolumeCard({
       cardClass: "lhl-settings-card--music",
+      kind: "music",
       title: t("settings.musicTitle", {}, "Musica del lobby"),
       description: t(
         "settings.musicDescription",
@@ -1747,15 +2047,22 @@ export const gameSceneUiMethods = {
         "Intro fija al entrar y transiciones suaves entre variaciones del track del lobby."
       ),
       label: t("settings.musicVolumeLabel", {}, "Volumen music"),
+      toggleLabel: "MUS",
+      onToggleMute: () => {
+        appAudioManager.toggleMusicMuted();
+        this.syncAudioToggleUi();
+      },
     });
     this.settingsMusicSlider = musicCard.slider;
     this.settingsMusicValue = musicCard.value;
+    this.settingsMusicMuteInlineButton = musicCard.muteToggleButton;
     this.settingsTextNodes.musicTitle = musicCard.cardTitle;
     this.settingsTextNodes.musicDescription = musicCard.cardDescription;
     this.settingsTextNodes.musicLabel = musicCard.label;
 
     const sfxCard = createVolumeCard({
       cardClass: "lhl-settings-card--sfx",
+      kind: "sfx",
       title: t("settings.sfxTitle", {}, "Efectos de interfaz"),
       description: t(
         "settings.sfxDescription",
@@ -1763,9 +2070,15 @@ export const gameSceneUiMethods = {
         "Hover, click y teclado. El control afecta los sonidos cortos del UI en todo el lobby."
       ),
       label: t("settings.sfxVolumeLabel", {}, "Volumen SFX"),
+      toggleLabel: "SFX",
+      onToggleMute: () => {
+        appAudioManager.toggleSfxMuted();
+        this.syncAudioToggleUi();
+      },
     });
     this.settingsSfxSlider = sfxCard.slider;
     this.settingsSfxValue = sfxCard.value;
+    this.settingsSfxMuteInlineButton = sfxCard.muteToggleButton;
     this.settingsTextNodes.sfxTitle = sfxCard.cardTitle;
     this.settingsTextNodes.sfxDescription = sfxCard.cardDescription;
     this.settingsTextNodes.sfxLabel = sfxCard.label;
@@ -1997,11 +2310,13 @@ export const gameSceneUiMethods = {
     footer.appendChild(this.settingsPreviewMusicButton);
     footer.appendChild(this.settingsCloseButton);
 
+    this.settingsPanelsViewport.appendChild(this.settingsVolumePanel);
+    this.settingsPanelsViewport.appendChild(this.settingsControlsPanel);
+    this.settingsPanelsViewport.appendChild(this.settingsLanguagePanel);
+
     shell.appendChild(header);
     shell.appendChild(this.settingsSectionsRoot);
-    shell.appendChild(this.settingsVolumePanel);
-    shell.appendChild(this.settingsControlsPanel);
-    shell.appendChild(this.settingsLanguagePanel);
+    shell.appendChild(this.settingsPanelsViewport);
     shell.appendChild(footer);
 
     this.settingsRoot.appendChild(backdrop);
@@ -2017,7 +2332,9 @@ export const gameSceneUiMethods = {
       this.openSettingsModal({ mode: "lobby" });
     });
     bindDomInputNode(this, this.settingsQuickButton);
-    this.lobbyGarageActionMount?.appendChild(this.settingsQuickButton);
+    (this.roomUtilityDockRoot || this.lobbyGarageActionMount)?.appendChild(
+      this.settingsQuickButton
+    );
 
     this.settingsActiveSection = SETTINGS_SECTION_IDS.VOLUME;
     this.applySettingsTranslations?.();
@@ -2029,6 +2346,9 @@ export const gameSceneUiMethods = {
 
     this.audioDockRoot = document.createElement("div");
     this.audioDockRoot.className = "lhl-audio-dock";
+
+    this.roomUtilityDockRoot = document.createElement("div");
+    this.roomUtilityDockRoot.className = "lhl-room-utility-dock";
 
     this.musicMuteToggleButton = createAudioToggleButton({
       kind: "music",
@@ -2059,8 +2379,9 @@ export const gameSceneUiMethods = {
 
     this.audioDockRoot.appendChild(this.musicMuteToggleButton);
     this.audioDockRoot.appendChild(this.sfxMuteToggleButton);
+    this.roomUtilityDockRoot.appendChild(this.lobbyTrackDebugNode);
+    this.lobbyRoot.appendChild(this.roomUtilityDockRoot);
     this.lobbyRoot.appendChild(this.audioDockRoot);
-    this.lobbyRoot.appendChild(this.lobbyTrackDebugNode);
 
     const applyTrackLabel = (label) => {
       if (!this.lobbyTrackDebugNode) return;
@@ -2079,8 +2400,9 @@ export const gameSceneUiMethods = {
     appAudioManager.setLobbyTrackLabelListener(null);
     appAudioManager.setLobbyTrackStateListener(null);
     this.audioDockRoot?.remove?.();
-    this.lobbyTrackDebugNode?.remove?.();
+    this.roomUtilityDockRoot?.remove?.();
     this.audioDockRoot = null;
+    this.roomUtilityDockRoot = null;
     this.musicMuteToggleButton = null;
     this.sfxMuteToggleButton = null;
     this.lobbyTrackDebugNode = null;
@@ -2093,6 +2415,7 @@ export const gameSceneUiMethods = {
     this.selectedGarageMotoId = selectedMoto.id;
     this.selectedGarageMotoTextureKey = selectedMoto.textureKey;
     this.garageWorkingMotoId = selectedMoto.id;
+    this.garageWorkingDashboardMode = loadSelectedDashboardMode();
 
     this.garageRoot = document.createElement("div");
     this.garageRoot.className = "lhl-garage-modal";
@@ -2138,6 +2461,47 @@ export const gameSceneUiMethods = {
 
     const body = document.createElement("div");
     body.className = "lhl-garage-body";
+
+    const dashboardPane = document.createElement("div");
+    dashboardPane.className = "lhl-garage-dashboard-pane";
+
+    const dashboardLabel = document.createElement("div");
+    dashboardLabel.className = "lhl-garage-section-label";
+    dashboardLabel.textContent = "Tableros";
+
+    this.garageDashboardPreview = document.createElement("div");
+    this.garageDashboardPreview.className = "lhl-garage-dash-preview";
+
+    const dashboardGrid = document.createElement("div");
+    dashboardGrid.className = "lhl-garage-dash-grid";
+
+    this.garageDashboardOptionButtons = GARAGE_DASHBOARD_MODE_SEQUENCE.map(
+      (dashboardModeId) => {
+        const dashboardMeta = getDashboardModeMeta(dashboardModeId);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "lhl-garage-dash-option";
+        button.dataset.dashboardMode = dashboardModeId;
+        button.setAttribute(
+          "aria-label",
+          `Tablero ${dashboardMeta.garageLabel}`
+        );
+        button.innerHTML = buildGarageDashboardCardMarkup(dashboardModeId, {
+          compact: true,
+        });
+        button.addEventListener("click", () => {
+          this.garageWorkingDashboardMode = dashboardModeId;
+          this.syncGarageSelectionUi();
+        });
+        bindDomInputNode(this, button);
+        dashboardGrid.appendChild(button);
+        return button;
+      }
+    );
+
+    dashboardPane.appendChild(dashboardLabel);
+    dashboardPane.appendChild(this.garageDashboardPreview);
+    dashboardPane.appendChild(dashboardGrid);
 
     const previewPane = document.createElement("div");
     previewPane.className = "lhl-garage-preview";
@@ -2201,9 +2565,6 @@ export const gameSceneUiMethods = {
 
     this.garageRosterList = null;
 
-    body.appendChild(previewPane);
-    body.appendChild(optionsPane);
-
     const footer = document.createElement("div");
     footer.className = "lhl-garage-footer";
 
@@ -2229,9 +2590,14 @@ export const gameSceneUiMethods = {
     footer.appendChild(this.garageApplyButton);
     footer.appendChild(this.garageCloseButton);
 
+    optionsPane.appendChild(footer);
+
+    body.appendChild(dashboardPane);
+    body.appendChild(previewPane);
+    body.appendChild(optionsPane);
+
     shell.appendChild(header);
     shell.appendChild(body);
-    shell.appendChild(footer);
 
     this.garageRoot.appendChild(backdrop);
     this.garageRoot.appendChild(shell);
@@ -2320,8 +2686,8 @@ export const gameSceneUiMethods = {
     );
 
     this.hud?.closeSettingsMenu?.({ silent: true });
-    this.closeGarageModal({ apply: false, silent: true });
-    this.closeSettingsModal({ silent: true });
+    this.closeGarageModal({ apply: false, silent: true, skipHistory: true });
+    this.closeSettingsModal({ silent: true, skipHistory: true });
     this.multiplayer?.destroy();
     this.isRegistered = false;
     this.currentLobbyState = null;
@@ -2398,11 +2764,14 @@ export const gameSceneUiMethods = {
     this.garageOpenMode = "lobby";
     this.garagePreviewImage = null;
     this.garagePreviewName = null;
+    this.garageDashboardPreview = null;
     this.garageCloseButton = null;
     this.garageRosterList = null;
     this.garageApplyButton = null;
     this.garageOptionButtons = [];
+    this.garageDashboardOptionButtons = [];
     this.garageWorkingMotoId = null;
+    this.garageWorkingDashboardMode = "dual";
   },
 
   destroySettingsUi() {
@@ -2412,6 +2781,7 @@ export const gameSceneUiMethods = {
     this.settingsOpenMode = "lobby";
     this.settingsActiveSection = SETTINGS_SECTION_IDS.VOLUME;
     this.settingsSectionsRoot = null;
+    this.settingsPanelsViewport = null;
     this.settingsVolumeSectionButton = null;
     this.settingsControlsSectionButton = null;
     this.settingsLanguageSectionButton = null;
@@ -2431,8 +2801,10 @@ export const gameSceneUiMethods = {
     this.settingsTrackPreviewButtons = [];
     this.settingsSfxSlider = null;
     this.settingsSfxValue = null;
+    this.settingsSfxMuteInlineButton = null;
     this.settingsMusicSlider = null;
     this.settingsMusicValue = null;
+    this.settingsMusicMuteInlineButton = null;
     this.settingsQuickButton?.remove?.();
     this.settingsQuickButton = null;
     this.lobbyCardNode?.classList.remove("is-settings-screen");
@@ -3015,6 +3387,7 @@ export const gameSceneUiMethods = {
     this.lobbyPlayersPanelNode = playersPanelNode;
     this.lobbyMotoAmbientController = new LobbyMotoAmbientController(this.lobbyRoot);
     this.createAudioToggleUi();
+    this.attachLobbyOverlayWindowEvents?.();
 
     const renderPlayersPanel = (rawValue) => {
       if (!playersPanelNode) return;
@@ -3153,6 +3526,7 @@ export const gameSceneUiMethods = {
 
   destroyLobbyUi() {
     if (!this.lobbyRoot) return;
+    this.detachLobbyOverlayWindowEvents?.();
     this.destroyAudioToggleUi();
     this.lobbyMotoAmbientController?.destroy?.();
     this.lobbyMotoAmbientController = null;

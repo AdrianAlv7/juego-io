@@ -20,7 +20,6 @@ import InputSystem from "../../systems/InputSystem.js";
 import MultiplayerSystem from "../../network/MultiplayerSystem.js";
 import appAudioManager from "../../ui/AppAudioManager.js";
 import CollisionDebugOverlay from "../../debug/CollisionDebugOverlay.js";
-import CollisionBuildingFakeDepthTest from "../../debug/CollisionBuildingFakeDepthTest.js";
 import {
   RESUME_STABILIZE_FRAMES,
   STARTUP_STABILIZE_FRAMES,
@@ -94,9 +93,6 @@ function registerInputKeys(scene) {
   scene.collisionDebugOverlayKey = scene.input.keyboard.addKey(
     Phaser.Input.Keyboard.KeyCodes.F10
   );
-  scene.fakeDepthBuildingsToggleKey = scene.input.keyboard.addKey(
-    Phaser.Input.Keyboard.KeyCodes.P
-  );
 }
 
 function buildRouteRewardSystem(scene) {
@@ -159,8 +155,6 @@ function registerShutdown(scene) {
     scene.multiplayer?.destroy();
     scene.collisionDebugOverlay?.destroy?.();
     scene.collisionDebugOverlay = null;
-    scene.collisionBuildingFakeDepthTest?.destroy?.();
-    scene.collisionBuildingFakeDepthTest = null;
     scene.destroyGarageUi?.();
     scene.destroySettingsUi?.();
     scene.destroyNameEntryUi();
@@ -189,10 +183,6 @@ export const gameSceneLifecycleMethods = {
       this.load.image(motoConfig.textureKey, motoConfig.assetPath);
     });
     this.load.image("weather-raindrop", "assets/gota.png");
-    // Textura de prueba para fachadas del fake depth.
-    this.load.image("debug-wall-side", "assets/pared.png");
-    // Textura de prueba para el techo del fake depth.
-    this.load.image("debug-roof-top", "assets/techo.jpg");
     preloadActiveMapAssets(this);
   },
 
@@ -201,10 +191,6 @@ export const gameSceneLifecycleMethods = {
     this.collisionDebugOverlay = new CollisionDebugOverlay(this, {
       enabled: false,
       toggleKey: this.collisionDebugOverlayKey,
-    });
-    this.collisionBuildingFakeDepthTest = new CollisionBuildingFakeDepthTest(this, {
-      enabled: false,
-      toggleKey: this.fakeDepthBuildingsToggleKey,
     });
     this.selectedGarageMotoId = loadSelectedGarageMotoId();
     this.garageSelectionWasManual = hasSavedGarageMotoSelection();
@@ -304,7 +290,6 @@ export const gameSceneLifecycleMethods = {
 
   resetToLobby() {
     this.collisionDebugOverlay?.clearMap?.();
-    this.collisionBuildingFakeDepthTest?.clearMap?.();
     this.map?.destroy?.();
     if (this.moto) {
       this.moto.sprite.destroy();
