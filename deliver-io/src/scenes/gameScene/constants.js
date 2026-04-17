@@ -53,6 +53,44 @@ export const TOP_SPEED_SCREEN_FX = {
   verticalDriftPx: 0.45,
 };
 
+export const ENGINE_VIBRATION_CAMERA_FX = {
+  enabled: true,
+  intensity: .2,
+  idleWeight: 1,
+  cruiseWeight: 0.42,
+  stabilizationPower: 0.72,
+  axisXMultiplier: 1.25,
+  axisYMultiplier: 1,
+  crossAxisMix: 0.62,
+  maxOffsetXPx: 2.8,
+  maxOffsetYPx: 3.6,
+  maxOffsetIntensityInfluence: 0.42,
+  maxOffsetCapXPx: 16,
+  maxOffsetCapYPx: 22,
+  damping: 18,
+};
+export const EARTHQUAKE_CAMERA_FX = {
+  // Ajusta este valor para calar la intensidad del terremoto sin tocar mas codigo.
+  // 100 = referencia base, 150 = 1.5x, 60 = 0.6x.
+  fixedIntensity: 200,
+  defaultIntensity: 100,
+  waveAmplitudeXPxAt100: 16,
+  waveAmplitudeYPxAt100: 16,
+  waveFreqX: 0.072,
+  waveFreqY: 0.081,
+  waveFreqXSecondary: 0.118,
+  waveFreqYSecondary: 0.126,
+  waveSecondaryWeight: 0.64,
+  microJitterXPxAt100: 5,
+  microJitterYPxAt100: 5,
+  microJitterFreqX: 0.167,
+  microJitterFreqY: 0.173,
+  maxOffsetXPxAt100: 28,
+  maxOffsetYPxAt100: 28,
+  damping: 28,
+  fadeOutMs: 1400,
+};
+
 export const USERNAME_MAX_LENGTH = 16;
 export const HUD_FILTER_REFRESH_MS = 250;
 export const WEATHER_OVERLAY_DAMPING = 7;

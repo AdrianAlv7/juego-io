@@ -215,6 +215,19 @@
     radial-gradient(circle at 14% 18%, rgba(153, 168, 255, 0.22), transparent 40%);
 }
 
+.ghuk-overlay[data-weather="earthquake"] {
+  opacity: 0.26;
+  background:
+    linear-gradient(180deg, rgba(54, 30, 21, 0.36), rgba(17, 9, 7, 0.28)),
+    repeating-linear-gradient(
+      -11deg,
+      rgba(255, 178, 132, 0.06) 0px,
+      rgba(255, 178, 132, 0.06) 3px,
+      transparent 3px,
+      transparent 15px
+    );
+}
+
 .ghuk-vignette {
   position: absolute;
   inset: 0;
@@ -925,8 +938,10 @@
 .ghuk-btn[data-tone="rain"] { border-color: rgba(102, 170, 255, 0.6); }
 .ghuk-btn[data-tone="sunny"] { border-color: rgba(255, 181, 96, 0.6); }
 .ghuk-btn[data-tone="night"] { border-color: rgba(164, 152, 255, 0.6); }
+.ghuk-btn[data-tone="earthquake"] { border-color: rgba(255, 170, 130, 0.72); }
 .ghuk-btn[data-tone="clear"] { border-color: rgba(168, 181, 201, 0.5); }
 .ghuk-btn[data-tone="train"] { border-color: rgba(255, 140, 140, 0.66); }
+.ghuk-btn[data-tone="debug"] { border-color: rgba(164, 255, 224, 0.72); }
 .ghuk-btn[data-tone="spectator"] { border-color: rgba(180, 220, 255, 0.62); }
 .ghuk-btn[data-tone="spectator"].is-active {
   border-color: rgba(255, 193, 123, 0.9);

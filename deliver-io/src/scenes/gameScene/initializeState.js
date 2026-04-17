@@ -10,6 +10,8 @@ export function initializeGameSceneState(scene) {
 
   scene.map = null;
   scene.moto = null;
+  scene.collisionDebugOverlay = null;
+  scene.collisionBuildingFakeDepthTest = null;
   scene.hud = null;
   scene.usingGameplayHudKit = false;
   scene.effectCamera = null;
@@ -39,6 +41,10 @@ export function initializeGameSceneState(scene) {
 
   scene.cameraOffsetX = 0;
   scene.cameraOffsetY = 0;
+  scene.cameraEngineVibrationOffsetX = 0;
+  scene.cameraEngineVibrationOffsetY = 0;
+  scene.earthquakeFadeStartedAtMs = 0;
+  scene.earthquakeFadeUntilMs = 0;
   scene.hudFilterAccumulatorMs = 0;
   scene.simulationAccumulatorMs = 0;
   scene.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;
@@ -150,6 +156,7 @@ export function initializeGameSceneState(scene) {
   scene.rainEventKey = null;
   scene.sunnyEventKey = null;
   scene.nightEventKey = null;
+  scene.earthquakeEventKey = null;
   scene.clearWeatherEventKey = null;
   scene.trainEventKey = null;
   scene.dropItemKey = null;
@@ -165,6 +172,8 @@ export function initializeGameSceneState(scene) {
   scene.grantGhostNumpadKey = null;
   scene.turboKey = null;
   scene.settingsMenuKey = null;
+  scene.collisionDebugOverlayKey = null;
+  scene.fakeDepthBuildingsToggleKey = null;
   scene.lobbyReturnAtMs = 0;
   scene.lobbyReturnRoot = null;
   scene.lobbyReturnText = null;

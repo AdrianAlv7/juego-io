@@ -19,6 +19,8 @@ import { preloadActiveMapAssets } from "../../world/activeMap.js";
 import InputSystem from "../../systems/InputSystem.js";
 import MultiplayerSystem from "../../network/MultiplayerSystem.js";
 import appAudioManager from "../../ui/AppAudioManager.js";
+import CollisionDebugOverlay from "../../debug/CollisionDebugOverlay.js";
+import CollisionBuildingFakeDepthTest from "../../debug/CollisionBuildingFakeDepthTest.js";
 import {
   RESUME_STABILIZE_FRAMES,
   STARTUP_STABILIZE_FRAMES,
@@ -42,6 +44,9 @@ function registerInputKeys(scene) {
   );
   scene.nightEventKey = scene.input.keyboard.addKey(
     Phaser.Input.Keyboard.KeyCodes.THREE
+  );
+  scene.earthquakeEventKey = scene.input.keyboard.addKey(
+    Phaser.Input.Keyboard.KeyCodes.Q
   );
   scene.clearWeatherEventKey = scene.input.keyboard.addKey(
     Phaser.Input.Keyboard.KeyCodes.FOUR
@@ -85,6 +90,12 @@ function registerInputKeys(scene) {
   scene.turboKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
   scene.settingsMenuKey = scene.input.keyboard.addKey(
     Phaser.Input.Keyboard.KeyCodes.ESC
+  );
+  scene.collisionDebugOverlayKey = scene.input.keyboard.addKey(
+    Phaser.Input.Keyboard.KeyCodes.F10
+  );
+  scene.fakeDepthBuildingsToggleKey = scene.input.keyboard.addKey(
+    Phaser.Input.Keyboard.KeyCodes.P
   );
 }
 
@@ -146,6 +157,10 @@ function registerShutdown(scene) {
       scene.hudCamera = null;
     }
     scene.multiplayer?.destroy();
+    scene.collisionDebugOverlay?.destroy?.();
+    scene.collisionDebugOverlay = null;
+    scene.collisionBuildingFakeDepthTest?.destroy?.();
+    scene.collisionBuildingFakeDepthTest = null;
     scene.destroyGarageUi?.();
     scene.destroySettingsUi?.();
     scene.destroyNameEntryUi();
@@ -174,11 +189,23 @@ export const gameSceneLifecycleMethods = {
       this.load.image(motoConfig.textureKey, motoConfig.assetPath);
     });
     this.load.image("weather-raindrop", "assets/gota.png");
+    // Textura de prueba para fachadas del fake depth.
+    this.load.image("debug-wall-side", "assets/pared.png");
+    // Textura de prueba para el techo del fake depth.
+    this.load.image("debug-roof-top", "assets/techo.jpg");
     preloadActiveMapAssets(this);
   },
 
   create() {
     registerInputKeys(this);
+    this.collisionDebugOverlay = new CollisionDebugOverlay(this, {
+      enabled: false,
+      toggleKey: this.collisionDebugOverlayKey,
+    });
+    this.collisionBuildingFakeDepthTest = new CollisionBuildingFakeDepthTest(this, {
+      enabled: false,
+      toggleKey: this.fakeDepthBuildingsToggleKey,
+    });
     this.selectedGarageMotoId = loadSelectedGarageMotoId();
     this.garageSelectionWasManual = hasSavedGarageMotoSelection();
     this.selectedGarageMotoTextureKey =
@@ -276,6 +303,8 @@ export const gameSceneLifecycleMethods = {
   },
 
   resetToLobby() {
+    this.collisionDebugOverlay?.clearMap?.();
+    this.collisionBuildingFakeDepthTest?.clearMap?.();
     this.map?.destroy?.();
     if (this.moto) {
       this.moto.sprite.destroy();
@@ -315,6 +344,10 @@ export const gameSceneLifecycleMethods = {
     this.matchResultText = "";
     this.cameraOffsetX = 0;
     this.cameraOffsetY = 0;
+    this.cameraEngineVibrationOffsetX = 0;
+    this.cameraEngineVibrationOffsetY = 0;
+    this.earthquakeFadeStartedAtMs = 0;
+    this.earthquakeFadeUntilMs = 0;
     this.hudFilterAccumulatorMs = 0;
     this.simulationAccumulatorMs = 0;
     this.noCatchUpFrames = STARTUP_STABILIZE_FRAMES;

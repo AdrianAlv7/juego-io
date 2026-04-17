@@ -58,6 +58,8 @@ function weatherLabel(type) {
       return "Sunny Weather";
     case WEATHER_EVENT_TYPES.NIGHT:
       return "Night Event";
+    case WEATHER_EVENT_TYPES.EARTHQUAKE:
+      return "Earthquake Event";
     default:
       return "No Weather";
   }
@@ -71,6 +73,8 @@ function weatherChip(type) {
       return "SUN";
     case WEATHER_EVENT_TYPES.NIGHT:
       return "NIGHT";
+    case WEATHER_EVENT_TYPES.EARTHQUAKE:
+      return "QUAKE";
     default:
       return "CLEAR";
   }
@@ -287,8 +291,10 @@ export default class GameplayHudKitOverlay {
           <button class="ghuk-btn" data-weather-action="rain" data-tone="rain">Lluvia</button>
           <button class="ghuk-btn" data-weather-action="sunny" data-tone="sunny">Soleado</button>
           <button class="ghuk-btn" data-weather-action="night" data-tone="night">Noche</button>
+          <button class="ghuk-btn" data-weather-action="earthquake" data-tone="earthquake">Terremoto</button>
           <button class="ghuk-btn" data-weather-action="clear" data-tone="clear">Clear</button>
           <button class="ghuk-btn" data-weather-action="train" data-tone="train">Train</button>
+          <button class="ghuk-btn" data-weather-action="fake_depth_buildings" data-tone="debug">FakeDepth (P)</button>
           <button class="ghuk-btn" data-weather-action="spectator" data-tone="spectator">Espectador</button>
           <button class="ghuk-btn" data-weather-action="finish_self" data-tone="finish">Llegar meta</button>
         </div>
@@ -615,6 +621,10 @@ export default class GameplayHudKitOverlay {
 
     if (action === "clear") return this.scene.multiplayer?.emitClearWeatherEvent?.();
     if (action === "train") return this.scene.multiplayer?.emitStartTrainEvent?.();
+    if (action === "fake_depth_buildings") {
+      this.scene.toggleFakeDepthBuildingsTest?.();
+      return;
+    }
     if (action === "spectator") return this.scene.toggleHostSpectatorMode?.();
     if (action === "finish_self") {
       const triggered = this.scene.forceHostDebugReachMeta?.();
@@ -634,7 +644,8 @@ export default class GameplayHudKitOverlay {
     if (
       action === WEATHER_EVENT_TYPES.RAIN ||
       action === WEATHER_EVENT_TYPES.SUNNY ||
-      action === WEATHER_EVENT_TYPES.NIGHT
+      action === WEATHER_EVENT_TYPES.NIGHT ||
+      action === WEATHER_EVENT_TYPES.EARTHQUAKE
     ) {
       this.scene.multiplayer?.emitQueueWeatherEvent?.(action);
       return;
@@ -914,7 +925,11 @@ export default class GameplayHudKitOverlay {
       label = `${label} in ${remainingSeconds}s`;
     } else {
       const remainingSeconds = Math.max(0, Math.ceil((weatherEvent.endsAtMs - nowMs) / 1000));
-      label = `${label} active ${remainingSeconds}s`;
+      const isEarthquake =
+        weatherType === WEATHER_EVENT_TYPES.EARTHQUAKE;
+      label = isEarthquake
+        ? `${label} | ${remainingSeconds}s`
+        : `${label} active ${remainingSeconds}s`;
     }
 
     this.refs.weatherEventText.textContent = label;
