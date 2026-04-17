@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import GameScene from "../scenes/GameScene.js";
+import FakeDepthPreviewScene from "../scenes/FakeDepthPreviewScene.js";
+import { isFakeDepthPreviewEnabled } from "./runtimeSceneSelection.js";
 
 // Si lo pones en true, fuerza un loop de render a 60 FPS.
 // En false, usa Hz altos del monitor (recomendado porque la simulacion ya es fija).
@@ -64,7 +66,7 @@ const gameConfig = {
     autoCenter: Phaser.Scale.NO_CENTER,
   },
   // Escena principal del juego.
-  scene: [GameScene],
+  scene: isFakeDepthPreviewEnabled() ? [FakeDepthPreviewScene] : [GameScene],
 };
 
 export default gameConfig;

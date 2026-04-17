@@ -5,12 +5,15 @@ import "./ui/lobby.css";
 import Phaser from "phaser";
 // Importa la configuracion centralizada del juego.
 import gameConfig from "./config/gameConfig.js";
+import { isFakeDepthPreviewEnabled } from "./config/runtimeSceneSelection.js";
 import appAudioManager from "./ui/AppAudioManager.js";
 
 const appRoot = document.getElementById("app");
 if (appRoot) {
   appAudioManager.initialize(appRoot);
-  appAudioManager.enterLobby({ restartIntro: true });
+  if (!isFakeDepthPreviewEnabled()) {
+    appAudioManager.enterLobby({ restartIntro: true });
+  }
 }
 
 // Crea e inicia la instancia principal del juego.

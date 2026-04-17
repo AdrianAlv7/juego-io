@@ -29,7 +29,7 @@ function clamp01(value) {
 function buildSequentialSoundSet(folder, baseName, variantCount) {
   return Array.from({ length: variantCount }, (_, index) => {
     const suffix = index === 0 ? "" : `-${index + 1}`;
-    return `/assets/sound/keys/${folder}/${baseName}${suffix}.ogg`;
+    return `/assets/sound/effects/keys/${folder}/${baseName}${suffix}.ogg`;
   });
 }
 
@@ -206,20 +206,26 @@ export default class UiSoundController {
     this.interactiveSelector =
       options.interactiveSelector || DEFAULT_INTERACTIVE_SELECTOR;
 
-    this.hoverSound = new UiSoundBank([options.hoverSrc || "/assets/sound/hover.ogg"], {
-      volume: options.hoverVolume ?? 0.45,
-      minIntervalMs: options.hoverMinIntervalMs ?? 12,
-      maxVoices: options.hoverMaxVoices ?? 4,
-      stealAfterMs: options.hoverStealAfterMs ?? 22,
-      masterVolume: this.masterVolume,
-    });
-    this.clickSound = new UiSoundBank([options.clickSrc || "/assets/sound/click.ogg"], {
-      volume: options.clickVolume ?? 0.7,
-      minIntervalMs: options.clickMinIntervalMs ?? 36,
-      maxVoices: options.clickMaxVoices ?? 3,
-      stealAfterMs: options.clickStealAfterMs ?? 28,
-      masterVolume: this.masterVolume,
-    });
+    this.hoverSound = new UiSoundBank(
+      [options.hoverSrc || "/assets/sound/effects/button/hover.ogg"],
+      {
+        volume: options.hoverVolume ?? 0.45,
+        minIntervalMs: options.hoverMinIntervalMs ?? 12,
+        maxVoices: options.hoverMaxVoices ?? 4,
+        stealAfterMs: options.hoverStealAfterMs ?? 22,
+        masterVolume: this.masterVolume,
+      }
+    );
+    this.clickSound = new UiSoundBank(
+      [options.clickSrc || "/assets/sound/effects/button/click.ogg"],
+      {
+        volume: options.clickVolume ?? 0.7,
+        minIntervalMs: options.clickMinIntervalMs ?? 36,
+        maxVoices: options.clickMaxVoices ?? 3,
+        stealAfterMs: options.clickStealAfterMs ?? 28,
+        masterVolume: this.masterVolume,
+      }
+    );
     this.enterKeySound = new UiSoundBank(
       options.enterKeySources || ENTER_KEY_SOUNDS,
       {

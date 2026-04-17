@@ -1,5 +1,5 @@
 function encodeLobbySource(fileName) {
-  return encodeURI(`/assets/sound/lobby/${fileName}`);
+  return encodeURI(`/assets/sound/music/lobby/music1/${fileName}`);
 }
 
 const LOBBY_MUSIC_PRESETS = Object.freeze({

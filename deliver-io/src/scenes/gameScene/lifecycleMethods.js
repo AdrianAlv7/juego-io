@@ -341,6 +341,7 @@ export const gameSceneLifecycleMethods = {
     this.statusBanner.setVisible(false);
     this.syncKeyboardCaptureState();
     this.renderLobbyState();
+    appAudioManager.stopGameMoto({ fadeOutMs: 120 });
     appAudioManager.enterLobby({ restartIntro: true });
   },
 

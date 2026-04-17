@@ -727,6 +727,7 @@ export const gameSceneGameplayMethods = {
       cam.setZoom(
         damp(cam.zoom, CAMERA_ZOOM_SETTINGS.baseZoom, ZOOM_DAMPING, deltaMs)
       );
+      this.map?.updateCameraDrivenDecor?.(cam);
     }
 
     if (this.hudCamera) {
@@ -918,6 +919,29 @@ export const gameSceneGameplayMethods = {
       1
     );
     const speedKmh = speedPxPerSecToKmh(this.moto.speedPxPerSec);
+    const settingsMenuOpen = Boolean(this.hud?.isSettingsMenuOpen?.());
+    const localPlayerLocked =
+      settingsMenuOpen ||
+      this.spectatorModeActive ||
+      this.spectatorPendingStartAtMs > 0 ||
+      this.matchEnded ||
+      (this.map.isPlayerLocked?.() ?? false) ||
+      (this.map.isRiderRepairing?.() ?? false);
+    appAudioManager.updateGameMoto({
+      nowMs: this.time.now,
+      deltaMs,
+      speedKmh,
+      accelerating:
+        !localPlayerLocked &&
+        Boolean(this.inputSystem?.up) &&
+        !Boolean(this.inputSystem?.down),
+      braking: Boolean(this.moto.isBraking),
+      turboActive: Boolean(this.moto.turboState?.active),
+      turboRemainingMs: Math.max(
+        0,
+        Number(this.moto.turboState?.untilMs || 0) - this.time.now
+      ),
+    });
     const highSpeedBlend = Phaser.Math.Clamp(
       (speedKmh - HIGH_SPEED_CAMERA_FEEL.triggerKmh) /
         HIGH_SPEED_CAMERA_FEEL.blendRangeKmh,
@@ -1023,6 +1047,7 @@ export const gameSceneGameplayMethods = {
       deltaMs
     );
     cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
+    this.map?.updateCameraDrivenDecor?.(cam);
     this.syncNightVisionFocus(this.moto?.sprite);
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
     this.refreshPositiveStockUi();

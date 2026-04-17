@@ -497,6 +497,7 @@ export const gameSceneMatchMethods = {
     this.statusBanner.setVisible(false);
     this.syncKeyboardCaptureState();
     appAudioManager.startGameMusic({ fadeOutMs: 220 });
+    appAudioManager.startGameMoto({ nowMs: this.time.now, delayMs: 1000 });
   },
 
   onFinishWindowStarted(payload = {}) {

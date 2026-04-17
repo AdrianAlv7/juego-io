@@ -1,5 +1,5 @@
 function encodeGameSource(fileName) {
-  return encodeURI(`/assets/sound/game/${fileName}`);
+  return encodeURI(`/assets/sound/music/ingame/music1/${fileName}`);
 }
 
 const GAME_MUSIC_PRESETS = Object.freeze({

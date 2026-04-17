@@ -1,5 +1,6 @@
 import GameMusicController from "./GameMusicController.js";
 import LobbyMusicController from "./LobbyMusicController.js";
+import MotoSoundController from "./MotoSoundController.js";
 import UiSoundController from "./UiSoundController.js";
 
 const SFX_VOLUME_STORAGE_KEY = "deliver_audio_sfx_volume";
@@ -72,6 +73,9 @@ class AppAudioManager {
     this.musicVolume = loadStoredVolume(MUSIC_VOLUME_STORAGE_KEY, DEFAULT_MUSIC_VOLUME);
     this.sfxMuted = loadStoredMuted(SFX_MUTED_STORAGE_KEY, false);
     this.musicMuted = loadStoredMuted(MUSIC_MUTED_STORAGE_KEY, false);
+    this.motoSoundController = new MotoSoundController({
+      masterVolume: this.sfxMuted ? 0 : this.sfxVolume,
+    });
     this.lobbyMusicPresetId = "lobbyMusic1";
     this.gameMusicPresetId = "gameMusic1";
     this.lobbyMusicController = new LobbyMusicController({
@@ -118,6 +122,7 @@ class AppAudioManager {
 
   applySfxState() {
     this.uiSoundController?.setMasterVolume(this.sfxMuted ? 0 : this.sfxVolume);
+    this.motoSoundController?.setMasterVolume(this.sfxMuted ? 0 : this.sfxVolume);
   }
 
   getActiveMusicController() {
@@ -191,15 +196,19 @@ class AppAudioManager {
 
   handleUserUnlock() {
     this.getActiveMusicController()?.ensurePlayback?.();
+    this.motoSoundController?.ensurePlayback?.();
   }
 
   handleWindowActivityChange() {
     if (!this.isWindowPrimary()) {
+      this.motoSoundController?.setSuspended(true);
       this.gameMusicController.suspendPlayback();
       this.lobbyMusicController.suspendPlayback();
       return;
     }
 
+    this.motoSoundController?.setSuspended(false);
+    this.motoSoundController?.ensurePlayback?.();
     if (!this.hasProcessedInitialFocus) {
       this.hasProcessedInitialFocus = true;
       // Primer foco: intentamos arrancar audio sin click manual.
@@ -256,6 +265,8 @@ class AppAudioManager {
     this.clearMusicTransitionTimer();
     this.uiSoundController?.destroy();
     this.uiSoundController = null;
+    this.motoSoundController?.destroy();
+    this.motoSoundController = null;
     this.root = null;
     this.gameMusicController.destroy();
     this.lobbyMusicController.destroy();
@@ -377,6 +388,7 @@ class AppAudioManager {
 
     this.clearMusicTransitionTimer();
     this.activeMusicContext = "lobby";
+    this.motoSoundController?.stopMatch({ fadeOutMs: Math.min(180, fadeOutMs) });
     this.gameMusicController.stop({ fadeOutMs });
 
     const beginLobbyMusic = () => {
@@ -438,7 +450,22 @@ class AppAudioManager {
   }
 
   handleGameLocalFinish(options = {}) {
+    this.motoSoundController?.stopMatch({
+      fadeOutMs: Math.max(120, Number(options.fadeOutMs ?? 220)),
+    });
     this.gameMusicController.handleLocalFinish(options);
+  }
+
+  startGameMoto(options = {}) {
+    this.motoSoundController?.startMatch(options);
+  }
+
+  updateGameMoto(runtime = {}) {
+    this.motoSoundController?.update(runtime);
+  }
+
+  stopGameMoto(options = {}) {
+    this.motoSoundController?.stopMatch(options);
   }
 
   handleGameFinishWindowCountdown(payload = {}) {
