@@ -23,10 +23,18 @@ const gameConfig = {
   backgroundColor: "#14181d",
   // Suaviza bordes en sprites/escalados.
   antialias: true,
+  // Solicita antialiasing WebGL de forma explicita.
+  antialiasGL: true,
   // No usa modo pixel-art duro.
   pixelArt: false,
   // No redondea posiciones para permitir sub-pixel suave.
   roundPixels: false,
+  // Refuerza suavizado en el bloque render (compatibilidad entre versiones/configs).
+  render: {
+    antialias: true,
+    pixelArt: false,
+    roundPixels: false,
+  },
   // Resolucion de render efectiva (mejora nitidez en monitores densos).
   resolution: renderResolution,
   // Configuracion del loop de render.

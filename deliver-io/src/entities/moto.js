@@ -52,6 +52,16 @@ const ITEM_VISUAL_COLORS = Object.freeze({
   drift: 0x00ccff,
   brake: 0xff4444,
 });
+const DEFAULT_ENGINE_VIBRATION = Object.freeze({
+  idleAmplitudeY: 6.4,
+  cruiseAmplitudeY: 1.25,
+  idleAmplitudeX: 4.4,
+  cruiseAmplitudeX: 0.9,
+  idleIntervalMs: 58,
+  cruiseIntervalMs: 24,
+  idleBeatBias: 0.86,
+  cruiseBeatBias: 0.3,
+});
 
 function createTrackItemEffectState() {
   return {
@@ -139,6 +149,10 @@ export default class Moto {
 
     // Crea sprite fisico en posicion inicial.
     this.sprite = scene.physics.add.sprite(x, y, spriteKey || "moto");
+    // Fuerza filtrado lineal para minimizar dientes de sierra al escalar.
+    if (typeof this.sprite?.texture?.setFilter === "function") {
+      this.sprite.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+    }
     // Centra el origen del sprite.
     this.sprite.setOrigin(0.5);
     // Escala visual de la moto.
@@ -160,6 +174,8 @@ export default class Moto {
       this.sprite.displayWidth / 2 - radius,
       this.sprite.displayHeight / 2 - radius
     );
+    this.baseDisplayOriginX = this.sprite.displayOriginX;
+    this.baseDisplayOriginY = this.sprite.displayOriginY;
 
     // Angulo actual de la moto en radianes.
     this.direction = 0;
@@ -196,6 +212,13 @@ export default class Moto {
     this.empEffect = createEmpEffectState();
     this.turboState = createTurboState();
     this.ghostEffect = createGhostEffectState();
+    this.engineVibrationConfig = { ...DEFAULT_ENGINE_VIBRATION };
+    this.engineVibrationState = {
+      offsetX: 0,
+      offsetY: 0,
+      nextJumpAtMs: 0,
+      beatSign: 1,
+    };
     this.shieldVisualActive = false;
     this.shieldVisualRemainingMs = 0;
     this.shieldVisualBlinkThresholdMs = 2000;
@@ -451,6 +474,10 @@ export default class Moto {
     this.speedPxPerSec = Math.hypot(this.velX, this.velY) * 60;
     // Expone velocidad maxima en px/s para normalizacion externa.
     this.maxSpeedPxPerSec = effectiveMaxSpeed * 60;
+    this.updateEngineVibration(
+      nowMs,
+      effectiveMaxSpeed > 0 ? Phaser.Math.Clamp(finalSpeed / effectiveMaxSpeed, 0, 1) : 0
+    );
   }
 
   updateHeatState(deltaMs, throttleHeld, speedRatio) {
@@ -759,6 +786,13 @@ export default class Moto {
     };
   }
 
+  getEngineVibrationOffset() {
+    return {
+      x: Number(this.engineVibrationState?.offsetX || 0),
+      y: Number(this.engineVibrationState?.offsetY || 0),
+    };
+  }
+
   getHudState() {
     return {
       weatherEventType: this.activeEventType,
@@ -828,6 +862,56 @@ export default class Moto {
       return;
     }
     this.sprite.setTint(color, color, color, color);
+  }
+
+  updateEngineVibration(nowMs = this.scene.time.now, speedRatio = 0) {
+    if (!this.sprite) return;
+    const ratio = Phaser.Math.Clamp(Number(speedRatio || 0), 0, 1);
+    const stabilization = Math.pow(ratio, 0.72);
+    const amplitudeY = Phaser.Math.Linear(
+      this.engineVibrationConfig.idleAmplitudeY,
+      this.engineVibrationConfig.cruiseAmplitudeY,
+      stabilization
+    );
+    const amplitudeX = Phaser.Math.Linear(
+      this.engineVibrationConfig.idleAmplitudeX,
+      this.engineVibrationConfig.cruiseAmplitudeX,
+      stabilization
+    );
+    const intervalMs = Phaser.Math.Linear(
+      this.engineVibrationConfig.idleIntervalMs,
+      this.engineVibrationConfig.cruiseIntervalMs,
+      ratio
+    );
+
+    if (nowMs >= this.engineVibrationState.nextJumpAtMs) {
+      this.engineVibrationState.nextJumpAtMs =
+        nowMs + Math.max(16, intervalMs + Phaser.Math.FloatBetween(-6, 9));
+      this.engineVibrationState.beatSign *= -1;
+      const beatBias = Phaser.Math.Linear(
+        this.engineVibrationConfig.idleBeatBias,
+        this.engineVibrationConfig.cruiseBeatBias,
+        stabilization
+      );
+      const beatY = this.engineVibrationState.beatSign * amplitudeY * beatBias;
+      const randomY =
+        Phaser.Math.FloatBetween(-amplitudeY, amplitudeY) * (1 - beatBias * 0.52);
+      this.engineVibrationState.offsetY = Phaser.Math.Clamp(
+        beatY + randomY,
+        -amplitudeY,
+        amplitudeY
+      );
+      this.engineVibrationState.offsetX = Phaser.Math.Clamp(
+        Phaser.Math.FloatBetween(-amplitudeX, amplitudeX),
+        -amplitudeX,
+        amplitudeX
+      );
+    }
+
+    this.sprite.setDisplayOrigin(
+      this.baseDisplayOriginX + this.engineVibrationState.offsetX,
+      this.baseDisplayOriginY + this.engineVibrationState.offsetY
+    );
   }
 
   applyVisualFeedback(nowMs = this.scene.time.now) {
@@ -905,5 +989,6 @@ export default class Moto {
     this.heatState.throttleHoldMs = 0;
     this.sprite.body.setVelocity(0, 0);
     this.applyVisualFeedback(this.scene.time.now);
+    this.updateEngineVibration(this.scene.time.now, 0);
   }
 }

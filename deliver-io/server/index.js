@@ -51,8 +51,19 @@ const WEATHER_EVENT_CONFIG = {
     label: "Noche",
     durationMs: 13000,
   },
+  earthquake: {
+    type: "earthquake",
+    label: "Esta temblando",
+    durationMs: 5000,
+  },
 };
 const WEATHER_EVENT_TYPES = Object.keys(WEATHER_EVENT_CONFIG);
+const WEATHER_RANDOM_TYPE_WEIGHTS = [
+  { type: "rain", weight: 0.33 },
+  { type: "sunny", weight: 0.31 },
+  { type: "night", weight: 0.28 },
+  { type: "earthquake", weight: 0.08 },
+];
 const WEATHER_RANDOM_COUNT_WEIGHTS = [
   { count: 0, weight: 0.08 },
   { count: 1, weight: 0.22 },
@@ -551,8 +562,27 @@ function pickWeightedCount(weightEntries) {
   return weightEntries[weightEntries.length - 1].count;
 }
 
+function pickWeightedType(weightEntries, fallbackType) {
+  const totalWeight = weightEntries.reduce(
+    (sum, entry) => sum + entry.weight,
+    0
+  );
+  let cursor = Math.random() * totalWeight;
+
+  for (const entry of weightEntries) {
+    cursor -= entry.weight;
+    if (cursor <= 0) return entry.type;
+  }
+
+  return fallbackType;
+}
+
 function pickRandomWeatherType() {
-  return WEATHER_EVENT_TYPES[randomInt(0, WEATHER_EVENT_TYPES.length - 1)] || "rain";
+  return (
+    pickWeightedType(WEATHER_RANDOM_TYPE_WEIGHTS, "rain") ||
+    WEATHER_EVENT_TYPES[randomInt(0, WEATHER_EVENT_TYPES.length - 1)] ||
+    "rain"
+  );
 }
 
 function pickRandomTrainEventId() {
@@ -1459,25 +1489,19 @@ function clearCurrentWeatherEvent(room, reason = "cleared") {
   return true;
 }
 
-function startQueuedWeatherEvent(room) {
+function startWeatherEventNow(room, config, source = "rng", labelOverride = "") {
   if (!room.started || room.finished) return false;
-  if (!room.weatherQueuedEvent) return false;
+  if (!config) return false;
 
-  const queuedEvent = room.weatherQueuedEvent;
-  const config = WEATHER_EVENT_CONFIG[queuedEvent.type];
-  if (!config) {
-    room.weatherQueuedEvent = null;
-    return false;
-  }
-
+  const nowMs = Date.now();
   room.weatherQueuedEvent = null;
   room.weatherActiveEvent = {
-    type: queuedEvent.type,
-    label: queuedEvent.label,
-    source: queuedEvent.source,
+    type: config.type,
+    label: labelOverride || config.label,
+    source,
     durationMs: config.durationMs,
-    startedAt: Date.now(),
-    endsAt: Date.now() + config.durationMs,
+    startedAt: nowMs,
+    endsAt: nowMs + config.durationMs,
   };
 
   emitWeatherEventStarted(room, room.weatherActiveEvent);
@@ -1491,12 +1515,31 @@ function startQueuedWeatherEvent(room) {
   return true;
 }
 
+function startQueuedWeatherEvent(room) {
+  if (!room.started || room.finished) return false;
+  if (!room.weatherQueuedEvent) return false;
+
+  const queuedEvent = room.weatherQueuedEvent;
+  const config = WEATHER_EVENT_CONFIG[queuedEvent.type];
+  if (!config) {
+    room.weatherQueuedEvent = null;
+    return false;
+  }
+
+  return startWeatherEventNow(room, config, queuedEvent.source, queuedEvent.label);
+}
+
 function queueRoomWeatherEvent(room, type, source = "rng") {
   if (!room.started || room.finished) return false;
   if (room.weatherQueuedEvent || room.weatherActiveEvent) return false;
 
   const config = WEATHER_EVENT_CONFIG[type];
   if (!config) return false;
+  const isEarthquake = config.type === "earthquake";
+  if (isEarthquake) {
+    // Terremoto no avisa: arranca al instante.
+    return startWeatherEventNow(room, config, source, config.label);
+  }
 
   room.weatherQueuedEvent = {
     type: config.type,
@@ -1536,8 +1579,9 @@ function scheduleRandomWeatherEvents(room) {
     }, nextQueueDelayMs);
     trackTimer(room.weatherScheduleTimers, timer);
 
+    const warningMs = type === "earthquake" ? 0 : WEATHER_EVENT_WARNING_MS;
     nextQueueDelayMs +=
-      WEATHER_EVENT_WARNING_MS +
+      warningMs +
       WEATHER_EVENT_CONFIG[type].durationMs +
       randomInt(WEATHER_GAP_DELAY_RANGE_MS.min, WEATHER_GAP_DELAY_RANGE_MS.max);
   }

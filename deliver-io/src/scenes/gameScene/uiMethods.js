@@ -3272,7 +3272,7 @@ export const gameSceneUiMethods = {
     this.weatherHintText = this.add.text(
       0,
       0,
-      "Eventos: [1] lluvia  [2] asoleado  [3] noche  [4] limpiar  [5] tren",
+      "Eventos: [1] lluvia  [2] asoleado  [3] noche  [Q] terremoto  [4] limpiar  [5] tren",
       {
         fontFamily: "Consolas, monospace",
         fontSize: "18px",
@@ -3302,6 +3302,12 @@ export const gameSceneUiMethods = {
         label: "Noche",
         keyLabel: "[3]",
         fillColor: 0x283047,
+      },
+      {
+        type: WEATHER_EVENT_TYPES.EARTHQUAKE,
+        label: "Terremoto",
+        keyLabel: "[Q]",
+        fillColor: 0x7d4b34,
       },
       {
         type: WEATHER_EVENT_TYPES.NONE,
@@ -3461,8 +3467,12 @@ export const gameSceneUiMethods = {
     } else {
       const remainingMs = Math.max(0, this.weatherEvent.endsAtMs - now);
       const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+      const isEarthquake =
+        this.weatherEvent.type === WEATHER_EVENT_TYPES.EARTHQUAKE;
       this.weatherEventText.setText(
-        `${this.weatherEvent.label} activa | ${remainingSeconds}s`
+        isEarthquake
+          ? `${this.weatherEvent.label} | ${remainingSeconds}s`
+          : `${this.weatherEvent.label} activa | ${remainingSeconds}s`
       );
     }
     this.weatherEventText.setColor(this.weatherEvent.accentColor);

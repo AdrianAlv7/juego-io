@@ -3,6 +3,7 @@ export const WEATHER_EVENT_TYPES = Object.freeze({
   RAIN: "rain",
   SUNNY: "sunny",
   NIGHT: "night",
+  EARTHQUAKE: "earthquake",
 });
 
 export const WEATHER_EVENT_CONFIG = Object.freeze({
@@ -54,6 +55,18 @@ export const WEATHER_EVENT_CONFIG = Object.freeze({
       alpha: 1,
     }),
   }),
+  [WEATHER_EVENT_TYPES.EARTHQUAKE]: Object.freeze({
+    type: WEATHER_EVENT_TYPES.EARTHQUAKE,
+    label: "Esta temblando",
+    durationMs: 5000,
+    overlayColor: 0x5d4538,
+    overlayAlpha: 0.18,
+    accentColor: "#ffbe98",
+    handling: Object.freeze({}),
+    cameraVibrationOverride: Object.freeze({
+      intensity: 100,
+    }),
+  }),
 });
 
 export function createEmptyWeatherEventState() {
@@ -66,6 +79,7 @@ export function createEmptyWeatherEventState() {
     overlayColor: 0x000000,
     overlayAlpha: 0,
     accentColor: "#d7e1ef",
+    cameraVibrationOverride: null,
     source: "",
   };
 }

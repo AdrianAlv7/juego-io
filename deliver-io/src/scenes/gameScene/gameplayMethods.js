@@ -18,6 +18,8 @@ import {
   FIXED_STEP_MS,
   HIGH_SPEED_CAMERA_FEEL,
   HUD_FILTER_REFRESH_MS,
+  EARTHQUAKE_CAMERA_FX,
+  ENGINE_VIBRATION_CAMERA_FX,
   MAX_ACCUMULATED_DELTA_MS,
   MAX_CATCH_UP_STEPS,
   OFFSET_DAMPING,
@@ -53,6 +55,33 @@ function isProgressFinished(progress = null) {
 }
 
 export const gameSceneGameplayMethods = {
+  toggleFakeDepthBuildingsTest() {
+    const next = this.collisionBuildingFakeDepthTest?.toggle?.();
+    if (typeof next !== "boolean") return false;
+    const count = Number(
+      this.collisionBuildingFakeDepthTest?.getBuildingCount?.() || 0
+    );
+    const wallTextureReady = Boolean(this.textures?.exists?.("debug-wall-side"));
+    const roofTextureReady = Boolean(this.textures?.exists?.("debug-roof-top"));
+    const texStatus = `w:${wallTextureReady ? "ok" : "x"} r:${roofTextureReady ? "ok" : "x"}`;
+    const onLabel = `FakeDepth test: ON (P) [${count}] ${texStatus}`;
+    const offLabel = "FakeDepth test: OFF (P)";
+    if (!this.usingGameplayHudKit && this.statusBanner) {
+      this.statusBanner.setText(next ? onLabel : offLabel);
+      this.statusBanner.setColor(next ? "#9be6b5" : "#ffd27d");
+      this.statusBanner.setVisible(true);
+    } else {
+      this.hud?.queueBanner?.(
+        next
+          ? `FakeDepth ON [${count}] ${texStatus} (P)`
+          : "FakeDepth OFF (P)",
+        next ? "success" : "warning",
+        900
+      );
+    }
+    return next;
+  },
+
   onWeatherEventQueued(payload = {}) {
     this.applyWeatherEventPayload(payload, "countdown");
   },
@@ -61,8 +90,17 @@ export const gameSceneGameplayMethods = {
     this.applyWeatherEventPayload(payload, "active");
   },
 
-  onWeatherEventEnded() {
+  onWeatherEventEnded(payload = {}) {
+    this.startEarthquakeFadeOut(payload.type || this.weatherEvent?.type);
     this.clearLocalWeatherEventState();
+  },
+
+  startEarthquakeFadeOut(type = this.weatherEvent?.type) {
+    if (String(type || "") !== WEATHER_EVENT_TYPES.EARTHQUAKE) return;
+    const fadeOutMs = Math.max(0, Number(EARTHQUAKE_CAMERA_FX.fadeOutMs || 0));
+    if (fadeOutMs <= 0) return;
+    this.earthquakeFadeStartedAtMs = this.time.now;
+    this.earthquakeFadeUntilMs = this.earthquakeFadeStartedAtMs + fadeOutMs;
   },
 
   onTrainEventStarted(payload = {}) {
@@ -287,8 +325,13 @@ export const gameSceneGameplayMethods = {
       overlayColor: config.overlayColor,
       overlayAlpha: config.overlayAlpha,
       accentColor: config.accentColor,
+      cameraVibrationOverride: config.cameraVibrationOverride || null,
       source: payload.source || "",
     };
+    if (phase === "active" && config.type === WEATHER_EVENT_TYPES.EARTHQUAKE) {
+      this.earthquakeFadeStartedAtMs = 0;
+      this.earthquakeFadeUntilMs = 0;
+    }
 
     if (config.type === WEATHER_EVENT_TYPES.NIGHT) {
       this.weatherOverlay?.setVisible(false);
@@ -464,7 +507,10 @@ export const gameSceneGameplayMethods = {
     if (restoreLocalCamera && this.moto?.sprite) {
       const cam = this.cameras.main;
       cam?.startFollow(this.moto.sprite, false, 1, 1);
-      cam?.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
+      cam?.setFollowOffset(
+        this.cameraOffsetX + (this.cameraEngineVibrationOffsetX || 0),
+        this.cameraOffsetY + (this.cameraEngineVibrationOffsetY || 0)
+      );
     }
   },
 
@@ -724,6 +770,8 @@ export const gameSceneGameplayMethods = {
       cam.setFollowOffset(0, 0);
       this.cameraOffsetX = 0;
       this.cameraOffsetY = 0;
+      this.cameraEngineVibrationOffsetX = 0;
+      this.cameraEngineVibrationOffsetY = 0;
       cam.setZoom(
         damp(cam.zoom, CAMERA_ZOOM_SETTINGS.baseZoom, ZOOM_DAMPING, deltaMs)
       );
@@ -842,6 +890,7 @@ export const gameSceneGameplayMethods = {
       this.weatherEvent.type !== WEATHER_EVENT_TYPES.NONE &&
       Date.now() >= this.weatherEvent.endsAtMs
     ) {
+      this.startEarthquakeFadeOut(this.weatherEvent.type);
       this.clearLocalWeatherEventState();
     }
 
@@ -1006,6 +1055,171 @@ export const gameSceneGameplayMethods = {
       Math.sin(now * TOP_SPEED_SCREEN_FX.shakeFreqY) *
       TOP_SPEED_SCREEN_FX.verticalDriftPx *
       topSpeedIntensity;
+    if (this.earthquakeFadeUntilMs > 0 && now >= this.earthquakeFadeUntilMs) {
+      this.earthquakeFadeStartedAtMs = 0;
+      this.earthquakeFadeUntilMs = 0;
+    }
+    const isEarthquakeActive =
+      this.weatherEvent.phase === "active" &&
+      this.weatherEvent.type === WEATHER_EVENT_TYPES.EARTHQUAKE;
+    const earthquakeFadeRemainingMs = Math.max(
+      0,
+      Number(this.earthquakeFadeUntilMs || 0) - now
+    );
+    const isEarthquakeFading = !isEarthquakeActive && earthquakeFadeRemainingMs > 0;
+    const earthquakeFadeDurationMs = Math.max(
+      1,
+      Number(this.earthquakeFadeUntilMs || 0) -
+        Number(this.earthquakeFadeStartedAtMs || 0)
+    );
+    const earthquakeFadeLinear = isEarthquakeFading
+      ? Phaser.Math.Clamp(earthquakeFadeRemainingMs / earthquakeFadeDurationMs, 0, 1)
+      : 0;
+    const earthquakeFadeStrength = Math.pow(earthquakeFadeLinear, 1.2);
+    let vibrationTargetX = 0;
+    let vibrationTargetY = 0;
+    let vibrationDamping = ENGINE_VIBRATION_CAMERA_FX.damping;
+    if (ENGINE_VIBRATION_CAMERA_FX.enabled) {
+      const buildNormalVibration = () => {
+        const vibrationOffset = this.moto.getEngineVibrationOffset?.() || {
+          x: 0,
+          y: 0,
+        };
+        const vibrationWeight = Phaser.Math.Linear(
+          ENGINE_VIBRATION_CAMERA_FX.idleWeight,
+          ENGINE_VIBRATION_CAMERA_FX.cruiseWeight,
+          Math.pow(speedRatio, ENGINE_VIBRATION_CAMERA_FX.stabilizationPower)
+        );
+        const vibrationIntensity = Math.max(
+          0,
+          Number(ENGINE_VIBRATION_CAMERA_FX.intensity || 0)
+        );
+        const dynamicMaxOffsetX = Phaser.Math.Clamp(
+          ENGINE_VIBRATION_CAMERA_FX.maxOffsetXPx *
+            (1 +
+              Math.max(0, vibrationIntensity - 1) *
+                ENGINE_VIBRATION_CAMERA_FX.maxOffsetIntensityInfluence),
+          ENGINE_VIBRATION_CAMERA_FX.maxOffsetXPx,
+          ENGINE_VIBRATION_CAMERA_FX.maxOffsetCapXPx
+        );
+        const dynamicMaxOffsetY = Phaser.Math.Clamp(
+          ENGINE_VIBRATION_CAMERA_FX.maxOffsetYPx *
+            (1 +
+              Math.max(0, vibrationIntensity - 1) *
+                ENGINE_VIBRATION_CAMERA_FX.maxOffsetIntensityInfluence),
+          ENGINE_VIBRATION_CAMERA_FX.maxOffsetYPx,
+          ENGINE_VIBRATION_CAMERA_FX.maxOffsetCapYPx
+        );
+        const mixedOffsetX =
+          Number(vibrationOffset.x || 0) +
+          Number(vibrationOffset.y || 0) * ENGINE_VIBRATION_CAMERA_FX.crossAxisMix;
+        const mixedOffsetY =
+          Number(vibrationOffset.y || 0) +
+          Number(vibrationOffset.x || 0) * ENGINE_VIBRATION_CAMERA_FX.crossAxisMix;
+        return {
+          x: Phaser.Math.Clamp(
+            mixedOffsetX *
+              ENGINE_VIBRATION_CAMERA_FX.axisXMultiplier *
+              vibrationIntensity *
+              vibrationWeight,
+            -dynamicMaxOffsetX,
+            dynamicMaxOffsetX
+          ),
+          y: Phaser.Math.Clamp(
+            mixedOffsetY *
+              ENGINE_VIBRATION_CAMERA_FX.axisYMultiplier *
+              vibrationIntensity *
+              vibrationWeight,
+            -dynamicMaxOffsetY,
+            dynamicMaxOffsetY
+          ),
+          damping: ENGINE_VIBRATION_CAMERA_FX.damping,
+        };
+      };
+      const buildEarthquakeVibration = (strength = 1) => {
+        // Terremoto: intensidad fija del evento, sin suma con la vibracion normal
+        // y sin suavizado por velocidad.
+        const fixedEventIntensity = Math.max(
+          0,
+          Number(
+            EARTHQUAKE_CAMERA_FX.fixedIntensity ??
+              EARTHQUAKE_CAMERA_FX.defaultIntensity
+          )
+        );
+        const quakeIntensity = (fixedEventIntensity * strength) / 100;
+        const waveX =
+          Math.sin(now * EARTHQUAKE_CAMERA_FX.waveFreqX) +
+          Math.sin(now * EARTHQUAKE_CAMERA_FX.waveFreqXSecondary) *
+            EARTHQUAKE_CAMERA_FX.waveSecondaryWeight;
+        const waveY =
+          Math.cos(now * EARTHQUAKE_CAMERA_FX.waveFreqY) +
+          Math.sin(now * EARTHQUAKE_CAMERA_FX.waveFreqYSecondary) *
+            EARTHQUAKE_CAMERA_FX.waveSecondaryWeight;
+        const microJitterX =
+          Math.sin(now * EARTHQUAKE_CAMERA_FX.microJitterFreqX + 0.9) *
+          EARTHQUAKE_CAMERA_FX.microJitterXPxAt100;
+        const microJitterY =
+          Math.cos(now * EARTHQUAKE_CAMERA_FX.microJitterFreqY + 2.4) *
+          EARTHQUAKE_CAMERA_FX.microJitterYPxAt100;
+        return {
+          x: Phaser.Math.Clamp(
+            (waveX * EARTHQUAKE_CAMERA_FX.waveAmplitudeXPxAt100 + microJitterX) *
+              quakeIntensity,
+            -EARTHQUAKE_CAMERA_FX.maxOffsetXPxAt100 * quakeIntensity,
+            EARTHQUAKE_CAMERA_FX.maxOffsetXPxAt100 * quakeIntensity
+          ),
+          y: Phaser.Math.Clamp(
+            (waveY * EARTHQUAKE_CAMERA_FX.waveAmplitudeYPxAt100 + microJitterY) *
+              quakeIntensity,
+            -EARTHQUAKE_CAMERA_FX.maxOffsetYPxAt100 * quakeIntensity,
+            EARTHQUAKE_CAMERA_FX.maxOffsetYPxAt100 * quakeIntensity
+          ),
+          damping: EARTHQUAKE_CAMERA_FX.damping,
+        };
+      };
+
+      if (isEarthquakeActive) {
+        const quake = buildEarthquakeVibration(1);
+        vibrationTargetX = quake.x;
+        vibrationTargetY = quake.y;
+        vibrationDamping = quake.damping;
+      } else if (isEarthquakeFading) {
+        const normal = buildNormalVibration();
+        const quake = buildEarthquakeVibration(earthquakeFadeStrength);
+        vibrationTargetX = Phaser.Math.Linear(
+          normal.x,
+          quake.x,
+          earthquakeFadeStrength
+        );
+        vibrationTargetY = Phaser.Math.Linear(
+          normal.y,
+          quake.y,
+          earthquakeFadeStrength
+        );
+        vibrationDamping = Phaser.Math.Linear(
+          normal.damping,
+          quake.damping,
+          earthquakeFadeStrength
+        );
+      } else {
+        const normal = buildNormalVibration();
+        vibrationTargetX = normal.x;
+        vibrationTargetY = normal.y;
+        vibrationDamping = normal.damping;
+      }
+    }
+    this.cameraEngineVibrationOffsetX = damp(
+      Number(this.cameraEngineVibrationOffsetX || 0),
+      vibrationTargetX,
+      vibrationDamping,
+      deltaMs
+    );
+    this.cameraEngineVibrationOffsetY = damp(
+      Number(this.cameraEngineVibrationOffsetY || 0),
+      vibrationTargetY,
+      vibrationDamping,
+      deltaMs
+    );
     const targetOffsetX =
       Math.cos(this.moto.direction) * lookAheadDistance + speedWaveX + topShakeX;
     const targetOffsetY =
@@ -1022,7 +1236,10 @@ export const gameSceneGameplayMethods = {
       OFFSET_DAMPING,
       deltaMs
     );
-    cam.setFollowOffset(this.cameraOffsetX, this.cameraOffsetY);
+    cam.setFollowOffset(
+      this.cameraOffsetX + this.cameraEngineVibrationOffsetX,
+      this.cameraOffsetY + this.cameraEngineVibrationOffsetY
+    );
     this.syncNightVisionFocus(this.moto?.sprite);
     const mapHudInfo = this.map.getHudInfo?.(this.moto) || {};
     this.refreshPositiveStockUi();
@@ -1082,6 +1299,14 @@ export const gameSceneGameplayMethods = {
   update(_time, delta) {
     this.multiplayer?.update(delta);
     this.empPulseVisual?.update();
+    this.collisionDebugOverlay?.update?.();
+    this.collisionBuildingFakeDepthTest?.update?.();
+    if (
+      this.fakeDepthBuildingsToggleKey &&
+      Phaser.Input.Keyboard.JustDown(this.fakeDepthBuildingsToggleKey)
+    ) {
+      this.toggleFakeDepthBuildingsTest();
+    }
 
     if (!this.matchRunning) {
       const countdownEndsAt = Number(this.currentLobbyState?.lobbyCountdownEndsAt || 0);
@@ -1149,6 +1374,13 @@ export const gameSceneGameplayMethods = {
         Phaser.Input.Keyboard.JustDown(this.nightEventKey)
       ) {
         this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.NIGHT);
+      }
+      if (
+        keyboardActive &&
+        this.isLocalHost() &&
+        Phaser.Input.Keyboard.JustDown(this.earthquakeEventKey)
+      ) {
+        this.multiplayer?.emitQueueWeatherEvent(WEATHER_EVENT_TYPES.EARTHQUAKE);
       }
       if (
         keyboardActive &&
