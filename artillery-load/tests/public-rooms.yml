@@ -1,0 +1,122 @@
+config:
+  target: "https://deliver-io.onrender.com"
+  processor: "./processor.mjs"
+  phases:
+    - duration: 1
+      arrivalRate: 1
+      name: default-placeholder
+  environments:
+    smoke:
+      phases:
+        - duration: 1
+          arrivalRate: 6
+          name: 1 full public room
+    rooms50:
+      phases:
+        - duration: 10
+          arrivalRate: 5
+          name: 50 players over 10 seconds
+    burst50:
+      phases:
+        - duration: 1
+          arrivalRate: 50
+          name: 50 players at once
+    soak50:
+      phases:
+        - duration: 60
+          arrivalRate: 1
+          name: 1 player per second for 60 seconds
+  socketio:
+    transports:
+      - websocket
+
+scenarios:
+  - name: public-room-join-ready-play-finish
+    engine: socketio
+    flow:
+      - get:
+          url: "/health"
+          name: health
+      - get:
+          url: "/"
+          name: root
+      - function: setIdentity
+      - emit:
+          channel: registerPlayer
+          data:
+            name: "{{ playerName }}"
+            roomMode: public
+            motoId: "{{ motoId }}"
+      - emit:
+          channel: setGarageMoto
+          data:
+            motoId: "{{ motoId }}"
+      - function: markLobbyReady
+      - emit:
+          channel: setLobbyReady
+          data:
+            ready: true
+      - think: 14
+      - function: markGameplayStart
+      - loop:
+          - function: setMovementTick
+          - emit:
+              channel: updatePosition
+              data:
+                x: "{{ posX }}"
+                y: "{{ posY }}"
+                angle: "{{ angle }}"
+                progress:
+                  objectiveIndex: "{{ objectiveIndex }}"
+                  totalObjectives: "{{ totalObjectives }}"
+                  serviceProgress: "{{ serviceProgress }}"
+                  distanceToObjectivePx: "{{ distanceToObjectivePx }}"
+                  progressValue: "{{ progressValue }}"
+                  liveQualityPercent: "{{ liveQualityPercent }}"
+                  finished: false
+                hud:
+                  speedPxPerSec: "{{ speedPxPerSec }}"
+                  maxSpeedPxPerSec: "{{ maxSpeedPxPerSec }}"
+                  delivery:
+                    currentOrder: "{{ currentOrder }}"
+                    totalOrders: "{{ totalOrders }}"
+                    destination: "Pedido {{ currentOrder }}"
+                    packageHealthPercent: "{{ packageHealthPercent }}"
+                    packageHealthColor: "#58d48f"
+                    qualityPercent: "{{ qualityPercent }}"
+                    qualityColor: "#d6eaff"
+                    deliveredCount: "{{ deliveredCount }}"
+                  timing:
+                    elapsedMs: "{{ elapsedMs }}"
+                    countdownLabel: "{{ countdownLabel }}"
+                  moto:
+                    weatherEventType: "none"
+                    healthPercent: "{{ motoHealthPercent }}"
+                    healthColor: "#58d48f"
+                    repairing: false
+                    repairRemainingMs: "{{ repairRemainingMs }}"
+                    turbo:
+                      active: false
+                    ghost:
+                      active: false
+                    heat:
+                      active: false
+                      percent: "{{ heatPercent }}"
+                      cooling: false
+                  inventory:
+                    items: []
+                    maxItems: 2
+                  stock:
+                    turboCharges: "{{ turboCharges }}"
+                    turboMaxCharges: "{{ turboMaxCharges }}"
+          - think: 0.05
+        count: 200
+      - function: setFinishPayload
+      - emit:
+          channel: finishMatch
+          data:
+            elapsedMs: "{{ finishElapsedMs }}"
+            qualityPercent: "{{ finishQualityPercent }}"
+            didFinish: true
+      - think: 3
+      - function: markScenarioComplete

@@ -1,0 +1,15 @@
+{
+  "name": "deliver-io-artillery-load",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "smoke": "artillery run --environment smoke --output ./reports/smoke-report.json ./tests/public-rooms.yml",
+    "load:50": "artillery run --environment rooms50 --output ./reports/load-50-report.json ./tests/public-rooms.yml",
+    "load:50:burst": "artillery run --environment burst50 --output ./reports/load-50-burst-report.json ./tests/public-rooms.yml",
+    "load:soak": "artillery run --environment soak50 --output ./reports/load-soak-50-report.json ./tests/public-rooms.yml"
+  },
+  "devDependencies": {
+    "artillery": "^2.0.0"
+  }
+}
