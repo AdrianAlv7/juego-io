@@ -40,6 +40,7 @@ import { ACTIVE_MAP } from "../../world/activeMap.js";
 import { USERNAME_MAX_LENGTH, WEATHER_UI_MARGIN } from "./constants.js";
 
 const RAIN_PARTICLE_TEXTURE_KEY = "weather-raindrop";
+const TURBO_PARTICLE_TEXTURE_KEY = "hud-turbo-particle";
 const PLAYER_NAME_STORAGE_KEY = "deliver_player_name";
 const LEGACY_PLAYER_NAME_STORAGE_KEY = "repartidor_player_name";
 const DEFAULT_LOBBY_TRACK_PREVIEW_LABELS = [
@@ -78,6 +79,29 @@ const CONTROL_GUIDE_ACTION_KEYS = Object.freeze([
   "item",
   "nitro",
 ]);
+const GARAGE_DASH_ANGLE_START = -132;
+const GARAGE_DASH_ANGLE_END = 132;
+const GARAGE_SEGMENT_CHAR_MAP = Object.freeze({
+  "0": ["a", "b", "c", "d", "e", "f"],
+  "1": ["b", "c"],
+  "2": ["a", "b", "g", "e", "d"],
+  "3": ["a", "b", "c", "d", "g"],
+  "4": ["f", "g", "b", "c"],
+  "5": ["a", "f", "g", "c", "d"],
+  "6": ["a", "f", "e", "d", "c", "g"],
+  "7": ["a", "b", "c"],
+  "8": ["a", "b", "c", "d", "e", "f", "g"],
+  "9": ["a", "b", "c", "d", "f", "g"],
+  " ": [],
+});
+const GARAGE_ANALOG_RPM_LABELS = Object.freeze([0, 2, 4, 6, 8, 10, 12]);
+const GARAGE_ANALOG_SPEED_LABELS = Object.freeze(
+  Array.from({ length: 13 }, (_, index) => index * 20)
+);
+const GARAGE_HYBRID_RPM_LABELS = Object.freeze([1, 3, 5, 7, 9, 11, 13]);
+const GARAGE_DIGITAL_RPM_SCALE_LABELS = Object.freeze(
+  Array.from({ length: 15 }, (_, index) => index + 1)
+);
 
 function getLocalizedControlPresetLabel(presetId) {
   const preset = getControlPreset(presetId);
@@ -85,56 +109,237 @@ function getLocalizedControlPresetLabel(presetId) {
   return key ? t(key, {}, preset.label) : preset.label;
 }
 
+function garageDashAngleForRatio(ratio) {
+  const clamped = Math.max(0, Math.min(1, Number(ratio || 0)));
+  return GARAGE_DASH_ANGLE_START + (GARAGE_DASH_ANGLE_END - GARAGE_DASH_ANGLE_START) * clamped;
+}
+
+function buildGarageDialTicks(count = 29, majorEvery = 4, warningFromRatio = 1) {
+  const safeCount = Math.max(2, Math.round(Number(count || 29)));
+  const safeMajorEvery = Math.max(1, Math.round(Number(majorEvery || 4)));
+  const safeWarningFromRatio = Math.max(0, Math.min(1, Number(warningFromRatio ?? 1)));
+  return Array.from({ length: safeCount }, (_, index) => {
+    const ratio = safeCount <= 1 ? 0 : index / (safeCount - 1);
+    const classes = ["lhl-garage-dial-tick"];
+    if (index % safeMajorEvery === 0 || index === safeCount - 1) {
+      classes.push("is-major");
+    }
+    if (ratio >= safeWarningFromRatio) {
+      classes.push("is-warning");
+    }
+    return `<span class="${classes.join(" ")}" style="--lhl-garage-dial-angle:${garageDashAngleForRatio(ratio).toFixed(2)}deg"></span>`;
+  }).join("");
+}
+
+function buildGarageDialLabels(values = [], maxValue = 1) {
+  const safeMaxValue = Math.max(1, Number(maxValue || 1));
+  return values
+    .map((value) => {
+      const numericValue = Number(value);
+      const ratio = Number.isFinite(numericValue) ? numericValue / safeMaxValue : 0;
+      return `
+        <span class="lhl-garage-dial-label" style="--lhl-garage-dial-angle:${garageDashAngleForRatio(ratio).toFixed(2)}deg">
+          <span>${value}</span>
+        </span>
+      `;
+    })
+    .join("");
+}
+
+function buildGarageDialMarkup({
+  kind = "",
+  labels = [],
+  maxValue = 1,
+  tickCount = 29,
+  majorEvery = 4,
+  warningFromRatio = 1,
+  foot = "",
+  needleClass = "",
+} = {}) {
+  return `
+    <div class="lhl-garage-dial lhl-garage-dial--${kind}">
+      <div class="lhl-garage-dial-ticks">
+        ${buildGarageDialTicks(tickCount, majorEvery, warningFromRatio)}
+      </div>
+      <div class="lhl-garage-dial-labels">
+        ${buildGarageDialLabels(labels, maxValue)}
+      </div>
+      <div class="lhl-garage-dial-inner">
+        <div class="lhl-garage-dial-foot">${foot}</div>
+      </div>
+      <div class="lhl-garage-dial-needle ${needleClass}"></div>
+      <div class="lhl-garage-dial-center"></div>
+    </div>
+  `;
+}
+
+function buildGarageSegmentDisplayMarkup(value, digits = 3, className = "") {
+  const padded = String(value ?? "")
+    .replace(/[^\d]/g, "")
+    .slice(-digits)
+    .padStart(digits, "0");
+
+  const digitsMarkup = padded
+    .split("")
+    .map((char) => {
+      const activeSegments = GARAGE_SEGMENT_CHAR_MAP[char] || [];
+      return `
+        <span class="lhl-garage-7seg-digit">
+          ${["a", "b", "c", "d", "e", "f", "g"]
+            .map(
+              (segment) =>
+                `<span class="lhl-garage-7seg-segment lhl-garage-7seg-segment--${segment}${activeSegments.includes(segment) ? " is-on" : ""}"></span>`
+            )
+            .join("")}
+        </span>
+      `;
+    })
+    .join("");
+
+  return `<span class="lhl-garage-7seg-display ${className}">${digitsMarkup}</span>`;
+}
+
+function buildGarageSegmentMeterMarkup(count = 18, active = 12, className = "") {
+  const safeCount = Math.max(2, Math.round(Number(count || 18)));
+  const safeActive = Math.max(0, Math.min(safeCount, Math.round(Number(active || 0))));
+  return `
+    <div class="lhl-garage-segment-meter ${className}">
+      ${Array.from({ length: safeCount }, (_, index) =>
+        `<span class="lhl-garage-segment-meter-cell${index < safeActive ? " is-on" : ""}"></span>`
+      ).join("")}
+    </div>
+  `;
+}
+
+function buildGarageScaleLabelMarkup(values = [], itemClass = "lhl-garage-scale-mark") {
+  return values
+    .map((value) => `<span class="${itemClass}">${value}</span>`)
+    .join("");
+}
+
 function getGarageDashboardVisualMarkup(modeId, compact = false) {
   switch (modeId) {
     case "digital":
       return `
         <div class="lhl-garage-dash-art lhl-garage-dash-art--digital ${compact ? "is-compact" : "is-large"}">
-          <div class="lhl-garage-dash-digit-stack">
-            <div class="lhl-garage-dash-number">128</div>
-            <div class="lhl-garage-dash-unit">km/h</div>
+          <div class="lhl-garage-digital-shell">
+            <div class="lhl-garage-digital-rpm-head">
+              <span class="lhl-garage-digital-rpm-label">RPM</span>
+              <div class="lhl-garage-digital-rpm-scale">
+                ${buildGarageScaleLabelMarkup(GARAGE_DIGITAL_RPM_SCALE_LABELS, "lhl-garage-digital-rpm-scale-mark")}
+              </div>
+            </div>
+            ${buildGarageSegmentMeterMarkup(compact ? 16 : 20, compact ? 9 : 13, "is-digital")}
+            <div class="lhl-garage-digital-screen">
+              <div class="lhl-garage-digital-chip-row">
+                <span class="lhl-garage-digital-chip">READY</span>
+                <span class="lhl-garage-digital-chip">SEG</span>
+              </div>
+              <div class="lhl-garage-digital-display">
+                ${buildGarageSegmentDisplayMarkup("088", 3, "is-digital")}
+              </div>
+              <div class="lhl-garage-digital-unit">km/h</div>
+              <div class="lhl-garage-digital-footer">
+                <span>RPM</span>
+                <span>8.6 x1000</span>
+                <span>ODO</span>
+              </div>
+            </div>
           </div>
-          <div class="lhl-garage-dash-bar"><span></span></div>
         </div>
       `;
     case "hybrid":
       return `
         <div class="lhl-garage-dash-art lhl-garage-dash-art--hybrid ${compact ? "is-compact" : "is-large"}">
-          <div class="lhl-garage-dash-hybrid-speed">
-            <div class="lhl-garage-dash-number">92</div>
-            <div class="lhl-garage-dash-unit">km/h</div>
-          </div>
-          <div class="lhl-garage-dash-gauge">
-            <span class="lhl-garage-dash-gauge-core"></span>
-            <span class="lhl-garage-dash-gauge-needle"></span>
+          <div class="lhl-garage-hybrid-cluster">
+            <div class="lhl-garage-hybrid-rpm">
+              ${buildGarageDialMarkup({
+                kind: "rpm-yamaha",
+                labels: GARAGE_HYBRID_RPM_LABELS,
+                maxValue: 13,
+                tickCount: 33,
+                majorEvery: 3,
+                warningFromRatio: 0.74,
+                foot: "x1000",
+                needleClass: "is-rpm",
+              })}
+            </div>
+            <div class="lhl-garage-hybrid-screen">
+              <div class="lhl-garage-hybrid-top">
+                <span class="lhl-garage-hybrid-chip">REP</span>
+                <div class="lhl-garage-hybrid-brand">YAMAHA</div>
+              </div>
+              <div class="lhl-garage-hybrid-speed">
+                <div class="lhl-garage-hybrid-speed-stack">
+                  <span class="lhl-garage-hybrid-caption">speed</span>
+                  ${buildGarageSegmentDisplayMarkup("092", 3, "is-hybrid")}
+                </div>
+                <span class="lhl-garage-hybrid-unit">km/h</span>
+              </div>
+              <div class="lhl-garage-hybrid-bottom">
+                <span>ODO</span>
+                <span>6.4 x1000</span>
+                <span>LIVE</span>
+              </div>
+            </div>
           </div>
         </div>
       `;
     case "lcd":
       return `
         <div class="lhl-garage-dash-art lhl-garage-dash-art--lcd ${compact ? "is-compact" : "is-large"}">
-          <div class="lhl-garage-dash-lcd-row">
-            <span class="lhl-garage-dash-lcd-tag">SPD</span>
-            <span class="lhl-garage-dash-lcd-value">104</span>
+          <div class="lhl-garage-lcd-shell">
+            <div class="lhl-garage-lcd-rail">
+              <span class="lhl-garage-lcd-rail-chip is-green">N</span>
+              <span class="lhl-garage-lcd-rail-chip is-amber">ABS</span>
+            </div>
+            <div class="lhl-garage-lcd-center">
+              <div class="lhl-garage-lcd-art"></div>
+              <div class="lhl-garage-lcd-meter lhl-garage-lcd-meter--left">
+                <div class="lhl-garage-lcd-meter-fill"></div>
+              </div>
+              <div class="lhl-garage-lcd-meter lhl-garage-lcd-meter--right">
+                <div class="lhl-garage-lcd-meter-fill"></div>
+              </div>
+              <div class="lhl-garage-lcd-ring"></div>
+              <div class="lhl-garage-lcd-value">104</div>
+              <div class="lhl-garage-lcd-unit">km/h</div>
+              <div class="lhl-garage-lcd-rpm-readout">
+                <span>RPM</span>
+                <span>7.2</span>
+              </div>
+            </div>
           </div>
-          <div class="lhl-garage-dash-lcd-row">
-            <span class="lhl-garage-dash-lcd-tag">RPM</span>
-            <span class="lhl-garage-dash-lcd-value lhl-garage-dash-lcd-value--small">6480</span>
-          </div>
-          <div class="lhl-garage-dash-lcd-bar"><span></span></div>
         </div>
       `;
     case "dual":
     default:
       return `
         <div class="lhl-garage-dash-art lhl-garage-dash-art--dual ${compact ? "is-compact" : "is-large"}">
-          <div class="lhl-garage-dash-gauge">
-            <span class="lhl-garage-dash-gauge-core"></span>
-            <span class="lhl-garage-dash-gauge-needle"></span>
-          </div>
-          <div class="lhl-garage-dash-gauge">
-            <span class="lhl-garage-dash-gauge-core"></span>
-            <span class="lhl-garage-dash-gauge-needle lhl-garage-dash-gauge-needle--rpm"></span>
+          <div class="lhl-garage-analog-cluster">
+            <div class="lhl-garage-analog-shell">
+              ${buildGarageDialMarkup({
+                kind: "rpm",
+                labels: GARAGE_ANALOG_RPM_LABELS,
+                maxValue: 12,
+                tickCount: 25,
+                majorEvery: 2,
+                warningFromRatio: 0.82,
+                foot: "x1000/min",
+                needleClass: "is-rpm",
+              })}
+            </div>
+            <div class="lhl-garage-analog-shell">
+              ${buildGarageDialMarkup({
+                kind: "speed",
+                labels: GARAGE_ANALOG_SPEED_LABELS,
+                maxValue: 240,
+                tickCount: 25,
+                majorEvery: 2,
+                warningFromRatio: 1,
+                foot: "km/h",
+              })}
+            </div>
           </div>
         </div>
       `;
@@ -1227,6 +1432,20 @@ export const gameSceneUiMethods = {
     });
   },
 
+  syncGarageDashboardSelectorUi() {
+    const activeMode = getDashboardModeMeta(
+      this.garageDashboardSelectorRoot?.classList.contains("is-open")
+        ? this.garagePendingDashboardMode || this.garageWorkingDashboardMode
+        : this.garageWorkingDashboardMode
+    ).id;
+
+    this.garageDashboardOptionButtons?.forEach((button) => {
+      const isSelected = button?.dataset?.dashboardMode === activeMode;
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    });
+  },
+
   syncGarageSelectionUi() {
     if (!this.garageRoot) return;
     const selectedMoto = getGarageMotoById(this.garageWorkingMotoId || this.selectedGarageMotoId);
@@ -1254,13 +1473,50 @@ export const gameSceneUiMethods = {
         { selected: true }
       );
     }
-    this.garageDashboardOptionButtons?.forEach((button) => {
-      const isSelected =
-        button?.dataset?.dashboardMode === this.garageWorkingDashboardMode;
-      button.classList.toggle("is-selected", isSelected);
-      button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-    });
+    this.syncGarageDashboardSelectorUi();
     this.refreshGarageRosterUi();
+  },
+
+  openGarageDashboardSelector() {
+    if (!this.garageDashboardSelectorRoot) return;
+    this.garagePendingDashboardMode = getDashboardModeMeta(
+      this.garageWorkingDashboardMode || loadSelectedDashboardMode()
+    ).id;
+    this.garageDashboardSelectorRoot.classList.add("is-open");
+    this.garageDashboardSelectorRoot.setAttribute("aria-hidden", "false");
+    this.syncGarageSelectionUi();
+    this.syncKeyboardCaptureState();
+  },
+
+  closeGarageDashboardSelector(options = {}) {
+    const { apply = false, silent = false } = options;
+    if (!this.garageDashboardSelectorRoot) return;
+
+    if (apply) {
+      const appliedMode = saveSelectedDashboardMode(
+        this.garagePendingDashboardMode || this.garageWorkingDashboardMode
+      );
+      this.garageWorkingDashboardMode = getDashboardModeMeta(appliedMode).id;
+      this.garagePendingDashboardMode = this.garageWorkingDashboardMode;
+      if (this.hud) {
+        this.hud.dashboardMode = this.garageWorkingDashboardMode;
+        this.hud.applyDashboardMode?.();
+      }
+      if (!silent) {
+        const dashboardMeta = getDashboardModeMeta(this.garageWorkingDashboardMode);
+        this.setLobbyMessage(
+          `Tablero aplicado: ${dashboardMeta.garageLabel}.`,
+          "#d8b7ff"
+        );
+      }
+    } else {
+      this.garagePendingDashboardMode = this.garageWorkingDashboardMode;
+    }
+
+    this.garageDashboardSelectorRoot.classList.remove("is-open");
+    this.garageDashboardSelectorRoot.setAttribute("aria-hidden", "true");
+    this.syncGarageSelectionUi();
+    this.syncKeyboardCaptureState();
   },
 
   syncAudioToggleUi() {
@@ -1779,6 +2035,8 @@ export const gameSceneUiMethods = {
     this.garageOpenMode = mode;
     this.garageWorkingMotoId = getGarageMotoById(this.selectedGarageMotoId).id;
     this.garageWorkingDashboardMode = loadSelectedDashboardMode();
+    this.garagePendingDashboardMode = this.garageWorkingDashboardMode;
+    this.closeGarageDashboardSelector({ apply: false, silent: true });
     this.garageRoot.classList.toggle("is-entry-mode", mode === "entry");
     this.lobbyCardNode?.classList.toggle("is-garage-screen", mode === "entry");
     this.syncGarageSelectionUi();
@@ -1813,6 +2071,7 @@ export const gameSceneUiMethods = {
     const { apply = false, silent = false, skipHistory = false } = options;
     if (!this.garageRoot) return;
     const openMode = this.garageOpenMode || "lobby";
+    this.closeGarageDashboardSelector({ apply: false, silent: true });
 
     if (apply) {
       const selectedMoto = getGarageMotoById(this.garageWorkingMotoId);
@@ -2471,37 +2730,22 @@ export const gameSceneUiMethods = {
 
     this.garageDashboardPreview = document.createElement("div");
     this.garageDashboardPreview.className = "lhl-garage-dash-preview";
-
-    const dashboardGrid = document.createElement("div");
-    dashboardGrid.className = "lhl-garage-dash-grid";
-
-    this.garageDashboardOptionButtons = GARAGE_DASHBOARD_MODE_SEQUENCE.map(
-      (dashboardModeId) => {
-        const dashboardMeta = getDashboardModeMeta(dashboardModeId);
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "lhl-garage-dash-option";
-        button.dataset.dashboardMode = dashboardModeId;
-        button.setAttribute(
-          "aria-label",
-          `Tablero ${dashboardMeta.garageLabel}`
-        );
-        button.innerHTML = buildGarageDashboardCardMarkup(dashboardModeId, {
-          compact: true,
-        });
-        button.addEventListener("click", () => {
-          this.garageWorkingDashboardMode = dashboardModeId;
-          this.syncGarageSelectionUi();
-        });
-        bindDomInputNode(this, button);
-        dashboardGrid.appendChild(button);
-        return button;
-      }
+    this.garageDashboardChangeButton = document.createElement("button");
+    this.garageDashboardChangeButton.type = "button";
+    this.garageDashboardChangeButton.className =
+      "lhl-btn lhl-btn-alt lhl-garage-dashboard-change";
+    setLobbyButtonLabel(
+      this.garageDashboardChangeButton,
+      "Cambiar tablero"
     );
+    this.garageDashboardChangeButton.addEventListener("click", () => {
+      this.openGarageDashboardSelector();
+    });
+    bindDomInputNode(this, this.garageDashboardChangeButton);
 
     dashboardPane.appendChild(dashboardLabel);
     dashboardPane.appendChild(this.garageDashboardPreview);
-    dashboardPane.appendChild(dashboardGrid);
+    dashboardPane.appendChild(this.garageDashboardChangeButton);
 
     const previewPane = document.createElement("div");
     previewPane.className = "lhl-garage-preview";
@@ -2596,8 +2840,108 @@ export const gameSceneUiMethods = {
     body.appendChild(previewPane);
     body.appendChild(optionsPane);
 
+    this.garageDashboardSelectorRoot = document.createElement("div");
+    this.garageDashboardSelectorRoot.className = "lhl-garage-dash-selector";
+    this.garageDashboardSelectorRoot.setAttribute("aria-hidden", "true");
+
+    const dashboardSelectorBackdrop = document.createElement("button");
+    dashboardSelectorBackdrop.type = "button";
+    dashboardSelectorBackdrop.className = "lhl-garage-dash-selector-backdrop";
+    dashboardSelectorBackdrop.setAttribute("aria-label", "Cerrar selector de tablero");
+    dashboardSelectorBackdrop.addEventListener("click", () => {
+      this.closeGarageDashboardSelector({ apply: false });
+    });
+
+    const dashboardSelectorShell = document.createElement("div");
+    dashboardSelectorShell.className = "lhl-garage-dash-selector-shell";
+
+    const dashboardSelectorHeader = document.createElement("div");
+    dashboardSelectorHeader.className = "lhl-garage-dash-selector-header";
+
+    const dashboardSelectorEyebrow = document.createElement("div");
+    dashboardSelectorEyebrow.className = "lhl-garage-dash-selector-eyebrow";
+    dashboardSelectorEyebrow.textContent = "Tableros";
+
+    const dashboardSelectorTitle = document.createElement("div");
+    dashboardSelectorTitle.className = "lhl-garage-dash-selector-title";
+    dashboardSelectorTitle.textContent = "Elige tu tablero";
+
+    const dashboardSelectorSubtitle = document.createElement("div");
+    dashboardSelectorSubtitle.className = "lhl-garage-dash-selector-subtitle";
+    dashboardSelectorSubtitle.textContent =
+      "Selecciona uno, aplicalo y quedara guardado en tu navegador.";
+
+    dashboardSelectorHeader.appendChild(dashboardSelectorEyebrow);
+    dashboardSelectorHeader.appendChild(dashboardSelectorTitle);
+    dashboardSelectorHeader.appendChild(dashboardSelectorSubtitle);
+
+    const dashboardSelectorGrid = document.createElement("div");
+    dashboardSelectorGrid.className = "lhl-garage-dash-selector-grid";
+
+    this.garageDashboardOptionButtons = GARAGE_DASHBOARD_MODE_SEQUENCE.map(
+      (dashboardModeId) => {
+        const dashboardMeta = getDashboardModeMeta(dashboardModeId);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "lhl-garage-dash-option lhl-garage-dash-option--modal";
+        button.dataset.dashboardMode = dashboardModeId;
+        button.setAttribute(
+          "aria-label",
+          `Tablero ${dashboardMeta.garageLabel}`
+        );
+        button.innerHTML = buildGarageDashboardCardMarkup(dashboardModeId);
+        button.addEventListener("click", () => {
+          this.garagePendingDashboardMode = dashboardModeId;
+          this.syncGarageDashboardSelectorUi();
+        });
+        bindDomInputNode(this, button);
+        dashboardSelectorGrid.appendChild(button);
+        return button;
+      }
+    );
+
+    const dashboardSelectorFooter = document.createElement("div");
+    dashboardSelectorFooter.className = "lhl-garage-dash-selector-footer";
+
+    this.garageDashboardSelectorApplyButton = document.createElement("button");
+    this.garageDashboardSelectorApplyButton.type = "button";
+    this.garageDashboardSelectorApplyButton.className =
+      "lhl-btn lhl-btn-alt lhl-garage-dash-selector-apply";
+    setLobbyButtonLabel(
+      this.garageDashboardSelectorApplyButton,
+      t("buttons.apply", {}, "Aplicar")
+    );
+    this.garageDashboardSelectorApplyButton.addEventListener("click", () => {
+      this.closeGarageDashboardSelector({ apply: true });
+    });
+    bindDomInputNode(this, this.garageDashboardSelectorApplyButton);
+
+    this.garageDashboardSelectorCloseButton = document.createElement("button");
+    this.garageDashboardSelectorCloseButton.type = "button";
+    this.garageDashboardSelectorCloseButton.className =
+      "lhl-btn lhl-btn-minimal lhl-garage-dash-selector-close";
+    setLobbyButtonLabel(
+      this.garageDashboardSelectorCloseButton,
+      t("buttons.close", {}, "Cerrar")
+    );
+    this.garageDashboardSelectorCloseButton.addEventListener("click", () => {
+      this.closeGarageDashboardSelector({ apply: false });
+    });
+    bindDomInputNode(this, this.garageDashboardSelectorCloseButton);
+
+    dashboardSelectorFooter.appendChild(this.garageDashboardSelectorApplyButton);
+    dashboardSelectorFooter.appendChild(this.garageDashboardSelectorCloseButton);
+
+    dashboardSelectorShell.appendChild(dashboardSelectorHeader);
+    dashboardSelectorShell.appendChild(dashboardSelectorGrid);
+    dashboardSelectorShell.appendChild(dashboardSelectorFooter);
+
+    this.garageDashboardSelectorRoot.appendChild(dashboardSelectorBackdrop);
+    this.garageDashboardSelectorRoot.appendChild(dashboardSelectorShell);
+
     shell.appendChild(header);
     shell.appendChild(body);
+    shell.appendChild(this.garageDashboardSelectorRoot);
 
     this.garageRoot.appendChild(backdrop);
     this.garageRoot.appendChild(shell);
@@ -2765,12 +3109,17 @@ export const gameSceneUiMethods = {
     this.garagePreviewImage = null;
     this.garagePreviewName = null;
     this.garageDashboardPreview = null;
+    this.garageDashboardChangeButton = null;
+    this.garageDashboardSelectorRoot = null;
+    this.garageDashboardSelectorApplyButton = null;
+    this.garageDashboardSelectorCloseButton = null;
     this.garageCloseButton = null;
     this.garageRosterList = null;
     this.garageApplyButton = null;
     this.garageOptionButtons = [];
     this.garageDashboardOptionButtons = [];
     this.garageWorkingMotoId = null;
+    this.garagePendingDashboardMode = "dual";
     this.garageWorkingDashboardMode = "dual";
   },
 
@@ -3616,6 +3965,9 @@ export const gameSceneUiMethods = {
     }
     this.rainEmitterActive = false;
 
+    this.turboHudEmitter = null;
+    this.turboHudEmitterActive = false;
+
     this.nightVisionOverlay = new NightVisionOverlay(this, {
       depth: 2120,
       blockedRatio:
@@ -3738,12 +4090,19 @@ export const gameSceneUiMethods = {
 
     this.layoutWeatherUi(this.scale.gameSize);
     this.setRainEmitterActive(false);
+    this.setTurboHudEmitterActive(false);
     this.setWeatherControlsVisible(false);
   },
 
   layoutWeatherUi(gameSize) {
     if (this.weatherOverlay) {
       this.weatherOverlay.setSize(gameSize.width, gameSize.height);
+    }
+    if (this.turboHudEmitter) {
+      this.turboHudEmitter.setPosition(
+        gameSize.width * 0.5,
+        gameSize.height - Math.max(84, gameSize.height * 0.094)
+      );
     }
     this.nightVisionOverlay?.resize(gameSize);
 
@@ -3870,11 +4229,23 @@ export const gameSceneUiMethods = {
     }
   },
 
+  setTurboHudEmitterActive(active) {
+    if (this.turboHudEmitter) {
+      this.turboHudEmitter.stop(true);
+      this.turboHudEmitter.setVisible(false);
+    }
+    this.turboHudEmitterActive = false;
+  },
+
   destroyWeatherUi() {
     this.setRainEmitterActive(false);
     this.rainEmitter?.destroy();
     this.rainEmitter = null;
     this.rainEmitterActive = false;
+    this.setTurboHudEmitterActive(false);
+    this.turboHudEmitter?.destroy();
+    this.turboHudEmitter = null;
+    this.turboHudEmitterActive = false;
     this.weatherOverlay?.destroy();
     this.weatherOverlay = null;
     this.nightVisionOverlay?.destroy();

@@ -92,11 +92,16 @@ export function initializeGameSceneState(scene) {
   scene.garagePreviewImage = null;
   scene.garagePreviewName = null;
   scene.garageDashboardPreview = null;
+  scene.garageDashboardChangeButton = null;
+  scene.garageDashboardSelectorRoot = null;
+  scene.garageDashboardSelectorApplyButton = null;
+  scene.garageDashboardSelectorCloseButton = null;
   scene.garageCloseButton = null;
   scene.garageRosterList = null;
   scene.garageApplyButton = null;
   scene.garageOptionButtons = [];
   scene.garageDashboardOptionButtons = [];
+  scene.garagePendingDashboardMode = "dual";
   scene.garageWorkingDashboardMode = "dual";
   scene.settingsRoot = null;
   scene.settingsOpenMode = "lobby";
@@ -150,6 +155,8 @@ export function initializeGameSceneState(scene) {
   scene.weatherOverlay = null;
   scene.rainEmitter = null;
   scene.rainEmitterActive = false;
+  scene.turboHudEmitter = null;
+  scene.turboHudEmitterActive = false;
   scene.weatherEventText = null;
   scene.weatherHintText = null;
   scene.weatherButtons = [];

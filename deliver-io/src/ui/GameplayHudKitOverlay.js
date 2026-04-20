@@ -6,7 +6,10 @@ import {
   getDashboardModeMeta,
   loadSelectedDashboardMode,
 } from "./dashboardModes.js";
-import { speedPxPerSecToKmh } from "../world/race/utils/telemetry.js";
+import {
+  HUD_MAX_SPEED_KMH,
+  speedPxPerSecToKmh,
+} from "../world/race/utils/telemetry.js";
 import { formatRaceTime } from "./hud/formatters.js";
 
 const FINISH_CALL_SECONDS = new Set([20, 15, 10, 5, 3, 2, 1]);
@@ -16,6 +19,41 @@ const SETTINGS_AUDIO_ICONS = Object.freeze({
   sfx:
     '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 10.5V13.5H7.25L12 18V6L7.25 10.5H3ZM15.5 9.25A4.25 4.25 0 0 1 15.5 14.75L16.9 16.15A6.2 6.2 0 0 0 16.9 7.85L15.5 9.25ZM18.3 6.45A8.15 8.15 0 0 1 18.3 17.55L19.7 18.95A10.1 10.1 0 0 0 19.7 5.05L18.3 6.45Z"/></svg>',
 });
+const ITEM_IMAGE_BY_TYPE = Object.freeze({
+  [ITEM_TYPES.OIL]: "/assets/items/aceite.png",
+  [ITEM_TYPES.WALL]: "/assets/items/muro.png",
+  [ITEM_TYPES.EMP]: "/assets/items/PEM.png",
+  [ITEM_TYPES.SHIELD]: "/assets/items/escudo.png",
+  [ITEM_TYPES.GHOST]: "/assets/items/fantasma.png",
+});
+const TURBO_IMAGE_PATH = "/assets/items/nitro.png";
+const DASH_DIAL_ANGLE_START = -132;
+const DASH_DIAL_ANGLE_END = 132;
+const SEVEN_SEGMENT_CHAR_MAP = Object.freeze({
+  "0": ["a", "b", "c", "d", "e", "f"],
+  "1": ["b", "c"],
+  "2": ["a", "b", "g", "e", "d"],
+  "3": ["a", "b", "c", "d", "g"],
+  "4": ["f", "g", "b", "c"],
+  "5": ["a", "f", "g", "c", "d"],
+  "6": ["a", "f", "e", "d", "c", "g"],
+  "7": ["a", "b", "c"],
+  "8": ["a", "b", "c", "d", "e", "f", "g"],
+  "9": ["a", "b", "c", "d", "f", "g"],
+  " ": [],
+});
+const DASH_ANALOG_RPM_LABELS = Object.freeze([0, 2, 4, 6, 8, 10, 12]);
+const DASH_ANALOG_SPEED_LABELS = Object.freeze(
+  Array.from({ length: 13 }, (_, index) => index * 20)
+);
+const DASH_HYBRID_RPM_LABELS = Object.freeze([1, 3, 5, 7, 9, 11, 13]);
+const DASH_DIGITAL_RPM_SCALE_LABELS = Object.freeze(
+  Array.from({ length: 15 }, (_, index) => index + 1)
+);
+
+function getItemImagePath(type) {
+  return ITEM_IMAGE_BY_TYPE[String(type || "").toLowerCase()] || "";
+}
 
 function numberColorToCss(colorValue, fallback = "#ffd56a") {
   const numeric = Number(colorValue);
@@ -46,6 +84,144 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function dialAngleForRatio(ratio) {
+  const clamped = Math.max(0, Math.min(1, Number(ratio || 0)));
+  return DASH_DIAL_ANGLE_START + (DASH_DIAL_ANGLE_END - DASH_DIAL_ANGLE_START) * clamped;
+}
+
+function buildDashDialTicks({
+  count = 29,
+  majorEvery = 4,
+  warningFromRatio = 1,
+} = {}) {
+  const safeCount = Math.max(2, Math.round(Number(count || 29)));
+  const safeMajorEvery = Math.max(1, Math.round(Number(majorEvery || 4)));
+  const safeWarningFromRatio = Math.max(0, Math.min(1, Number(warningFromRatio ?? 1)));
+
+  return Array.from({ length: safeCount }, (_, index) => {
+    const ratio = safeCount <= 1 ? 0 : index / (safeCount - 1);
+    const classes = ["ghuk-dial-tick"];
+    if (index % safeMajorEvery === 0 || index === safeCount - 1) {
+      classes.push("is-major");
+    }
+    if (ratio >= safeWarningFromRatio) {
+      classes.push("is-warning");
+    }
+    return `<span class="${classes.join(" ")}" style="--ghuk-dial-angle:${dialAngleForRatio(ratio).toFixed(2)}deg"></span>`;
+  }).join("");
+}
+
+function buildDashDialLabels(values = [], maxValue = 1) {
+  const safeMaxValue = Math.max(1, Number(maxValue || 1));
+  return values
+    .map((value) => {
+      const numericValue = Number(value);
+      const ratio = Number.isFinite(numericValue) ? numericValue / safeMaxValue : 0;
+      return `
+        <span class="ghuk-dial-label" style="--ghuk-dial-angle:${dialAngleForRatio(ratio).toFixed(2)}deg">
+          <span>${escapeHtml(value)}</span>
+        </span>
+      `;
+    })
+    .join("");
+}
+
+function buildDashDialMarkup({
+  kind = "",
+  needleRef = "",
+  needleClass = "",
+  title = "",
+  foot = "",
+  labels = [],
+  maxValue = 1,
+  tickCount = 29,
+  majorEvery = 4,
+  warningFromRatio = 1,
+} = {}) {
+  const safeKind = escapeHtml(kind);
+  const safeTitle = escapeHtml(title);
+  const safeFoot = escapeHtml(foot);
+  const safeNeedleClass = needleClass ? ` ${needleClass}` : "";
+
+  return `
+    <div class="ghuk-dial ghuk-dial--${safeKind}">
+      <div class="ghuk-dial-ticks">
+        ${buildDashDialTicks({ count: tickCount, majorEvery, warningFromRatio })}
+      </div>
+      <div class="ghuk-dial-labels">
+        ${buildDashDialLabels(labels, maxValue)}
+      </div>
+      <div class="ghuk-dial-inner">
+        <div class="ghuk-dial-title">${safeTitle}</div>
+        <div class="ghuk-dial-foot">${safeFoot}</div>
+      </div>
+      <div class="ghuk-dial-needle${safeNeedleClass}" data-ref="${needleRef}"></div>
+      <div class="ghuk-dial-center"></div>
+    </div>
+  `;
+}
+
+function formatDashboardSpeed(value, minDigits = 3) {
+  const safeValue = Math.max(0, Math.round(Number(value || 0)));
+  return String(safeValue).padStart(Math.max(1, Number(minDigits || 1)), "0");
+}
+
+function formatDashboardRpmCompact(rpm) {
+  const safeRpm = Math.max(0, Number(rpm || 0));
+  return `${(safeRpm / 1000).toFixed(1)} x1000`;
+}
+
+function formatDashboardRpmShort(rpm) {
+  const safeRpm = Math.max(0, Number(rpm || 0));
+  return `${(safeRpm / 1000).toFixed(1)}`;
+}
+
+function buildSevenSegmentDisplayMarkup(value, {
+  digits = 3,
+  className = "",
+  blankLeading = false,
+} = {}) {
+  const safeDigits = Math.max(1, Math.round(Number(digits || 3)));
+  const numericText = String(value ?? "").replace(/[^\d]/g, "");
+  const padded = numericText
+    .slice(-safeDigits)
+    .padStart(safeDigits, blankLeading ? " " : "0");
+
+  const digitMarkup = padded
+    .split("")
+    .map((char) => {
+      const activeSegments = SEVEN_SEGMENT_CHAR_MAP[char] || [];
+      const muted = char === " ";
+      return `
+        <span class="ghuk-7seg-digit${muted ? " is-muted" : ""}">
+          ${["a", "b", "c", "d", "e", "f", "g"]
+            .map(
+              (segment) =>
+                `<span class="ghuk-7seg-segment ghuk-7seg-segment--${segment}${activeSegments.includes(segment) ? " is-on" : ""}"></span>`
+            )
+            .join("")}
+        </span>
+      `;
+    })
+    .join("");
+
+  return `<span class="ghuk-7seg-display ${className}">${digitMarkup}</span>`;
+}
+
+function buildMeterSegmentsMarkup(count = 24, segmentClass = "ghuk-meter-segment") {
+  const safeCount = Math.max(2, Math.round(Number(count || 24)));
+  return Array.from(
+    { length: safeCount },
+    () => `<span class="${segmentClass}"></span>`
+  ).join("");
+}
+
+function buildScaleLabelMarkup(values = [], itemClass = "ghuk-scale-mark") {
+  return values
+    .map((value) => `<span class="${itemClass}">${escapeHtml(value)}</span>`)
+    .join("");
 }
 
 function weatherLabel(type) {
@@ -99,6 +275,15 @@ export default class GameplayHudKitOverlay {
     this.lastCountdownLabel = "";
     this.lastFinishCallSecond = -1;
     this.lastSpectatorTargetId = "";
+    this.lastInventoryItems = [];
+    this.lastInventorySignature = null;
+    this.hasRenderedInventoryState = false;
+    this.lastMotoHealthPercent = 100;
+    this.lastRepairing = false;
+    this.lastTurboCharges = 0;
+    this.lastTurboMaxCharges = 3;
+    this.lastTurboSignature = "";
+    this.hasRenderedTurboState = false;
     this.lastMinimapState = {
       localPlayer: null,
       remotePlayers: [],
@@ -211,92 +396,199 @@ export default class GameplayHudKitOverlay {
         <div class="quality" data-ref="qualityValue">Average Quality: 100%</div>
       </section>
 
-      <section class="ghuk-card ghuk-dashboard">
+      <section class="ghuk-card ghuk-dashboard" data-ref="dashboardCard">
         <div class="ghuk-dashboard-top">
           <div class="header">Motorcycle Dashboard</div>
           <div class="ghuk-dash-mode-badge" data-ref="dashModeBadge">Analog</div>
         </div>
+        <div class="ghuk-dashboard-boost"></div>
+        <div class="ghuk-dashboard-overdrive"></div>
+        <div class="ghuk-dashboard-hit"></div>
+        <div class="ghuk-dashboard-glass">
+          <span class="ghuk-dashboard-crack ghuk-dashboard-crack--a"></span>
+          <span class="ghuk-dashboard-crack ghuk-dashboard-crack--b"></span>
+          <span class="ghuk-dashboard-crack ghuk-dashboard-crack--c"></span>
+          <span class="ghuk-dashboard-crack ghuk-dashboard-crack--d"></span>
+          <span class="ghuk-dashboard-crack ghuk-dashboard-crack--e"></span>
+        </div>
 
         <div class="ghuk-dash-mode ghuk-dash-mode-dual" data-ref="modeDual">
-          <div class="ghuk-gauge-block">
-            <div class="ghuk-gauge">
-              <div class="ghuk-gauge-needle" data-ref="speedNeedle"></div>
-              <div class="ghuk-gauge-center"></div>
+          <div class="ghuk-analog-cluster ghuk-analog-cluster--reference">
+            <div class="ghuk-dial-wrap">
+              ${buildDashDialMarkup({
+                kind: "rpm",
+                needleRef: "rpmNeedle",
+                needleClass: "ghuk-dial-needle--rpm",
+                title: "",
+                foot: "x1000/min",
+                labels: DASH_ANALOG_RPM_LABELS,
+                maxValue: 12,
+                tickCount: 25,
+                majorEvery: 2,
+                warningFromRatio: 0.82,
+              })}
             </div>
-            <div class="ghuk-gauge-caption">Speed</div>
-            <div class="ghuk-gauge-number" data-ref="speedGaugeValue">0 km/h</div>
-          </div>
-          <div class="ghuk-gauge-block">
-            <div class="ghuk-gauge">
-              <div class="ghuk-gauge-needle ghuk-gauge-needle-rpm" data-ref="rpmNeedle"></div>
-              <div class="ghuk-gauge-center"></div>
+            <div class="ghuk-dial-wrap">
+              ${buildDashDialMarkup({
+                kind: "speed",
+                needleRef: "speedNeedle",
+                title: "",
+                foot: "km/h",
+                labels: DASH_ANALOG_SPEED_LABELS,
+                maxValue: 240,
+                tickCount: 25,
+                majorEvery: 2,
+                warningFromRatio: 1,
+              })}
             </div>
-            <div class="ghuk-gauge-caption">RPM</div>
-            <div class="ghuk-gauge-number" data-ref="rpmGaugeValue">1000</div>
           </div>
         </div>
 
         <div class="ghuk-dash-mode ghuk-dash-mode-hybrid ghuk-hidden" data-ref="modeHybrid">
-          <div class="ghuk-hybrid-speed">
-            <div class="ghuk-speed" data-ref="speedHybridValue">0</div>
-            <div class="ghuk-speed-unit">km/h</div>
-          </div>
-          <div class="ghuk-gauge-block ghuk-gauge-block-hybrid">
-            <div class="ghuk-gauge">
-              <div class="ghuk-gauge-needle ghuk-gauge-needle-rpm" data-ref="rpmHybridNeedle"></div>
-              <div class="ghuk-gauge-center"></div>
+          <div class="ghuk-hybrid-cluster">
+            <div class="ghuk-hybrid-rpm-shell">
+              ${buildDashDialMarkup({
+                kind: "rpm-yamaha",
+                needleRef: "rpmHybridNeedle",
+                needleClass: "ghuk-dial-needle--rpm",
+                title: "",
+                foot: "x1000",
+                labels: DASH_HYBRID_RPM_LABELS,
+                maxValue: 13,
+                tickCount: 37,
+                majorEvery: 3,
+                warningFromRatio: 0.74,
+              })}
             </div>
-            <div class="ghuk-gauge-caption">RPM</div>
-            <div class="ghuk-gauge-number" data-ref="rpmHybridValue">1000</div>
+            <div class="ghuk-hybrid-screen-shell">
+              <div class="ghuk-hybrid-screen">
+                <div class="ghuk-hybrid-screen-top">
+                  <span class="ghuk-hybrid-brand-chip">REP</span>
+                  <div class="ghuk-hybrid-brand">YAMAHA</div>
+                </div>
+                <div class="ghuk-hybrid-screen-main">
+                  <div class="ghuk-hybrid-speed-stack">
+                    <div class="ghuk-hybrid-speed-caption">speed</div>
+                    <div class="ghuk-hybrid-speed-display" data-ref="speedHybridValue">
+                      ${buildSevenSegmentDisplayMarkup("000", { digits: 3, className: "ghuk-7seg-display--hybrid" })}
+                    </div>
+                  </div>
+                  <div class="ghuk-hybrid-screen-unit">km/h</div>
+                </div>
+                <div class="ghuk-hybrid-screen-bottom">
+                  <span class="ghuk-hybrid-screen-chip">ODO</span>
+                  <span class="ghuk-hybrid-screen-rpm" data-ref="rpmHybridValue">1.0 x1000</span>
+                  <span class="ghuk-hybrid-screen-chip">LIVE</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         <div class="ghuk-dash-mode ghuk-dash-mode-digital ghuk-hidden" data-ref="modeDigital">
-          <div class="ghuk-digital-speed" data-ref="speedDigitalValue">0</div>
-          <div class="ghuk-digital-unit">km/h</div>
-          <div class="ghuk-rpm-bar-track">
-            <div class="ghuk-rpm-bar-fill" data-ref="rpmBarFill"></div>
+          <div class="ghuk-digital-shell">
+            <div class="ghuk-digital-rpm-head">
+              <span class="ghuk-digital-rpm-label">RPM</span>
+              <div class="ghuk-digital-rpm-scale">
+                ${buildScaleLabelMarkup(DASH_DIGITAL_RPM_SCALE_LABELS, "ghuk-digital-rpm-scale-mark")}
+              </div>
+            </div>
+            <div class="ghuk-digital-rpm-track">
+              <div class="ghuk-digital-rpm-segments" data-ref="rpmBarFill">
+                ${buildMeterSegmentsMarkup(24, "ghuk-digital-rpm-segment")}
+              </div>
+            </div>
+            <div class="ghuk-digital-frame">
+              <div class="ghuk-digital-corners ghuk-digital-corners--left"></div>
+              <div class="ghuk-digital-corners ghuk-digital-corners--right"></div>
+              <div class="ghuk-digital-mode-line">
+                <span class="ghuk-digital-chip">READY</span>
+                <span class="ghuk-digital-chip">SEG</span>
+              </div>
+              <div class="ghuk-digital-speed-wrap">
+                <div class="ghuk-digital-speed-display" data-ref="speedDigitalValue">
+                  ${buildSevenSegmentDisplayMarkup("000", { digits: 3, className: "ghuk-7seg-display--digital" })}
+                </div>
+                <div class="ghuk-digital-unit">km/h</div>
+              </div>
+              <div class="ghuk-digital-footer">
+                <span class="ghuk-digital-footer-tag">RPM</span>
+                <span data-ref="rpmDigitalValue">1000</span>
+                <span class="ghuk-digital-footer-tag">ODO</span>
+              </div>
+            </div>
           </div>
-          <div class="ghuk-rpm-text" data-ref="rpmDigitalValue">1000 RPM</div>
         </div>
 
         <div class="ghuk-dash-mode ghuk-dash-mode-lcd ghuk-hidden" data-ref="modeLcd">
-          <div class="ghuk-lcd-screen">
-            <div class="ghuk-lcd-row ghuk-lcd-row-speed">
-              <span class="ghuk-lcd-tag">SPD</span>
-              <span class="ghuk-lcd-speed" data-ref="speedLcdValue">0</span>
-              <span class="ghuk-lcd-unit">km/h</span>
-            </div>
-            <div class="ghuk-lcd-row ghuk-lcd-row-rpm">
-              <span class="ghuk-lcd-tag">RPM</span>
-              <span class="ghuk-lcd-rpm" data-ref="rpmLcdValue">1000</span>
-            </div>
-            <div class="ghuk-lcd-bar-track">
-              <div class="ghuk-lcd-bar-fill" data-ref="rpmLcdFill"></div>
+          <div class="ghuk-lcd-panel">
+            <div class="ghuk-lcd-stage">
+              <div class="ghuk-lcd-rail ghuk-lcd-rail--left">
+                <span class="ghuk-lcd-rail-chip is-green">N</span>
+                <span class="ghuk-lcd-rail-chip is-amber">ABS</span>
+              </div>
+              <div class="ghuk-lcd-arc-wrap">
+                <div class="ghuk-lcd-arc-shell">
+                  <div class="ghuk-lcd-screen-art"></div>
+                  <div class="ghuk-lcd-meter ghuk-lcd-meter--left">
+                    <div class="ghuk-lcd-meter-fill" data-ref="rpmLcdFill"></div>
+                  </div>
+                  <div class="ghuk-lcd-meter ghuk-lcd-meter--right">
+                    <div class="ghuk-lcd-meter-fill" data-ref="rpmLcdFillMirror"></div>
+                  </div>
+                  <div class="ghuk-lcd-arc-progress"></div>
+                  <div class="ghuk-lcd-arc-band"></div>
+                  <div class="ghuk-lcd-speed-block">
+                    <div class="ghuk-lcd-speed" data-ref="speedLcdValue">0</div>
+                    <div class="ghuk-lcd-unit">km/h</div>
+                    <div class="ghuk-lcd-rpm-readout">
+                      <span class="ghuk-lcd-rpm-readout-label">RPM</span>
+                      <span data-ref="rpmLcdValue">1.0</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="ghuk-dash-meta">
-          <div class="label">Health</div><div class="value" data-ref="motoHealthValue">100%</div>
-          <div class="label">Repair</div><div class="value" data-ref="repairValue">Ready</div>
+        <div class="ghuk-dash-health">
+          <div class="ghuk-dash-health-track" data-ref="healthTrack">
+            <div class="ghuk-dash-health-fill" data-ref="healthFill"></div>
+          </div>
         </div>
       </section>
 
-      <section class="ghuk-card ghuk-inventory">
-        <div class="ghuk-inventory-title">Inventory</div>
-        <div class="ghuk-inventory-slot empty" data-ref="slot1">Slot 1: Empty</div>
-        <div class="ghuk-inventory-slot empty" data-ref="slot2">Slot 2: Empty</div>
-        <div class="ghuk-drop-hint">Drop key: Z</div>
+      <section class="ghuk-inventory">
+        <div class="ghuk-item-stack" data-ref="inventoryStack">
+          <div class="ghuk-item-shell ghuk-item-shell--secondary is-empty" data-ref="slot2Shell">
+            <div class="ghuk-item-content">
+              <img class="ghuk-item-icon ghuk-hidden" data-ref="slot2Icon" alt="" draggable="false" />
+            </div>
+          </div>
+          <div class="ghuk-item-shell ghuk-item-shell--primary is-empty" data-ref="slot1Shell">
+            <div class="ghuk-item-content">
+              <img class="ghuk-item-icon ghuk-hidden" data-ref="slot1Icon" alt="" draggable="false" />
+            </div>
+          </div>
+          <div class="ghuk-item-transition-layer" data-ref="inventoryFx"></div>
+        </div>
       </section>
 
-      <section class="ghuk-card ghuk-turbo">
-        <div class="ghuk-turbo-title">Turbo Resource</div>
+      <section class="ghuk-turbo">
+        <div class="ghuk-turbo-shell is-empty" data-ref="turboShell">
+          <div class="ghuk-turbo-icon-wrap">
+            <div class="ghuk-turbo-diamond">
+              <img class="ghuk-turbo-icon" data-ref="turboIcon" src="${TURBO_IMAGE_PATH}" alt="Nitro" draggable="false" />
+            </div>
+          </div>
+        </div>
         <div class="ghuk-turbo-dots" data-ref="turboDots">
           <span class="ghuk-turbo-dot"></span>
           <span class="ghuk-turbo-dot"></span>
           <span class="ghuk-turbo-dot"></span>
         </div>
+        <div class="ghuk-turbo-transition-layer" data-ref="turboFx"></div>
       </section>
 
       <section class="ghuk-card ghuk-controls ghuk-hidden" data-ref="controls">
@@ -380,6 +672,7 @@ export default class GameplayHudKitOverlay {
       weatherIndicator: query("weatherIndicator"),
       integrityValue: query("integrityValue"),
       qualityValue: query("qualityValue"),
+      dashboardCard: query("dashboardCard"),
       dashModeBadge: query("dashModeBadge"),
       modeDual: query("modeDual"),
       modeHybrid: query("modeHybrid"),
@@ -387,8 +680,6 @@ export default class GameplayHudKitOverlay {
       modeLcd: query("modeLcd"),
       speedNeedle: query("speedNeedle"),
       rpmNeedle: query("rpmNeedle"),
-      speedGaugeValue: query("speedGaugeValue"),
-      rpmGaugeValue: query("rpmGaugeValue"),
       speedHybridValue: query("speedHybridValue"),
       rpmHybridNeedle: query("rpmHybridNeedle"),
       rpmHybridValue: query("rpmHybridValue"),
@@ -398,11 +689,19 @@ export default class GameplayHudKitOverlay {
       speedLcdValue: query("speedLcdValue"),
       rpmLcdValue: query("rpmLcdValue"),
       rpmLcdFill: query("rpmLcdFill"),
-      motoHealthValue: query("motoHealthValue"),
-      repairValue: query("repairValue"),
-      slot1: query("slot1"),
-      slot2: query("slot2"),
+      rpmLcdFillMirror: query("rpmLcdFillMirror"),
+      healthTrack: query("healthTrack"),
+      healthFill: query("healthFill"),
+      inventoryStack: query("inventoryStack"),
+      inventoryFx: query("inventoryFx"),
+      slot1Shell: query("slot1Shell"),
+      slot1Icon: query("slot1Icon"),
+      slot2Shell: query("slot2Shell"),
+      slot2Icon: query("slot2Icon"),
+      turboShell: query("turboShell"),
+      turboIcon: query("turboIcon"),
       turboDots: query("turboDots"),
+      turboFx: query("turboFx"),
       controls: query("controls"),
       hostSpectatorButton: this.root.querySelector(
         '[data-weather-action="spectator"]'
@@ -420,6 +719,7 @@ export default class GameplayHudKitOverlay {
     };
 
     this.minimapContext = this.refs.minimapCanvas.getContext("2d");
+    this.renderInventoryState([]);
     this.applyGameTrackLabel = (label) => {
       if (!this.refs?.gameTrackLabel) return;
       this.refs.gameTrackLabel.textContent = label || "Partida: silencio";
@@ -616,8 +916,169 @@ export default class GameplayHudKitOverlay {
   updateGaugeNeedle(node, ratio) {
     if (!node) return;
     const clamped = clamp01(ratio);
-    const angle = -130 + clamped * 260;
+    const angle =
+      DASH_DIAL_ANGLE_START +
+      clamped * (DASH_DIAL_ANGLE_END - DASH_DIAL_ANGLE_START);
     node.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
+  }
+
+  setMeterSegmentsState(node, ratio) {
+    if (!node) return;
+    const segments = Array.from(node.children || []);
+    if (!segments.length) return;
+    const safeRatio = clamp01(ratio);
+    const activeCount = Math.max(1, Math.round(segments.length * safeRatio));
+    segments.forEach((segment, index) => {
+      segment.classList.toggle("is-on", index < activeCount && safeRatio > 0);
+    });
+  }
+
+  renderSevenSegmentValue(node, value, options = {}) {
+    if (!node) return;
+    node.innerHTML = buildSevenSegmentDisplayMarkup(value, options);
+  }
+
+  triggerDashboardImpact(intensity = 1) {
+    if (!this.refs?.dashboardCard) return;
+    const safeIntensity = clamp01(intensity);
+    this.refs.dashboardCard.style.setProperty("--ghuk-dashboard-hit", safeIntensity.toFixed(3));
+    this.restartCssAnimation(this.refs.dashboardCard, "is-impact-hit");
+  }
+
+  restartCssAnimation(node, className) {
+    if (!node) return;
+    node.classList.remove(className);
+    void node.offsetWidth;
+    node.classList.add(className);
+  }
+
+  normalizeInventoryItems(inventoryState = {}) {
+    if (!Array.isArray(inventoryState.items)) return [];
+    return inventoryState.items
+      .slice(0, 2)
+      .map((entry) => {
+        const type = String(entry?.type || "");
+        if (!type) return null;
+        return {
+          type,
+          label: entry?.label || getItemLabel(type) || "Item",
+        };
+      })
+      .filter(Boolean);
+  }
+
+  setInventoryShell(shellNode, iconNode, entry = null) {
+    if (!shellNode || !iconNode) return;
+
+    shellNode.classList.remove("is-arriving-front", "is-arriving-back", "is-promoted");
+
+    const type = String(entry?.type || "");
+    const imagePath = getItemImagePath(type);
+    if (!type || !imagePath) {
+      shellNode.classList.add("is-empty");
+      shellNode.removeAttribute("data-item-type");
+      iconNode.classList.add("ghuk-hidden");
+      iconNode.removeAttribute("src");
+      iconNode.alt = "";
+      return;
+    }
+
+    shellNode.classList.remove("is-empty");
+    shellNode.dataset.itemType = type;
+    iconNode.src = imagePath;
+    iconNode.alt = entry?.label || getItemLabel(type) || "Item";
+    iconNode.classList.remove("ghuk-hidden");
+  }
+
+  renderInventoryState(items = []) {
+    this.setInventoryShell(this.refs.slot1Shell, this.refs.slot1Icon, items[0] || null);
+    this.setInventoryShell(this.refs.slot2Shell, this.refs.slot2Icon, items[1] || null);
+  }
+
+  spawnConsumedInventoryGhost(entry = null) {
+    if (!this.refs?.inventoryFx) return;
+
+    const type = String(entry?.type || "");
+    const imagePath = getItemImagePath(type);
+    if (!type || !imagePath) return;
+
+    this.refs.inventoryFx.replaceChildren();
+
+    const ghost = document.createElement("div");
+    ghost.className = "ghuk-item-shell ghuk-item-shell--primary ghuk-item-shell--fx";
+    ghost.dataset.itemType = type;
+
+    const content = document.createElement("div");
+    content.className = "ghuk-item-content";
+
+    const icon = document.createElement("img");
+    icon.className = "ghuk-item-icon";
+    icon.src = imagePath;
+    icon.alt = entry?.label || getItemLabel(type) || "Item";
+    icon.draggable = false;
+
+    content.appendChild(icon);
+    ghost.appendChild(content);
+    ghost.addEventListener(
+      "animationend",
+      () => {
+        ghost.remove();
+      },
+      { once: true }
+    );
+    this.refs.inventoryFx.appendChild(ghost);
+  }
+
+  resetInventoryVisualState() {
+    this.lastInventoryItems = [];
+    this.lastInventorySignature = null;
+    this.hasRenderedInventoryState = false;
+    this.refs?.inventoryFx?.replaceChildren();
+    this.renderInventoryState([]);
+  }
+
+  resetTurboVisualState() {
+    this.lastTurboCharges = 0;
+    this.lastTurboMaxCharges = 3;
+    this.lastTurboSignature = "";
+    this.hasRenderedTurboState = false;
+    if (!this.refs?.turboShell) return;
+    this.refs.turboShell.classList.remove("is-spent", "is-refilled");
+    this.refs.turboShell.classList.add("is-empty");
+    this.refs?.turboFx?.replaceChildren();
+  }
+
+  spawnConsumedTurboGhost() {
+    if (!this.refs?.turboFx) return;
+
+    this.refs.turboFx.replaceChildren();
+
+    const ghost = document.createElement("div");
+    ghost.className = "ghuk-turbo-shell ghuk-turbo-shell--fx";
+
+    const wrap = document.createElement("div");
+    wrap.className = "ghuk-turbo-icon-wrap";
+
+    const diamond = document.createElement("div");
+    diamond.className = "ghuk-turbo-diamond";
+
+    const icon = document.createElement("img");
+    icon.className = "ghuk-turbo-icon";
+    icon.src = TURBO_IMAGE_PATH;
+    icon.alt = "Nitro";
+    icon.draggable = false;
+
+    diamond.appendChild(icon);
+    wrap.appendChild(diamond);
+    ghost.appendChild(wrap);
+    ghost.addEventListener(
+      "animationend",
+      () => {
+        ghost.remove();
+      },
+      { once: true }
+    );
+    this.refs.turboFx.appendChild(ghost);
   }
 
   onWeatherControl(action) {
@@ -1000,73 +1461,149 @@ export default class GameplayHudKitOverlay {
       moto && moto.maxSpeedPxPerSec > 0
         ? clamp01(moto.speedPxPerSec / moto.maxSpeedPxPerSec)
         : 0;
+    const hudSpeedRatio = clamp01(speedKmh / HUD_MAX_SPEED_KMH);
     const rpmBase = 1000 + speedRatio * 8400;
     const rpmPulse = Math.sin(this.scene.time.now * 0.011) * 140;
     const rpm = Math.max(1000, Math.round(rpmBase + rpmPulse));
+    const rpmRatio = clamp01((rpm - 1000) / 9000);
     const healthPercent = toNumber(motoInfo.healthPercent, 100);
-
-    this.updateGaugeNeedle(this.refs.speedNeedle, speedKmh / 220);
-    this.updateGaugeNeedle(this.refs.rpmNeedle, (rpm - 1000) / 9000);
-    this.updateGaugeNeedle(this.refs.rpmHybridNeedle, (rpm - 1000) / 9000);
-
-    this.refs.speedGaugeValue.textContent = `${speedKmh} km/h`;
-    this.refs.rpmGaugeValue.textContent = `${rpm}`;
-    this.refs.speedHybridValue.textContent = `${speedKmh}`;
-    this.refs.rpmHybridValue.textContent = `${rpm}`;
-    this.refs.speedDigitalValue.textContent = `${speedKmh}`;
-    this.refs.rpmDigitalValue.textContent = `${rpm} RPM`;
-    this.refs.rpmBarFill.style.width = `${Math.max(4, clamp01((rpm - 1000) / 9000) * 100)}%`;
-    this.refs.speedLcdValue.textContent = `${speedKmh}`;
-    this.refs.rpmLcdValue.textContent = `${rpm}`;
-    this.refs.rpmLcdFill.style.width = `${Math.max(8, clamp01((rpm - 1000) / 9000) * 100)}%`;
-
-    this.refs.motoHealthValue.textContent = `${Math.max(0, Math.round(healthPercent))}%`;
-    this.refs.motoHealthValue.style.color =
+    const repairing = Boolean(motoInfo.repairing);
+    const repairRemainingMs = Math.max(0, toNumber(motoInfo.repairRemainingMs, 0));
+    const repairDurationMs = Math.max(1, toNumber(motoInfo.repairDurationMs, 1800));
+    const repairProgress = repairing
+      ? clamp01(1 - repairRemainingMs / repairDurationMs)
+      : 0;
+    const damageRatio = repairing
+      ? clamp01((1 - healthPercent / 100) * (1 - repairProgress))
+      : clamp01(1 - healthPercent / 100);
+    const healthColor =
       healthPercent <= 25
         ? "#ff746d"
         : healthPercent <= 50
           ? "#ffbe5c"
           : motoInfo.healthColor || "#58d48f";
+    const healthVisualRatio = repairing ? repairProgress : clamp01(healthPercent / 100);
+    const healthDrop = Math.max(0, this.lastMotoHealthPercent - healthPercent);
 
-    if (motoInfo.repairing) {
-      const remainingSec = Math.max(0, Math.ceil(toNumber(motoInfo.repairRemainingMs, 0) / 1000));
-      this.refs.repairValue.textContent = `${remainingSec}s`;
-      this.refs.repairValue.style.color = "#ffbf85";
-    } else {
-      this.refs.repairValue.textContent = "Ready";
-      this.refs.repairValue.style.color = "#a8d6ff";
+    this.updateGaugeNeedle(this.refs.speedNeedle, hudSpeedRatio);
+    this.updateGaugeNeedle(this.refs.rpmNeedle, rpmRatio);
+    this.updateGaugeNeedle(this.refs.rpmHybridNeedle, rpmRatio);
+
+    this.renderSevenSegmentValue(this.refs.speedHybridValue, formatDashboardSpeed(speedKmh), {
+      digits: 3,
+      className: "ghuk-7seg-display--hybrid",
+    });
+    this.refs.rpmHybridValue.textContent = formatDashboardRpmCompact(rpm);
+    this.renderSevenSegmentValue(this.refs.speedDigitalValue, formatDashboardSpeed(speedKmh), {
+      digits: 3,
+      className: "ghuk-7seg-display--digital",
+    });
+    this.refs.rpmDigitalValue.textContent = formatDashboardRpmCompact(rpm);
+    this.setMeterSegmentsState(this.refs.rpmBarFill, rpmRatio);
+    this.refs.speedLcdValue.textContent = `${speedKmh}`;
+    this.refs.rpmLcdValue.textContent = formatDashboardRpmShort(rpm);
+    this.refs.rpmLcdFill.style.height = `${Math.max(8, rpmRatio * 100)}%`;
+    this.refs.rpmLcdFillMirror.style.height = `${Math.max(8, rpmRatio * 100)}%`;
+
+    this.refs.dashboardCard.classList.toggle("is-repairing", repairing);
+    this.refs.dashboardCard.classList.remove("is-turbo-active", "is-overdrive");
+    this.refs.dashboardCard.style.setProperty("--ghuk-dashboard-damage", damageRatio.toFixed(3));
+    this.refs.dashboardCard.style.setProperty("--ghuk-dashboard-boost", "0");
+    this.refs.dashboardCard.style.setProperty("--ghuk-dashboard-speed", hudSpeedRatio.toFixed(3));
+    this.refs.dashboardCard.style.setProperty("--ghuk-dashboard-rpm", rpmRatio.toFixed(3));
+    this.refs.dashboardCard.style.setProperty("--ghuk-dashboard-fire", "0");
+    this.refs.dashboardCard.style.setProperty("--ghuk-dashboard-burst", "0");
+    if (healthDrop >= 1 && !repairing) {
+      this.triggerDashboardImpact(Math.min(1, healthDrop / 12));
     }
+
+    this.refs.healthTrack.classList.toggle("is-repairing", repairing);
+    this.refs.healthTrack.style.setProperty("--ghuk-health-color", repairing ? "#6fd6ff" : healthColor);
+    this.refs.healthFill.style.width = `${Math.max(0, healthVisualRatio * 100)}%`;
+    this.lastMotoHealthPercent = repairing ? 0 : healthPercent;
+    this.lastRepairing = repairing;
   }
 
   updateInventory(inventoryState = {}) {
-    const items = Array.isArray(inventoryState.items) ? inventoryState.items : [];
-    const slot1 = items[0] || null;
-    const slot2 = items[1] || null;
+    const items = this.normalizeInventoryItems(inventoryState);
+    const signature = items.map((entry) => entry.type).join("|");
+    if (signature === this.lastInventorySignature) return;
 
-    const setSlot = (node, entry, index) => {
-      if (!entry) {
-        node.textContent = `Slot ${index}: Empty`;
-        node.classList.add("empty");
-        return;
-      }
+    if (!this.hasRenderedInventoryState) {
+      this.renderInventoryState(items);
+      this.lastInventoryItems = items;
+      this.lastInventorySignature = signature;
+      this.hasRenderedInventoryState = true;
+      return;
+    }
 
-      const label = entry.label || getItemLabel(entry.type) || "Item";
-      node.textContent = `Slot ${index}: ${label}`;
-      node.classList.remove("empty");
-    };
+    const previousItems = this.lastInventoryItems;
+    const consumedPrimary =
+      Boolean(previousItems[0]?.type) &&
+      (previousItems.length > items.length ||
+        previousItems[0]?.type !== items[0]?.type);
+    const secondaryPromoted =
+      Boolean(previousItems[1]?.type) &&
+      Boolean(items[0]?.type) &&
+      previousItems.length > items.length &&
+      previousItems[1].type === items[0].type;
+    const newPrimaryArrived =
+      Boolean(items[0]?.type) &&
+      (!previousItems[0]?.type ||
+        (!secondaryPromoted && previousItems[0].type !== items[0].type));
+    const newSecondaryArrived =
+      Boolean(items[1]?.type) &&
+      (!previousItems[1]?.type || previousItems[1].type !== items[1].type);
 
-    setSlot(this.refs.slot1, slot1, 1);
-    setSlot(this.refs.slot2, slot2, 2);
+    if (consumedPrimary) {
+      this.spawnConsumedInventoryGhost(previousItems[0]);
+    } else {
+      this.refs.inventoryFx.replaceChildren();
+    }
+
+    this.renderInventoryState(items);
+
+    if (secondaryPromoted) {
+      this.restartCssAnimation(this.refs.slot1Shell, "is-promoted");
+    } else if (newPrimaryArrived) {
+      this.restartCssAnimation(this.refs.slot1Shell, "is-arriving-front");
+    }
+
+    if (newSecondaryArrived) {
+      this.restartCssAnimation(this.refs.slot2Shell, "is-arriving-back");
+    }
+
+    this.lastInventoryItems = items;
+    this.lastInventorySignature = signature;
+    this.hasRenderedInventoryState = true;
   }
 
   updateTurbo(stockState = {}) {
     const charges = Math.max(0, toNumber(stockState.turboCharges, 0));
     const maxCharges = Math.max(1, toNumber(stockState.turboMaxCharges, 3));
+    const signature = `${charges}/${maxCharges}`;
+    if (signature === this.lastTurboSignature) return;
+
+    this.refs.turboShell.classList.remove("is-spent", "is-refilled");
+    if (this.hasRenderedTurboState && charges !== this.lastTurboCharges) {
+      const animationClass = charges < this.lastTurboCharges ? "is-spent" : "is-refilled";
+      if (charges < this.lastTurboCharges) {
+        this.spawnConsumedTurboGhost();
+      }
+      this.restartCssAnimation(this.refs.turboShell, animationClass);
+    }
+
+    this.refs.turboShell.classList.toggle("is-empty", charges <= 0);
     const dots = Array.from(this.refs.turboDots.querySelectorAll(".ghuk-turbo-dot"));
     dots.forEach((dot, index) => {
       dot.classList.toggle("active", index < charges);
-      dot.style.display = index < maxCharges ? "inline-block" : "none";
+      dot.classList.toggle("ghuk-hidden", index >= maxCharges);
     });
+
+    this.lastTurboCharges = charges;
+    this.lastTurboMaxCharges = maxCharges;
+    this.lastTurboSignature = signature;
+    this.hasRenderedTurboState = true;
   }
 
   updateCountdown(timing = {}) {
@@ -1135,11 +1672,15 @@ export default class GameplayHudKitOverlay {
   resetTransientSignals() {
     this.lastOrderCount = 0;
     this.lastPackageHealth = 100;
+    this.lastMotoHealthPercent = 100;
+    this.lastRepairing = false;
     this.lastTurboActive = false;
     this.lastHeatCooling = false;
     this.lastWeatherType = WEATHER_EVENT_TYPES.NONE;
     this.lastCountdownLabel = "";
     this.lastFinishCallSecond = -1;
+    this.resetInventoryVisualState();
+    this.resetTurboVisualState();
   }
 
   updateSpectatorPanel(spectatorInfo = {}, matchInfo = {}) {
@@ -1333,6 +1874,7 @@ export default class GameplayHudKitOverlay {
     this.refs.spectatorNext.removeEventListener("click", this.spectatorNextHandler);
     this.spectatorNextHandler = null;
 
+    this.refs.inventoryFx.replaceChildren();
     this.root.remove();
     this.root = null;
     this.refs = null;
