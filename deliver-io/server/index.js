@@ -385,6 +385,7 @@ function createEmptyHudSnapshot() {
       healthColor: "#58d48f",
       repairing: false,
       repairRemainingMs: 0,
+      repairDurationMs: 1800,
       turbo: {
         active: false,
       },
@@ -606,6 +607,15 @@ function sanitizeHudPayload(payload = {}, fallback = {}) {
           toFiniteNumber(
             sourceMoto.repairRemainingMs,
             toFiniteNumber(fallbackMoto.repairRemainingMs, 0)
+          )
+        )
+      ),
+      repairDurationMs: Math.max(
+        1,
+        Math.round(
+          toFiniteNumber(
+            sourceMoto.repairDurationMs,
+            toFiniteNumber(fallbackMoto.repairDurationMs, base.moto.repairDurationMs)
           )
         )
       ),

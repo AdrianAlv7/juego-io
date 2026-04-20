@@ -671,6 +671,7 @@ export const gameSceneGameplayMethods = {
         healthColor: String(moto.healthColor || "#58d48f"),
         repairing: Boolean(moto.repairing),
         repairRemainingMs: Math.max(0, Number(moto.repairRemainingMs || 0)),
+        repairDurationMs: Math.max(1, Number(moto.repairDurationMs || 1800)),
         turbo: {
           active: Boolean(moto.turbo?.active),
         },
@@ -929,6 +930,7 @@ export const gameSceneGameplayMethods = {
     if (!this.moto || !this.hud || !this.map) return;
     this.map?.setCountdownSuppressed?.(Boolean(this.spectatorModeActive));
     if (this.spectatorModeActive) {
+      this.setTurboHudEmitterActive?.(false);
       this.updateSpectatorCameraAndHud(deltaMs);
       return;
     }
@@ -1290,6 +1292,7 @@ export const gameSceneGameplayMethods = {
         active: false,
       },
     });
+    this.setTurboHudEmitterActive?.(Boolean(this.moto?.turboState?.active));
   },
 
   update(_time, delta) {
@@ -1298,6 +1301,7 @@ export const gameSceneGameplayMethods = {
     this.collisionDebugOverlay?.update?.();
 
     if (!this.matchRunning) {
+      this.setTurboHudEmitterActive?.(false);
       const countdownEndsAt = Number(this.currentLobbyState?.lobbyCountdownEndsAt || 0);
       if (countdownEndsAt > Date.now()) {
         const remainingSeconds = Math.max(
